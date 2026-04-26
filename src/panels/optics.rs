@@ -1,10 +1,22 @@
 use egui::{Color32, Pos2, Stroke};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum OpticComponentKind {
-    Laser,
-    BeamSplitter,
-    Mirror,
+    Laser {
+        amplitude: f32,
+        phase: f32,
+        wavelength: f32,
+        dir: egui::Vec2,
+    },
+    BeamSplitter {
+        reflectivity: f32,
+        transparency: f32,
+        normal: egui::Vec2,
+    },
+    Mirror {
+        normal: egui::Vec2,
+    },
     Lens,
 }
 
@@ -14,14 +26,31 @@ pub enum Tool {
     DrawLine,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlacedComponent {
     pub kind: OpticComponentKind,
     pub pos: Pos2,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     pub start: Pos2,
     pub end: Pos2,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LayoutData {
+    pub components: Vec<PlacedComponent>,
+    pub lines: Vec<Line>,
+}
+
+pub struct SimulatedBeam {
+    pub start: Pos2,
+    pub end: Pos2,
+    pub amplitude: f32,
+    pub phase: f32,
+    pub wavelength: f32,
+    pub dir: egui::Vec2,
 }
 
 pub struct OpticsPanel {
@@ -56,9 +85,9 @@ impl OpticsPanel {
         alpha: u8,
     ) {
         let (mut color, label) = match kind {
-            OpticComponentKind::Laser => (Color32::RED, "L"),
-            OpticComponentKind::BeamSplitter => (Color32::BLUE, "BS"),
-            OpticComponentKind::Mirror => (Color32::GREEN, "M"),
+            OpticComponentKind::Laser { .. } => (Color32::RED, "L"),
+            OpticComponentKind::BeamSplitter { .. } => (Color32::BLUE, "BS"),
+            OpticComponentKind::Mirror { .. } => (Color32::GREEN, "M"),
             OpticComponentKind::Lens => (Color32::from_rgb(100, 150, 255), "Lens"),
         };
         color = color.gamma_multiply(alpha as f32 / 255.0);
@@ -71,6 +100,142 @@ impl OpticsPanel {
             egui::FontId::proportional(12.0),
             Color32::WHITE.gamma_multiply(alpha as f32 / 255.0),
         );
+    }
+
+    fn simulate_beams(&self) -> Vec<SimulatedBeam> {
+        let mut simulated = Vec::new();
+        let mut queue = Vec::new();
+
+        // Find all lasers
+        for comp in &self.components {
+            if let OpticComponentKind::Laser {
+                amplitude,
+                phase,
+                wavelength,
+                dir,
+            } = comp.kind
+            {
+                // To avoid immediate self-intersection, push from slightly outside
+                queue.push((comp.pos, dir.normalized(), amplitude, phase, wavelength, 0));
+            }
+        }
+
+        let max_depth = 10;
+        let component_radius = 15.0;
+
+        while let Some((mut ray_start, ray_dir, amplitude, phase, wavelength, depth)) = queue.pop()
+        {
+            if depth > max_depth || amplitude < 0.01 {
+                continue;
+            }
+
+            // Advance start slightly to avoid self-intersection with the component it just bounced from
+            ray_start = ray_start + ray_dir * 1.0;
+
+            let mut closest_t = f32::MAX;
+            let mut hit_comp: Option<&PlacedComponent> = None;
+
+            for comp in &self.components {
+                let v_center = ray_start - comp.pos;
+                let b = 2.0 * (v_center.x * ray_dir.x + v_center.y * ray_dir.y);
+                let c = (v_center.x * v_center.x + v_center.y * v_center.y)
+                    - component_radius * component_radius;
+
+                let discriminant = b * b - 4.0 * c;
+                if discriminant > 0.0 {
+                    let t1 = (-b - discriminant.sqrt()) / 2.0;
+                    let t2 = (-b + discriminant.sqrt()) / 2.0;
+
+                    let mut min_t = f32::MAX;
+                    if t1 > 0.1 && t1 < min_t {
+                        min_t = t1;
+                    }
+                    if t2 > 0.1 && t2 < min_t {
+                        min_t = t2;
+                    }
+
+                    if min_t < closest_t {
+                        closest_t = min_t;
+                        hit_comp = Some(comp);
+                    }
+                }
+            }
+
+            if let Some(comp) = hit_comp {
+                let hit_pos = ray_start + ray_dir * closest_t;
+                simulated.push(SimulatedBeam {
+                    start: ray_start,
+                    end: hit_pos,
+                    amplitude,
+                    phase,
+                    wavelength,
+                    dir: ray_dir,
+                });
+
+                match comp.kind {
+                    OpticComponentKind::Mirror { normal } => {
+                        let dot = ray_dir.x * normal.x + ray_dir.y * normal.y;
+                        let mut new_dir = ray_dir - normal * 2.0 * dot;
+                        new_dir = new_dir.normalized();
+                        let new_phase = phase + std::f32::consts::PI;
+                        queue.push((
+                            hit_pos,
+                            new_dir,
+                            amplitude,
+                            new_phase,
+                            wavelength,
+                            depth + 1,
+                        ));
+                    }
+                    OpticComponentKind::BeamSplitter {
+                        reflectivity,
+                        transparency,
+                        normal,
+                    } => {
+                        let dot = ray_dir.x * normal.x + ray_dir.y * normal.y;
+                        let mut ref_dir = ray_dir - normal * 2.0 * dot;
+                        ref_dir = ref_dir.normalized();
+                        let ref_phase = phase + std::f32::consts::PI;
+                        queue.push((
+                            hit_pos,
+                            ref_dir,
+                            amplitude * reflectivity.sqrt(),
+                            ref_phase,
+                            wavelength,
+                            depth + 1,
+                        ));
+                        queue.push((
+                            hit_pos,
+                            ray_dir,
+                            amplitude * transparency.sqrt(),
+                            phase,
+                            wavelength,
+                            depth + 1,
+                        ));
+                    }
+                    OpticComponentKind::Lens => {
+                        queue.push((hit_pos, ray_dir, amplitude, phase, wavelength, depth + 1));
+                    }
+                    OpticComponentKind::Laser { .. } => {
+                        // Absorb
+                    }
+                }
+            } else {
+                let end_pos = ray_start + ray_dir * 2000.0;
+                simulated.push(SimulatedBeam {
+                    start: ray_start,
+                    end: end_pos,
+                    amplitude,
+                    phase,
+                    wavelength,
+                    dir: ray_dir,
+                });
+            }
+        }
+
+        let result = simulated;
+        tracing::debug!("Simulated {} beam segments", result.len());
+        result
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -88,9 +253,29 @@ impl OpticsPanel {
                         ui.separator();
 
                         let component_tools = [
-                            (OpticComponentKind::Laser, "🔦 Laser"),
-                            (OpticComponentKind::BeamSplitter, "分 Beam Splitter"),
-                            (OpticComponentKind::Mirror, "🪞 Mirror"),
+                            (
+                                OpticComponentKind::Laser {
+                                    amplitude: 1.0,
+                                    phase: 0.0,
+                                    wavelength: 650.0,
+                                    dir: egui::vec2(1.0, 0.0), // pointing right
+                                },
+                                "🔦 Laser",
+                            ),
+                            (
+                                OpticComponentKind::BeamSplitter {
+                                    reflectivity: 0.5,
+                                    transparency: 0.5,
+                                    normal: egui::vec2(-1.0, -1.0).normalized(), // 45 degrees
+                                },
+                                "分 Beam Splitter",
+                            ),
+                            (
+                                OpticComponentKind::Mirror {
+                                    normal: egui::vec2(-1.0, -1.0).normalized(), // 45 degrees
+                                },
+                                "🪞 Mirror",
+                            ),
                             (OpticComponentKind::Lens, "🔍 Lens"),
                         ];
 
@@ -138,9 +323,62 @@ impl OpticsPanel {
 
                         ui.add_space(20.0);
                         if ui.button("🗑 Clear All").clicked() {
+                            tracing::info!("Clearing all components and lines");
                             self.components.clear();
                             self.lines.clear();
                         }
+
+                        ui.horizontal(|ui| {
+                            if ui.button("💾 Save").clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("Shine Layout", &["json"])
+                                    .save_file()
+                                {
+                                    let data = LayoutData {
+                                        components: self.components.clone(),
+                                        lines: self.lines.clone(),
+                                    };
+                                    match serde_json::to_string_pretty(&data) {
+                                        Ok(json) => {
+                                            if let Err(e) = std::fs::write(&path, json) {
+                                                tracing::error!("Failed to save layout: {}", e);
+                                            } else {
+                                                tracing::info!("Saved layout to {:?}", path);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to serialize layout: {}", e)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if ui.button("📂 Load").clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("Shine Layout", &["json"])
+                                    .pick_file()
+                                {
+                                    match std::fs::read_to_string(&path) {
+                                        Ok(json) => {
+                                            match serde_json::from_str::<LayoutData>(&json) {
+                                                Ok(data) => {
+                                                    self.components = data.components;
+                                                    self.lines = data.lines;
+                                                    tracing::info!("Loaded layout from {:?}", path);
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to parse layout: {}", e)
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to read layout file: {}", e)
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
                         ui.separator();
                         ui.label("Drag & Drop to place");
                         ui.label("Right-click: Remove");
@@ -222,7 +460,11 @@ impl OpticsPanel {
 
                                     if response.secondary_clicked() {
                                         let click_pos = s_pos + self.scroll_offset;
+                                        let before_count = self.components.len();
                                         self.components.retain(|c| c.pos.distance(click_pos) > 5.0);
+                                        if self.components.len() < before_count {
+                                            tracing::info!("Removed component at {:?}", click_pos);
+                                        }
                                         // Also remove lines near the click point if any
                                         self.lines.retain(|l| {
                                             l.start.distance(s_pos) > 5.0
@@ -296,6 +538,50 @@ impl OpticsPanel {
                                 );
                             }
 
+                            // Simulate and draw beams
+                            let simulated_beams = self.simulate_beams();
+                            for beam in simulated_beams {
+                                let alpha = ((beam.amplitude * 255.0) as u32).clamp(0, 255) as u8;
+                                let color = Color32::RED.gamma_multiply(alpha as f32 / 255.0);
+                                let stroke = Stroke::new(2.0, color);
+
+                                let start_world = beam.start + self.scroll_offset;
+                                let end_world = beam.end + self.scroll_offset;
+
+                                // Clip to rect roughly or let egui clip it
+                                painter.line_segment([start_world, end_world], stroke);
+
+                                // Draw direction arrow near the end or middle
+                                let length = beam.start.distance(beam.end);
+                                if length > 20.0 {
+                                    // Place arrow along the segment
+                                    let mut arrow_pos =
+                                        start_world + beam.dir * (length.min(100.0) / 2.0);
+                                    if length < 100.0 {
+                                        arrow_pos = start_world + beam.dir * (length * 0.8);
+                                    }
+
+                                    let arrow_len = 8.0;
+                                    let arrow_dir1 = egui::vec2(
+                                        beam.dir.x * 0.866 - beam.dir.y * 0.5,
+                                        beam.dir.x * 0.5 + beam.dir.y * 0.866,
+                                    );
+                                    let arrow_dir2 = egui::vec2(
+                                        beam.dir.x * 0.866 + beam.dir.y * 0.5,
+                                        -beam.dir.x * 0.5 + beam.dir.y * 0.866,
+                                    );
+
+                                    painter.line_segment(
+                                        [arrow_pos, arrow_pos - arrow_dir1 * arrow_len],
+                                        stroke,
+                                    );
+                                    painter.line_segment(
+                                        [arrow_pos, arrow_pos - arrow_dir2 * arrow_len],
+                                        stroke,
+                                    );
+                                }
+                            }
+
                             // Draw placed components
                             for comp in &self.components {
                                 let draw_pos = comp.pos + self.scroll_offset;
@@ -330,6 +616,11 @@ impl OpticsPanel {
                 .iter()
                 .any(|c| c.pos.distance(new_comp.pos) < 5.0)
             {
+                tracing::info!(
+                    "Placed component: {:?} at {:?}",
+                    new_comp.kind,
+                    new_comp.pos
+                );
                 self.components.push(new_comp);
             }
         }
