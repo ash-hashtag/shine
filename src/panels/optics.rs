@@ -61,6 +61,7 @@ pub struct OpticsPanel {
     pub active_line_start: Option<Pos2>,
     pub grid_size: f32,
     pub scroll_offset: egui::Vec2,
+    pub simulation_active: bool,
 }
 
 impl Default for OpticsPanel {
@@ -73,6 +74,7 @@ impl Default for OpticsPanel {
             active_line_start: None,
             grid_size: 40.0,
             scroll_offset: egui::Vec2::ZERO,
+            simulation_active: false,
         }
     }
 }
@@ -84,22 +86,74 @@ impl OpticsPanel {
         kind: OpticComponentKind,
         alpha: u8,
     ) {
-        let (mut color, label) = match kind {
-            OpticComponentKind::Laser { .. } => (Color32::RED, "L"),
-            OpticComponentKind::BeamSplitter { .. } => (Color32::BLUE, "BS"),
-            OpticComponentKind::Mirror { .. } => (Color32::GREEN, "M"),
-            OpticComponentKind::Lens => (Color32::from_rgb(100, 150, 255), "Lens"),
-        };
-        color = color.gamma_multiply(alpha as f32 / 255.0);
+        let color = match kind {
+            OpticComponentKind::Laser { .. } => Color32::RED,
+            OpticComponentKind::BeamSplitter { .. } => Color32::BLUE,
+            OpticComponentKind::Mirror { .. } => Color32::GREEN,
+            OpticComponentKind::Lens => Color32::from_rgb(100, 150, 255),
+        }
+        .gamma_multiply(alpha as f32 / 255.0);
 
-        painter.circle_filled(pos, 15.0, color);
-        painter.text(
-            pos,
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(12.0),
-            Color32::WHITE.gamma_multiply(alpha as f32 / 255.0),
-        );
+        match kind {
+            OpticComponentKind::Laser { dir, .. } => {
+                let size = 15.0;
+                let p1 = pos + dir * size;
+                let p2 = pos + egui::vec2(-dir.y, dir.x) * (size * 0.5) - dir * (size * 0.5);
+                let p3 = pos + egui::vec2(dir.y, -dir.x) * (size * 0.5) - dir * (size * 0.5);
+                painter.add(egui::Shape::convex_polygon(
+                    vec![p1, p2, p3],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
+            OpticComponentKind::BeamSplitter { normal, .. } => {
+                let size = 15.0;
+                let tangent = egui::vec2(-normal.y, normal.x);
+                let thickness = 4.0;
+                let p1 = pos + tangent * size + normal * thickness;
+                let p2 = pos - tangent * size + normal * thickness;
+                let p3 = pos - tangent * size - normal * thickness;
+                let p4 = pos + tangent * size - normal * thickness;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![p1, p2, p3, p4],
+                    color,
+                    Stroke::new(1.0, Color32::WHITE.gamma_multiply(alpha as f32 / 255.0)),
+                ));
+            }
+            OpticComponentKind::Mirror { normal } => {
+                let size = 15.0;
+                let tangent = egui::vec2(-normal.y, normal.x);
+                let thickness = 4.0;
+
+                let f1 = pos + tangent * size;
+                let f2 = pos - tangent * size;
+                let b1 = pos + tangent * size - normal * thickness;
+                let b2 = pos - tangent * size - normal * thickness;
+
+                painter.add(egui::Shape::convex_polygon(
+                    vec![f1, f2, b2, b1],
+                    color,
+                    Stroke::NONE,
+                ));
+
+                let black = Color32::BLACK.gamma_multiply(alpha as f32 / 255.0);
+                painter.add(egui::Shape::convex_polygon(
+                    vec![b1, b2, b2 - normal * thickness, b1 - normal * thickness],
+                    black,
+                    Stroke::NONE,
+                ));
+            }
+            OpticComponentKind::Lens => {
+                painter.circle_filled(pos, 15.0, color);
+                painter.text(
+                    pos,
+                    egui::Align2::CENTER_CENTER,
+                    "Lens",
+                    egui::FontId::proportional(12.0),
+                    Color32::WHITE.gamma_multiply(alpha as f32 / 255.0),
+                );
+            }
+        }
     }
 
     fn simulate_beams(&self) -> Vec<SimulatedBeam> {
@@ -116,7 +170,14 @@ impl OpticsPanel {
             } = comp.kind
             {
                 // To avoid immediate self-intersection, push from slightly outside
-                queue.push((comp.pos, dir.normalized(), amplitude, phase, wavelength, 0));
+                queue.push((
+                    comp.pos + dir.normalized() * 16.0,
+                    dir.normalized(),
+                    amplitude,
+                    phase,
+                    wavelength,
+                    0,
+                ));
             }
         }
 
@@ -162,7 +223,7 @@ impl OpticsPanel {
             }
 
             if let Some(comp) = hit_comp {
-                let hit_pos = ray_start + ray_dir * closest_t;
+                let hit_pos = comp.pos;
                 simulated.push(SimulatedBeam {
                     start: ray_start,
                     end: hit_pos,
@@ -175,17 +236,23 @@ impl OpticsPanel {
                 match comp.kind {
                     OpticComponentKind::Mirror { normal } => {
                         let dot = ray_dir.x * normal.x + ray_dir.y * normal.y;
-                        let mut new_dir = ray_dir - normal * 2.0 * dot;
-                        new_dir = new_dir.normalized();
-                        let new_phase = phase + std::f32::consts::PI;
-                        queue.push((
-                            hit_pos,
-                            new_dir,
-                            amplitude,
-                            new_phase,
-                            wavelength,
-                            depth + 1,
-                        ));
+
+                        // If dot > 0, it means the ray is hitting the back side (normal and ray are in same direction)
+                        if dot > 0.0 {
+                            // Block/Absorb light
+                        } else {
+                            let mut new_dir = ray_dir - normal * 2.0 * dot;
+                            new_dir = new_dir.normalized();
+                            let new_phase = phase + std::f32::consts::PI;
+                            queue.push((
+                                hit_pos + new_dir * 16.0,
+                                new_dir,
+                                amplitude,
+                                new_phase,
+                                wavelength,
+                                depth + 1,
+                            ));
+                        }
                     }
                     OpticComponentKind::BeamSplitter {
                         reflectivity,
@@ -197,31 +264,38 @@ impl OpticsPanel {
                         ref_dir = ref_dir.normalized();
                         let ref_phase = phase + std::f32::consts::PI;
                         queue.push((
-                            hit_pos,
+                            hit_pos + ref_dir * 16.0,
                             ref_dir,
-                            amplitude * reflectivity.sqrt(),
+                            amplitude * reflectivity,
                             ref_phase,
                             wavelength,
                             depth + 1,
                         ));
                         queue.push((
-                            hit_pos,
+                            hit_pos + ray_dir * 16.0,
                             ray_dir,
-                            amplitude * transparency.sqrt(),
+                            amplitude * transparency,
                             phase,
                             wavelength,
                             depth + 1,
                         ));
                     }
                     OpticComponentKind::Lens => {
-                        queue.push((hit_pos, ray_dir, amplitude, phase, wavelength, depth + 1));
+                        queue.push((
+                            hit_pos + ray_dir * 16.0,
+                            ray_dir,
+                            amplitude,
+                            phase,
+                            wavelength,
+                            depth + 1,
+                        ));
                     }
                     OpticComponentKind::Laser { .. } => {
                         // Absorb
                     }
                 }
             } else {
-                let end_pos = ray_start + ray_dir * 2000.0;
+                let end_pos = ray_start + ray_dir * (self.grid_size * 50.0);
                 simulated.push(SimulatedBeam {
                     start: ray_start,
                     end: end_pos,
@@ -322,10 +396,23 @@ impl OpticsPanel {
                         }
 
                         ui.add_space(20.0);
+                        if ui
+                            .button(if self.simulation_active {
+                                "⏹ Stop Simulation"
+                            } else {
+                                "▶ Simulate"
+                            })
+                            .clicked()
+                        {
+                            self.simulation_active = !self.simulation_active;
+                        }
+
+                        ui.add_space(20.0);
                         if ui.button("🗑 Clear All").clicked() {
                             tracing::info!("Clearing all components and lines");
                             self.components.clear();
                             self.lines.clear();
+                            self.simulation_active = false;
                         }
 
                         ui.horizontal(|ui| {
@@ -451,15 +538,62 @@ impl OpticsPanel {
                                     }
 
                                     if response.clicked() && !response.secondary_clicked() {
-                                        if let Some(Tool::PlaceComponent(kind)) = self.selected_tool
-                                        {
-                                            dropped_component =
-                                                Some(PlacedComponent { kind, pos: s_pos });
+                                        let click_pos = s_pos;
+                                        let mut rotated = false;
+                                        for comp in &mut self.components {
+                                            if comp.pos.distance(click_pos) < 5.0 {
+                                                match &mut comp.kind {
+                                                    OpticComponentKind::Laser { dir, .. } => {
+                                                        let current_angle = dir.y.atan2(dir.x);
+                                                        let new_angle = current_angle
+                                                            + std::f32::consts::PI / 2.0;
+                                                        *dir = egui::vec2(
+                                                            new_angle.cos(),
+                                                            new_angle.sin(),
+                                                        );
+                                                    }
+                                                    OpticComponentKind::BeamSplitter {
+                                                        normal,
+                                                        ..
+                                                    } => {
+                                                        let current_angle =
+                                                            normal.y.atan2(normal.x);
+                                                        let new_angle = current_angle
+                                                            + std::f32::consts::PI / 4.0;
+                                                        *normal = egui::vec2(
+                                                            new_angle.cos(),
+                                                            new_angle.sin(),
+                                                        );
+                                                    }
+                                                    OpticComponentKind::Mirror { normal } => {
+                                                        let current_angle =
+                                                            normal.y.atan2(normal.x);
+                                                        let new_angle = current_angle
+                                                            + std::f32::consts::PI / 4.0;
+                                                        *normal = egui::vec2(
+                                                            new_angle.cos(),
+                                                            new_angle.sin(),
+                                                        );
+                                                    }
+                                                    _ => {}
+                                                }
+                                                rotated = true;
+                                                self.simulation_active = false;
+                                                break;
+                                            }
+                                        }
+                                        if !rotated {
+                                            if let Some(Tool::PlaceComponent(kind)) =
+                                                self.selected_tool
+                                            {
+                                                dropped_component =
+                                                    Some(PlacedComponent { kind, pos: s_pos });
+                                            }
                                         }
                                     }
 
                                     if response.secondary_clicked() {
-                                        let click_pos = s_pos + self.scroll_offset;
+                                        let click_pos = s_pos; // Using snapped position (local)
                                         let before_count = self.components.len();
                                         self.components.retain(|c| c.pos.distance(click_pos) > 5.0);
                                         if self.components.len() < before_count {
@@ -539,46 +673,70 @@ impl OpticsPanel {
                             }
 
                             // Simulate and draw beams
-                            let simulated_beams = self.simulate_beams();
-                            for beam in simulated_beams {
-                                let alpha = ((beam.amplitude * 255.0) as u32).clamp(0, 255) as u8;
-                                let color = Color32::RED.gamma_multiply(alpha as f32 / 255.0);
-                                let stroke = Stroke::new(2.0, color);
+                            if self.simulation_active {
+                                let simulated_beams = self.simulate_beams();
+                                for beam in simulated_beams {
+                                    let alpha =
+                                        ((beam.amplitude * 255.0) as u32).clamp(0, 255) as u8;
+                                    let color = Color32::RED.gamma_multiply(alpha as f32 / 255.0);
+                                    let stroke = Stroke::new(2.0, color);
 
-                                let start_world = beam.start + self.scroll_offset;
-                                let end_world = beam.end + self.scroll_offset;
+                                    let start_world = beam.start + self.scroll_offset;
+                                    let end_world = beam.end + self.scroll_offset;
 
-                                // Clip to rect roughly or let egui clip it
-                                painter.line_segment([start_world, end_world], stroke);
+                                    painter.line_segment([start_world, end_world], stroke);
 
-                                // Draw direction arrow near the end or middle
-                                let length = beam.start.distance(beam.end);
-                                if length > 20.0 {
-                                    // Place arrow along the segment
-                                    let mut arrow_pos =
-                                        start_world + beam.dir * (length.min(100.0) / 2.0);
-                                    if length < 100.0 {
-                                        arrow_pos = start_world + beam.dir * (length * 0.8);
+                                    if let Some(m_pos) = mouse_pos {
+                                        let a = start_world;
+                                        let b = end_world;
+                                        let v = b - a;
+                                        let w = m_pos - a;
+                                        let v_sq = v.x * v.x + v.y * v.y;
+                                        if v_sq > 0.0 {
+                                            let t = (w.x * v.x + w.y * v.y) / v_sq;
+                                            let t = t.clamp(0.0, 1.0);
+                                            let closest_point = a + v * t;
+                                            if m_pos.distance(closest_point) < 5.0 {
+                                                egui::show_tooltip_text(
+                                                    ui.ctx(),
+                                                    egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("beam_tooltip")),
+                                                    egui::Id::new("beam_tooltip"),
+                                                    format!(
+                                                        "Amplitude: {:.2}\nPhase: {:.2} π\nWavelength: {:.1} nm",
+                                                        beam.amplitude, beam.phase / std::f32::consts::PI, beam.wavelength
+                                                    ),
+                                                );
+                                            }
+                                        }
                                     }
 
-                                    let arrow_len = 8.0;
-                                    let arrow_dir1 = egui::vec2(
-                                        beam.dir.x * 0.866 - beam.dir.y * 0.5,
-                                        beam.dir.x * 0.5 + beam.dir.y * 0.866,
-                                    );
-                                    let arrow_dir2 = egui::vec2(
-                                        beam.dir.x * 0.866 + beam.dir.y * 0.5,
-                                        -beam.dir.x * 0.5 + beam.dir.y * 0.866,
-                                    );
+                                    let length = beam.start.distance(beam.end);
+                                    let num_triangles = (length / 40.0).floor() as usize;
+                                    let num_triangles = num_triangles.max(1);
 
-                                    painter.line_segment(
-                                        [arrow_pos, arrow_pos - arrow_dir1 * arrow_len],
-                                        stroke,
-                                    );
-                                    painter.line_segment(
-                                        [arrow_pos, arrow_pos - arrow_dir2 * arrow_len],
-                                        stroke,
-                                    );
+                                    for i in 1..=num_triangles {
+                                        let t = if num_triangles == 1 {
+                                            0.5
+                                        } else {
+                                            i as f32 / (num_triangles + 1) as f32
+                                        };
+                                        let arrow_pos = start_world + beam.dir * (length * t);
+
+                                        let size = 6.0;
+                                        let p1 = arrow_pos + beam.dir * size;
+                                        let p2 = arrow_pos
+                                            + egui::vec2(-beam.dir.y, beam.dir.x) * (size * 0.5)
+                                            - beam.dir * (size * 0.5);
+                                        let p3 = arrow_pos
+                                            + egui::vec2(beam.dir.y, -beam.dir.x) * (size * 0.5)
+                                            - beam.dir * (size * 0.5);
+
+                                        painter.add(egui::Shape::convex_polygon(
+                                            vec![p1, p2, p3],
+                                            color,
+                                            Stroke::NONE,
+                                        ));
+                                    }
                                 }
                             }
 
