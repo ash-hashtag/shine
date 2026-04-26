@@ -1,10 +1,12 @@
 pub mod panels;
 
 use panels::empty::EmptyPanel;
+use panels::optics::OpticsPanel;
 
 pub struct ShineApp {
     pub name: String,
     pub empty_panel: EmptyPanel,
+    pub optics_panel: OpticsPanel,
 }
 
 impl Default for ShineApp {
@@ -12,6 +14,7 @@ impl Default for ShineApp {
         Self {
             name: "Shine".to_owned(),
             empty_panel: EmptyPanel,
+            optics_panel: OpticsPanel::default(),
         }
     }
 }
@@ -21,7 +24,7 @@ impl eframe::App for ShineApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.name);
             ui.separator();
-            self.empty_panel.ui(ui);
+            self.optics_panel.ui(ui);
         });
     }
 }
