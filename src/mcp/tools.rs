@@ -427,12 +427,11 @@ fn decompose_matrix(args: &Map<String, Value>) -> Result<Value, String> {
 // ---- projects ------------------------------------------------------------------
 
 pub fn read_project(path: &Path) -> Result<Project, String> {
-    let json =
-        std::fs::read_to_string(path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
-    if !Project::is_project_json(&json) {
+    let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
+    if !Project::is_project(&bytes) {
         return Err(format!("{} is not a Shine project file", path.display()));
     }
-    Project::from_json(&json)
+    Project::from_bytes(&bytes)
 }
 
 fn simulate_project(args: &Map<String, Value>) -> Result<Value, String> {
@@ -511,7 +510,7 @@ fn save_project(args: &Map<String, Value>) -> Result<Value, String> {
         .unwrap_or("Circuit from AI");
     let mut project = Project::new();
     project.add_schematic(name, built.schematic);
-    std::fs::write(path, project.to_json())
+    std::fs::write(path, project.to_bytes())
         .map_err(|e| format!("can't write {}: {e}", path.display()))?;
     Ok(
         json!({"path": path.display().to_string(), "document": name, "note": "Open this file in Shine (File → Open) to see and edit the circuit."}),
@@ -586,7 +585,7 @@ pub fn tools() -> Vec<Tool> {
                     "type": "object",
                     "properties": {
                         "circuit": circuit_schema(),
-                        "path": {"type": "string", "description": "Where to write the .json project"},
+                        "path": {"type": "string", "description": "Where to write the project, e.g. circuit.shine"},
                         "name": {"type": "string", "description": "Document name"},
                         "overwrite": {"type": "boolean", "default": false}
                     },
@@ -758,7 +757,7 @@ mod tests {
     fn projects_round_trip_through_files() {
         let dir = std::env::temp_dir().join(format!("shine-mcp-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("ai.json");
+        let path = dir.join("ai.shine");
         let saved = save_project(&args(
             json!({"circuit": mzi(0.0), "path": path, "name": "MZI by AI"}),
         ))
@@ -793,8 +792,8 @@ mod tests {
         let mut broken = crate::panels::schematic::model::Schematic::default();
         broken.add(BlockRef::Component(DocId(999)), egui::Pos2::ZERO);
         project.add_schematic("Broken", broken);
-        let editor = dir.join("editor.json");
-        std::fs::write(&editor, project.to_json()).unwrap();
+        let editor = dir.join("editor.shine");
+        std::fs::write(&editor, project.to_bytes()).unwrap();
         let out = simulate_project(&args(json!({"path": editor}))).unwrap();
         let docs = out["documents"].as_array().unwrap();
         assert_eq!(docs.len(), 4);
@@ -814,13 +813,13 @@ mod tests {
                 .contains("not a Shine project")
         );
         assert!(
-            simulate_project(&args(json!({"path": dir.join("missing.json")})))
+            simulate_project(&args(json!({"path": dir.join("missing.shine")})))
                 .unwrap_err()
                 .contains("can't read")
         );
         assert!(
             save_project(&args(
-                json!({"circuit": mzi(0.0), "path": dir.join("no/dir/x.json")})
+                json!({"circuit": mzi(0.0), "path": dir.join("no/dir/x.shine")})
             ))
             .unwrap_err()
             .contains("can't write")

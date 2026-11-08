@@ -170,33 +170,25 @@ impl Layout {
     }
 }
 
-/// Version of the saved file format.
+/// Last JSON layout version written by earlier releases.
 pub const LAYOUT_VERSION: u32 = 1;
 
-/// On-disk layout. Version 0 files (no `version` field) stored positions in
-/// screen space with an arbitrary offset; they are snapped onto the grid.
-#[derive(Serialize, Deserialize)]
+/// Layout files saved as JSON by earlier versions. Version 0 files (no
+/// `version` field) stored positions in screen space with an arbitrary
+/// offset; they are snapped onto the grid. New files use the binary project
+/// format instead.
+#[derive(Deserialize)]
 struct LayoutFile {
     #[serde(default)]
     version: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     cell_um: Option<f64>,
     components: Vec<PlacedComponent>,
     lines: Vec<Line>,
 }
 
-pub fn to_json(layout: &Layout, cell_um: f64) -> String {
-    serde_json::to_string_pretty(&LayoutFile {
-        version: LAYOUT_VERSION,
-        cell_um: Some(cell_um),
-        components: layout.components.clone(),
-        lines: layout.lines.clone(),
-    })
-    .expect("layout is always serialisable")
-}
-
-/// Parse a saved layout and the cell size it was saved with, if any.
-pub fn from_json(json: &str) -> Result<(Layout, Option<f64>), String> {
+/// Import a layout saved as JSON by an earlier version, and its cell size if recorded.
+pub fn from_legacy_json(json: &str) -> Result<(Layout, Option<f64>), String> {
     let file: LayoutFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
     if file.version > LAYOUT_VERSION {
         return Err(format!(
@@ -331,24 +323,12 @@ mod tests {
     }
 
     #[test]
-    fn json_round_trip_keeps_everything() {
-        let layout = Layout {
-            components: OpticComponentKind::palette()
-                .into_iter()
-                .enumerate()
-                .map(|(i, kind)| PlacedComponent {
-                    kind,
-                    pos: cell_center(i as i32, -1),
-                })
-                .collect(),
-            lines: vec![Line {
-                start: cell_center(0, 0),
-                end: cell_center(2, 2),
-            }],
-        };
-        let (back, cell) = from_json(&to_json(&layout, 2.5)).unwrap();
-        assert_eq!(back, layout);
+    fn imports_version_one_json() {
+        let json = r#"{"version": 1, "cell_um": 2.5, "components": [
+            {"kind": {"PhaseShifter": {"phase": 1.0}}, "pos": {"x": 20.0, "y": 60.0}}], "lines": []}"#;
+        let (layout, cell) = from_legacy_json(json).unwrap();
         assert_eq!(cell, Some(2.5));
+        assert_eq!(layout.components[0].pos, cell_center(0, 1));
     }
 
     #[test]
@@ -361,7 +341,7 @@ mod tests {
             ],
             "lines": [{"start": {"x": 217.5, "y": 102.0}, "end": {"x": 297.5, "y": 142.0}}]
         }"#;
-        let (layout, cell) = from_json(json).unwrap();
+        let (layout, cell) = from_legacy_json(json).unwrap();
         assert_eq!(cell, None);
         assert_eq!(layout.components[0].pos, cell_center(5, 2));
         assert_eq!(layout.components[1].pos, cell_center(6, 2));
@@ -370,8 +350,8 @@ mod tests {
 
     #[test]
     fn rejects_garbage_and_future_versions() {
-        assert!(from_json("not json").is_err());
+        assert!(from_legacy_json("not json").is_err());
         let future = r#"{"version": 99, "components": [], "lines": []}"#;
-        assert!(from_json(future).unwrap_err().contains("newer"));
+        assert!(from_legacy_json(future).unwrap_err().contains("newer"));
     }
 }

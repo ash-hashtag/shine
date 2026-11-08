@@ -1,6 +1,7 @@
 pub mod beam_sim;
 pub mod chips;
 pub mod empty;
+pub mod file_format;
 pub mod history;
 pub mod optics;
 pub mod project;

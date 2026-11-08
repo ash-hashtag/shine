@@ -808,7 +808,7 @@ mod tests {
             },
         );
         s.wire_settings.model = WireModel::Geometric { um_per_unit: 0.5 };
-        let back: Schematic = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        let back: Schematic = postcard::from_bytes(&postcard::to_allocvec(&s).unwrap()).unwrap();
         assert_eq!(back, s);
         // Ids keep increasing after a reload.
         let mut back = back;

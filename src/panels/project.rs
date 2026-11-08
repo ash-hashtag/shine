@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::beam_sim::{FreeSpaceBlock, port_order};
+use super::file_format;
 use super::optics::{Line, OpticsPanel, PlacedComponent, model::Layout};
 use super::schematic::SchematicPanel;
 use super::schematic::model::{BlockRef, Builtin, Schematic};
@@ -129,7 +130,6 @@ impl Document {
 
 #[derive(Serialize, Deserialize)]
 struct ProjectFile {
-    version: u32,
     next_id: u64,
     documents: Vec<DocumentFile>,
 }
@@ -144,7 +144,6 @@ struct DocumentFile {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
 enum ContentFile {
     Layout {
         cell_um: f64,
@@ -155,8 +154,6 @@ enum ContentFile {
         schematic: Schematic,
     },
 }
-
-pub const PROJECT_VERSION: u32 = 1;
 
 /// Read-only summary of every document, for drawing and placing instances.
 #[derive(Clone, Debug, PartialEq)]
@@ -388,30 +385,23 @@ impl Project {
     pub fn fingerprint(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for d in &self.documents {
-            serde_json::to_string(&d.to_file())
+            postcard::to_allocvec(&d.to_file())
                 .expect("serialisable")
                 .hash(&mut hasher);
         }
         hasher.finish()
     }
 
-    pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(&ProjectFile {
-            version: PROJECT_VERSION,
+    /// Encode the project in Shine's binary file format.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        file_format::encode(&ProjectFile {
             next_id: self.next_id,
             documents: self.documents.iter().map(Document::to_file).collect(),
         })
-        .expect("project is serialisable")
     }
 
-    pub fn from_json(json: &str) -> Result<Self, String> {
-        let file: ProjectFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
-        if file.version > PROJECT_VERSION {
-            return Err(format!(
-                "project format {} is newer than supported ({PROJECT_VERSION})",
-                file.version
-            ));
-        }
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let file: ProjectFile = file_format::decode(bytes)?;
         let documents: Vec<Document> = file
             .documents
             .into_iter()
@@ -430,9 +420,9 @@ impl Project {
         })
     }
 
-    /// Whether `json` looks like a project file rather than a single layout.
-    pub fn is_project_json(json: &str) -> bool {
-        serde_json::from_str::<serde_json::Value>(json).is_ok_and(|v| v.get("documents").is_some())
+    /// Whether `bytes` are a Shine project file.
+    pub fn is_project(bytes: &[u8]) -> bool {
+        file_format::is_shine(bytes)
     }
 }
 
@@ -722,26 +712,55 @@ mod tests {
     }
 
     #[test]
-    fn json_round_trip_and_fingerprint() {
+    fn binary_round_trip_and_fingerprint() {
         let mut p = Project::new();
         let fs = p.add_layout("FS", free_space_mzi(), 7.5);
         publish(&mut p, fs, "FZ");
         let mut s = Schematic::default();
         s.add(BlockRef::Component(fs), Pos2::ZERO);
+        for block in Builtin::palette() {
+            s.add(b(block), Pos2::new(1.0, 2.0));
+        }
         p.add_schematic("Top", s);
+        let mut every_part = Layout::default();
+        for (k, kind) in crate::panels::optics::OpticComponentKind::palette()
+            .into_iter()
+            .enumerate()
+        {
+            every_part.components.push(PlacedComponent {
+                kind,
+                pos: cell_center(k as i32, 0),
+            });
+        }
+        every_part.lines.push(Line {
+            start: cell_center(0, 0),
+            end: cell_center(3, 3),
+        });
+        p.add_layout("Parts", every_part, 1.0);
 
-        let json = p.to_json();
-        assert!(Project::is_project_json(&json));
-        assert!(!Project::is_project_json(
-            r#"{"components": [], "lines": []}"#
-        ));
-        let back = Project::from_json(&json).unwrap();
-        assert_eq!(back.to_json(), json);
+        let bytes = p.to_bytes();
+        assert!(Project::is_project(&bytes));
+        assert!(!Project::is_project(br#"{"components": [], "lines": []}"#));
+        let back = Project::from_bytes(&bytes).unwrap();
+        assert_eq!(back.to_bytes(), bytes, "every block and part survives");
         assert_eq!(back.fingerprint(), p.fingerprint());
         let Content::Layout(l) = &back.doc(fs).unwrap().content else {
             panic!()
         };
         assert_eq!(l.cell_um, 7.5);
+
+        // The same content as pretty JSON would be several times larger.
+        let json = serde_json::to_vec_pretty(&ProjectFile {
+            next_id: p.next_id,
+            documents: p.documents.iter().map(Document::to_file).collect(),
+        })
+        .unwrap();
+        assert!(
+            bytes.len() * 3 < json.len(),
+            "{} bytes vs {} bytes of JSON",
+            bytes.len(),
+            json.len()
+        );
 
         // New ids never collide with loaded ones.
         let mut back = back;
@@ -755,12 +774,12 @@ mod tests {
         }
         assert_ne!(back.fingerprint(), before);
 
-        assert!(Project::from_json("{").is_err());
+        assert!(Project::from_bytes(b"{").is_err());
         assert!(
-            Project::from_json(r#"{"version": 9, "next_id": 1, "documents": []}"#)
+            Project::from_bytes(&bytes[..bytes.len() / 2])
                 .err()
                 .unwrap()
-                .contains("newer")
+                .starts_with("damaged")
         );
     }
 

@@ -5,6 +5,7 @@ use std::path::Path;
 use egui::{Color32, Key, Ui};
 
 use super::chips::ChipBrowser;
+use super::file_format;
 use super::optics::examples::layout_examples;
 use super::optics::input::{Action, SHORTCUTS};
 use super::optics::model::{self, Layout};
@@ -46,7 +47,7 @@ pub struct Workspace {
     pub dialog: Option<DocumentDialog>,
     pub status: Option<(String, f64)>,
     /// Files read asynchronously (browser file picker), opened next frame.
-    pub incoming: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    pub incoming: std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>,
     ctx: Option<egui::Context>,
     time: f64,
 }
@@ -161,36 +162,37 @@ impl Workspace {
     // ---- files ------------------------------------------------------------
 
     pub fn save_project_to(&mut self, path: &Path) -> Result<(), String> {
-        std::fs::write(path, self.project.to_json()).map_err(|e| e.to_string())?;
+        std::fs::write(path, self.project.to_bytes()).map_err(|e| e.to_string())?;
         self.project.path = Some(path.to_owned());
         Ok(())
     }
 
-    /// Open a project, or import a single saved layout as a new document.
+    /// Open a project, or import a JSON layout from an earlier version.
     pub fn open_path(&mut self, path: &Path) -> Result<(), String> {
-        let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let name = path
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Layout".into());
-        self.open_json(&name, &json)?;
-        if Project::is_project_json(&json) {
+        self.open_bytes(&name, &bytes)?;
+        if Project::is_project(&bytes) {
             self.project.path = Some(path.to_owned());
         }
         Ok(())
     }
 
-    /// Open a project from its JSON, or import a single saved layout named `name`.
-    pub fn open_json(&mut self, name: &str, json: &str) -> Result<(), String> {
-        if Project::is_project_json(json) {
-            self.project = Project::from_json(json)?;
+    /// Open a Shine project, or import a JSON layout from an earlier version as `name`.
+    pub fn open_bytes(&mut self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        if Project::is_project(bytes) {
+            self.project = Project::from_bytes(bytes)?;
             self.tabs.clear();
             self.active = None;
             if let Some(first) = self.project.documents.first().map(|d| d.id) {
                 self.open_tab(first);
             }
         } else {
-            let (layout, cell_um) = model::from_json(json)?;
+            let json = std::str::from_utf8(bytes).map_err(|_| "not a Shine project".to_owned())?;
+            let (layout, cell_um) = model::from_legacy_json(json)?;
             let id = self
                 .project
                 .add_layout(name, layout, cell_um.unwrap_or(10.0));
@@ -227,10 +229,10 @@ impl Workspace {
 
     /// Files picked in the browser arrive asynchronously; open them here.
     fn receive_files(&mut self) {
-        let files: Vec<(String, String)> =
+        let files: Vec<(String, Vec<u8>)> =
             std::mem::take(&mut *self.incoming.lock().expect("not poisoned"));
-        for (name, json) in files {
-            match self.open_json(&name, &json) {
+        for (name, bytes) in files {
+            match self.open_bytes(&name, &bytes) {
                 Ok(()) => self.notify(format!("Opened {name}")),
                 Err(e) => self.notify(format!("Open failed: {e}")),
             }
@@ -242,8 +244,8 @@ impl Workspace {
         let path = match (&self.project.path, choose_path) {
             (Some(p), false) => p.clone(),
             _ => match rfd::FileDialog::new()
-                .add_filter("Shine project", &["json"])
-                .set_file_name("project.json")
+                .add_filter("Shine project", &[file_format::EXTENSION])
+                .set_file_name(format!("project.{}", file_format::EXTENSION))
                 .save_file()
             {
                 Some(p) => p,
@@ -262,8 +264,9 @@ impl Workspace {
     /// In the browser, saving downloads the project file.
     #[cfg(target_arch = "wasm32")]
     fn save(&mut self, _choose_path: bool) {
-        match crate::web::download("project.json", &self.project.to_json()) {
-            Ok(()) => self.notify("Downloaded project.json"),
+        let name = format!("project.{}", file_format::EXTENSION);
+        match crate::web::download(&name, &self.project.to_bytes()) {
+            Ok(()) => self.notify(format!("Downloaded {name}")),
             Err(e) => self.notify(format!("Download failed: {e}")),
         }
     }
@@ -271,7 +274,10 @@ impl Workspace {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Shine project or layout", &["json"])
+            .add_filter(
+                "Shine project or JSON layout",
+                &[file_format::EXTENSION, "json"],
+            )
             .pick_file()
         else {
             return;
@@ -291,15 +297,22 @@ impl Workspace {
         let ctx = self.ctx.clone();
         wasm_bindgen_futures::spawn_local(async move {
             let Some(file) = rfd::AsyncFileDialog::new()
-                .add_filter("Shine project or layout", &["json"])
+                .add_filter(
+                    "Shine project or JSON layout",
+                    &[file_format::EXTENSION, "json"],
+                )
                 .pick_file()
                 .await
             else {
                 return;
             };
-            let name = file.file_name().trim_end_matches(".json").to_owned();
-            let json = String::from_utf8_lossy(&file.read().await).into_owned();
-            incoming.lock().expect("not poisoned").push((name, json));
+            let name = file.file_name();
+            let name = name
+                .rsplit_once('.')
+                .map_or(name.as_str(), |(stem, _)| stem)
+                .to_owned();
+            let bytes = file.read().await;
+            incoming.lock().expect("not poisoned").push((name, bytes));
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }

@@ -7,6 +7,7 @@ Optics simulator for designing photonic chips
 ```sh
 cargo run --release                                  # editor
 cargo run --release -- --log-file logs/shine.log     # also log to a file
+cargo run --release --bin shine-mcp                  # MCP server for AI assistants (stdio)
 SHINE_LOG=debug cargo run                            # log filter (or --log-level, RUST_LOG)
 cargo run --release --no-default-features --example matmul   # library only
 ```
@@ -43,7 +44,9 @@ In a schematic, components appear as boxes with their initials; hover for the de
 drag from a port to another port to draw a waveguide, and press **Tab** (or double-click)
 to open the component's definition. Edits there update every instance. Waveguides are ideal
 by default; switch to *From drawing* in the inspector, or give a waveguide a fixed length,
-to include propagation phase. Projects save as one JSON file (File → Save).
+to include propagation phase. Projects save as one compact binary `.shine` file
+(File → Save): a `SHNE` header and format version followed by a postcard-encoded body,
+about 5× smaller than compact JSON. JSON layouts from earlier versions can still be opened.
 
 ## Library
 

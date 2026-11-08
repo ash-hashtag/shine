@@ -209,13 +209,31 @@ impl OpticsPanel {
         self.notify("New layout");
     }
 
+    /// Save as a Shine project holding just this layout.
     pub fn save_to(&self, path: &std::path::Path) -> Result<(), String> {
-        std::fs::write(path, model::to_json(&self.layout, self.cell_um)).map_err(|e| e.to_string())
+        let mut project = crate::panels::project::Project::new();
+        project.add_layout("Layout", self.layout.clone(), self.cell_um);
+        std::fs::write(path, project.to_bytes()).map_err(|e| e.to_string())
     }
 
+    /// Load the first layout of a Shine project, or a JSON layout from an earlier version.
     pub fn load_from(&mut self, path: &std::path::Path) -> Result<(), String> {
-        let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let (layout, cell_um) = model::from_json(&json)?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let (layout, cell_um) = if crate::panels::project::Project::is_project(&bytes) {
+            let project = crate::panels::project::Project::from_bytes(&bytes)?;
+            project
+                .documents
+                .iter()
+                .find_map(|d| match &d.content {
+                    crate::panels::project::Content::Layout(p) => {
+                        Some((p.layout.clone(), Some(p.cell_um)))
+                    }
+                    _ => None,
+                })
+                .ok_or("the project has no free-space layout")?
+        } else {
+            model::from_legacy_json(&String::from_utf8_lossy(&bytes))?
+        };
         self.editor.cancel_grab(&mut self.layout);
         self.layout = layout;
         if let Some(cell_um) = cell_um {
@@ -229,7 +247,7 @@ impl OpticsPanel {
     #[cfg(not(target_arch = "wasm32"))]
     fn save_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Shine Layout", &["json"])
+            .add_filter("Shine project", &[super::file_format::EXTENSION])
             .save_file()
         else {
             return;
@@ -246,7 +264,10 @@ impl OpticsPanel {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Shine Layout", &["json"])
+            .add_filter(
+                "Shine project or JSON layout",
+                &[super::file_format::EXTENSION, "json"],
+            )
             .pick_file()
         else {
             return;

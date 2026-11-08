@@ -245,24 +245,30 @@ fn unpublishing_and_deleting_respect_users() {
 fn project_files_round_trip_and_layouts_import() {
     let dir = std::env::temp_dir().join(format!("shine-workspace-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("project.json");
+    let path = dir.join("project.shine");
 
     let mut ws = Workspace::default();
     ws.load_schematic_example(2);
     ws.save_project_to(&path).unwrap();
     assert_eq!(ws.project.path.as_deref(), Some(path.as_path()));
+    assert_eq!(
+        &std::fs::read(&path).unwrap()[..4],
+        b"SHNE",
+        "binary, not JSON"
+    );
 
     let mut other = Workspace::default();
     other.open_path(&path).unwrap();
     assert_eq!(other.project.documents.len(), ws.project.documents.len());
     assert_eq!(other.tabs.len(), 1);
-    assert_eq!(other.project.to_json(), ws.project.to_json());
+    assert_eq!(other.project.to_bytes(), ws.project.to_bytes());
+    assert_eq!(other.project.path.as_deref(), Some(path.as_path()));
 
-    // A single saved layout is imported as a new document.
+    // A JSON layout saved by an earlier version is imported as a new document.
     let layout_path = dir.join("my layout.json");
     std::fs::write(
         &layout_path,
-        model::to_json(&crate::panels::optics::examples::fan_out(), 2.0),
+        r#"{"version": 1, "cell_um": 2.0, "components": [{"kind": "Detector", "pos": {"x": 20.0, "y": 20.0}}], "lines": []}"#,
     )
     .unwrap();
     let count = other.project.documents.len();
@@ -272,11 +278,42 @@ fn project_files_round_trip_and_layouts_import() {
     assert_eq!(other.project.doc(id).unwrap().name, "my layout");
     assert_eq!(layout(&mut other, id).cell_um, 2.0);
 
-    assert!(other.open_path(&dir.join("missing.json")).is_err());
+    // Browser uploads arrive as bytes and open on the next frame.
+    other
+        .incoming
+        .lock()
+        .unwrap()
+        .push(("upload".into(), ws.project.to_bytes()));
+    other
+        .incoming
+        .lock()
+        .unwrap()
+        .push(("junk".into(), vec![0xff, 0x00]));
+    Harness::new().frame(&mut other, Vec::new());
+    assert_eq!(other.project.to_bytes(), ws.project.to_bytes());
+    assert!(other.status.as_ref().unwrap().0.contains("Open failed"));
+
+    assert!(other.open_path(&dir.join("missing.shine")).is_err());
     std::fs::write(dir.join("bad.json"), "{").unwrap();
     assert!(other.open_path(&dir.join("bad.json")).is_err());
-    assert!(ws.save_project_to(&dir.join("no/such/dir/p.json")).is_err());
+    assert!(
+        ws.save_project_to(&dir.join("no/such/dir/p.shine"))
+            .is_err()
+    );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn examples_open_by_slug() {
+    let mut ws = Workspace::default();
+    assert!(ws.open_example("optical-dft"));
+    assert_eq!(
+        ws.project.doc(ws.active.unwrap()).unwrap().name,
+        "Optical DFT"
+    );
+    assert!(ws.open_example("mach-zehnder-interferometer"));
+    assert!(ws.project.doc(ws.active.unwrap()).unwrap().is_layout());
+    assert!(!ws.open_example("no-such-example"));
 }
 
 #[test]

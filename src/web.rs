@@ -57,15 +57,16 @@ pub async fn start(canvas_id: String, example: Option<String>) -> Result<(), JsV
 }
 
 /// Offer `contents` to the user as a downloaded file.
-pub fn download(name: &str, contents: &str) -> Result<(), String> {
+pub fn download(name: &str, contents: &[u8]) -> Result<(), String> {
     let fail = |e: JsValue| format!("{e:?}");
     let document = web_sys::window()
         .and_then(|w| w.document())
         .ok_or("no document")?;
-    let parts = js_sys::Array::of1(&JsValue::from_str(contents));
+    let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(contents));
     let options = web_sys::BlobPropertyBag::new();
-    options.set_type("application/json");
-    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &options).map_err(fail)?;
+    options.set_type("application/octet-stream");
+    let blob =
+        web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options).map_err(fail)?;
     let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(fail)?;
     let anchor: web_sys::HtmlAnchorElement = document
         .create_element("a")
