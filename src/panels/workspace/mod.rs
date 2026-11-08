@@ -21,6 +21,9 @@ pub enum ExamplesTab {
     Chips,
 }
 
+/// Files (name, bytes) handed over from asynchronous browser file pickers.
+pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+
 /// "Save as component" / rename dialog.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentDialog {
@@ -47,7 +50,7 @@ pub struct Workspace {
     pub dialog: Option<DocumentDialog>,
     pub status: Option<(String, f64)>,
     /// Files read asynchronously (browser file picker), opened next frame.
-    pub incoming: std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>,
+    pub incoming: Inbox,
     ctx: Option<egui::Context>,
     time: f64,
 }
