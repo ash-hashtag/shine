@@ -1,0 +1,16 @@
+# Cloudflare static assets headers.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Astro's bundled files have content hashes in their names.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The WebAssembly app keeps fixed names, so always revalidate.
+/pkg/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/screenshots/*
+  Cache-Control: public, max-age=86400

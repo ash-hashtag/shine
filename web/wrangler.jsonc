@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Static site on Workers static assets: the home page and /app, the
+  // WebAssembly editor. Build first with ../scripts/build-web.sh, then
+  // run `npm run deploy` here.
+  "name": "shine",
+  "compatibility_date": "2026-10-20",
+  "assets": {
+    "directory": "./dist",
+    // /app serves /app/index.html; /app/ and /app resolve to the same page.
+    "html_handling": "auto-trailing-slash",
+    // Unknown paths get dist/404.html with a 404 status.
+    "not_found_handling": "404-page"
+  }
+}

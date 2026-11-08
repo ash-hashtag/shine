@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+
+const base = import.meta.env.BASE_URL;
+---
+
+<Base title="Not found · Shine" description="This page does not exist.">
+  <main class="wrap hero">
+    <h1>Nothing here.</h1>
+    <p class="lead">That page doesn't exist. The simulator and the home page do.</p>
+    <div class="actions">
+      <a class="button primary" href={`${base}app/`}>Open the app</a>
+      <a class="button" href={base}>Home page</a>
+    </div>
+  </main>
+</Base>

@@ -5,9 +5,14 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "deploy": "wrangler deploy",
+    "cf:dev": "wrangler dev --ip 127.0.0.1"
   },
   "dependencies": {
     "astro": "7.4.2"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
   }
 }

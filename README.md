@@ -25,6 +25,20 @@ scripts/build-web.sh --screenshots  # also refresh the screenshots (headless Chr
 cd web && npm run dev               # live-reload the site
 ```
 
+### Deploying to Cloudflare Workers
+
+The site deploys as Workers static assets (`web/wrangler.jsonc`, no Worker script):
+
+```sh
+scripts/build-web.sh                # build web/dist
+cd web && npx wrangler login        # once
+npm run cf:dev                      # optional: serve dist on the local Workers runtime
+npm run deploy                      # wrangler deploy
+```
+
+`web/public/_headers` sets caching: hashed `/_astro/*` files are immutable, while the
+WebAssembly app in `/pkg/*` always revalidates because its file names don't change.
+
 Needs the `wasm32-unknown-unknown` target and a `wasm-bindgen` CLI matching the version in
 `Cargo.lock` (`cargo install wasm-bindgen-cli --version <version>`); the script checks this.
 
