@@ -24,11 +24,50 @@ fn init_logging() {
         .try_init();
 }
 
+/// Panics also reach the page: `window.shineFatal(message)` (defined by the
+/// /app page) shows them instead of leaving a frozen canvas.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        console_error_panic_hook::hook(info);
+        let report = web_sys::window()
+            .and_then(|w| js_sys::Reflect::get(&w, &JsValue::from_str("shineFatal")).ok())
+            .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
+        if let Some(report) = report {
+            let _ = report.call1(&JsValue::NULL, &JsValue::from_str(&info.to_string()));
+        }
+    }));
+}
+
+/// WebGL2 unless `renderer=webgpu` is in the query. WebGPU is still uneven
+/// across browsers (Firefox crashes the page with it), while WebGL2 works
+/// everywhere eframe runs.
+fn web_options(query: &str) -> eframe::WebOptions {
+    let mut options = eframe::WebOptions::default();
+    let webgpu = query
+        .trim_start_matches('?')
+        .split('&')
+        .any(|p| p == "renderer=webgpu");
+    if !webgpu
+        && let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup
+    {
+        setup.instance_descriptor.backends = eframe::wgpu::Backends::GL;
+    }
+    tracing::info!(
+        "Renderer: {}",
+        if webgpu {
+            "WebGPU (with WebGL fallback)"
+        } else {
+            "WebGL2"
+        }
+    );
+    options
+}
+
 /// Start Shine on the canvas with id `canvas_id`. `query` is the page's URL
 /// query (see `Workspace::apply_url_query`), e.g. `?example=optical-dft`.
 #[wasm_bindgen]
 pub async fn start(canvas_id: String, query: Option<String>) -> Result<(), JsValue> {
-    console_error_panic_hook::set_once();
+    install_panic_hook();
     init_logging();
     let canvas = web_sys::window()
         .and_then(|w| w.document())
@@ -39,7 +78,7 @@ pub async fn start(canvas_id: String, query: Option<String>) -> Result<(), JsVal
     runner
         .start(
             canvas,
-            eframe::WebOptions::default(),
+            web_options(query.as_deref().unwrap_or_default()),
             Box::new(move |_cc| {
                 let mut app = ShineApp::default();
                 if let Some(query) = query.as_deref() {
