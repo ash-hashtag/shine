@@ -12,13 +12,14 @@ const keys: [string, string][] = [
   ["Shift D", "Duplicate"],
   ["Shift A", "Add menu"],
   ["Tab", "Open a component"],
+  ["Drag a port", "Wire it up"],
   ["Space", "Run / stop simulation"],
   ["Ctrl Z", "Undo"],
 ];
 
 const title = "Shine — photonic circuit simulator";
 const description =
-  "Design optical circuits from free-space benches to on-chip waveguides, reuse them as components, and simulate them exactly — in the browser, from Rust, or through an AI assistant.";
+  "Design optical circuits from beam splitters to an 8-bit photonic adder, reuse them as components, and simulate light and electronics together — in the browser, from Rust, or through an AI assistant.";
 
 // schema.org description for search engines.
 const site = Astro.site;
@@ -31,8 +32,10 @@ const structuredData = {
   applicationSubCategory: "Photonic circuit simulation",
   operatingSystem: "Web browser, Linux, macOS, Windows",
   featureList: [
-    "Free-space optics layouts with exact interference",
-    "Waveguide schematics with reusable components",
+    "Free-space optics with exact interference",
+    "Reusable components connected by waveguides and signal wires",
+    "Mixed-signal simulation: detectors, registers, clock and function cells",
+    "An 8-bit adder and an accumulator computed with light",
     "MZI mesh programming for optical matrix multiplication",
     "Wavelength sweeps of rings, interleavers and WDM demultiplexers",
     "Model Context Protocol server for AI assistants",
@@ -40,7 +43,7 @@ const structuredData = {
   ...(site && {
     url: new URL(base, site).href,
     image: new URL(`${base}screenshots/og.webp`, site).href,
-    screenshot: ["components", "free-space", "dft", "wdm"].map((n) => new URL(`${base}screenshots/${n}.webp`, site).href),
+    screenshot: ["adder", "full-adder", "accumulator", "components", "free-space", "dft", "wdm"].map((n) => new URL(`${base}screenshots/${n}.webp`, site).href),
   }),
 };
 
@@ -85,22 +88,23 @@ const mcp = `{
     <div class="wrap hero">
       <h1>Design photonic circuits and watch the light.</h1>
       <p class="lead">
-        Shine is a simulator for optical circuits, from beam splitters on a bench to waveguide
-        networks on a chip. It solves interference, resonances and feedback loops exactly, lets
-        you turn any design into a reusable component, and runs right here in your browser.
+        Shine is a simulator for optical circuits, from beam splitters on a bench to a chip that
+        adds numbers with light. It solves interference, resonances and feedback loops exactly,
+        runs the electronics around them, lets you turn any design into a reusable component,
+        and runs right here in your browser.
       </p>
       <div class="actions">
         <a class="button primary" href={app}>Open the app</a>
-        <a class="button" href={`${app}?example=reusable-free-space-component`}>Try an example</a>
+        <a class="button" href={`${app}?example=8-bit-photonic-adder`}>Try the 8-bit adder</a>
       </div>
       <img
         class="shot"
         fetchpriority="high"
         decoding="async"
-        src={shot("components")}
+        src={shot("adder")}
         width="1400"
         height="900"
-        alt="Shine editor showing a laser feeding two instances of a free-space Mach–Zehnder component, with detector readings."
+        alt="An 8-bit photonic adder in Shine: two number inputs, 100 and 55, feed eight full-adder components whose sums light up a display showing 155."
       />
     </div>
 
@@ -108,9 +112,43 @@ const mcp = `{
       <div class="wrap">
         <h2>From a bench to a chip</h2>
         <p class="section-intro">
-          Two editors share one simulator. Lay out free-space optics on a grid, or wire blocks
-          together with waveguides. Every result updates as you edit.
+          One grid holds everything: free-space parts, component boxes, waveguides between them,
+          and signal wires for the electronics. Every result updates as you edit.
         </p>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Arithmetic with light</h3>
+            <p>
+              A full adder in Shine is built from parts you can inspect: an interferometer whose
+              phase shifters are driven by the input bits computes the sum, and a thresholded
+              detector counting lit lasers computes the carry. Eight of them, carries chained,
+              make an 8-bit adder.
+            </p>
+            <ul>
+              <li>Click a bit of either number and watch the result change.</li>
+              <li>Press <kbd>Tab</kbd> on a full adder to open its optics.</li>
+            </ul>
+            <a href={`${app}?example=8-bit-photonic-adder&tab=full-adder`}>Open the full adder →</a>
+          </div>
+          <img class="shot" src={shot("full-adder")} width="1400" height="900" loading="lazy" decoding="async"
+            alt="The full-adder component: input pins drive phase shifters in a free-space interferometer and three lasers aimed at a threshold detector." />
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Memory and a clock</h3>
+            <p>
+              Registers store their inputs on each clock tick, number inputs and displays connect a
+              circuit to the outside, and function cells compute anything you can write as an
+              expression over signals and received light. Feed an adder's result back into a
+              register and it counts.
+            </p>
+            <a href={`${app}?example=photonic-accumulator`}>Open the accumulator →</a>
+          </div>
+          <img class="shot" src={shot("accumulator")} width="1400" height="900" loading="lazy" decoding="async"
+            alt="A photonic accumulator: a register's outputs feed eight full adders whose sums feed back into the register." />
+        </div>
 
         <div class="feature">
           <div class="text">
@@ -130,18 +168,19 @@ const mcp = `{
           <div class="text">
             <h3>Reusable components</h3>
             <p>
-              Save any layout or schematic as a component with a name, initials and description.
-              It becomes a box with ports you can drop anywhere and connect with waveguides.
+              Save any layout as a component with a name, initials and description. It becomes a
+              box: light ports on its sides, signal terminals on top and bottom. Drop it anywhere
+              and wire it up.
             </p>
             <ul>
               <li>Hover a box to read its description.</li>
               <li>Press <kbd>Tab</kbd> to open its definition in its own tab.</li>
               <li>Edits there update every place it is used.</li>
             </ul>
-            <a href={`${app}?example=reusable-free-space-component`}>Open the component example →</a>
+            <a href={`${app}?example=cascaded-interferometers`}>Open the component example →</a>
           </div>
-          <img class="shot" src={shot("component-definition")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="The free-space Mach–Zehnder component opened in its own tab, with input and output port parts." />
+          <img class="shot" src={shot("components")} width="1400" height="900" loading="lazy" decoding="async"
+            alt="A free-space Mach–Zehnder saved as a component and used twice: a beam enters the first box and a waveguide joins it to the second." />
         </div>
 
         <div class="feature">
@@ -152,10 +191,10 @@ const mcp = `{
               through. Shine programs them for you: a Fourier transform, a switch tree, or any
               matrix through its singular value decomposition.
             </p>
-            <a href={`${app}?example=optical-dft`}>Open the optical DFT →</a>
+            <a href={`${app}?examples=chips&chip=optical-fourier-transform`}>Open the optical DFT →</a>
           </div>
           <img class="shot" src={shot("dft")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="Four lasers carrying a sampled tone into an optical DFT block; one detector lights up." />
+            alt="The optical Fourier transform chip example: an MZI mesh separating a sampled tone into frequency bins." />
         </div>
 
         <div class="feature">
@@ -166,7 +205,6 @@ const mcp = `{
               share a waveguide, and each colour is solved on its own. Sweep a design to see its
               spectrum, like this four-channel demultiplexer.
             </p>
-            <a href={`${app}?example=add-drop-filter`}>Open the add–drop filter →</a> ·
             <a href={`${app}?examples=chips&chip=wdm-demultiplexer`}>See the WDM spectrum →</a>
           </div>
           <img class="shot" src={shot("wdm")} width="1400" height="900" loading="lazy" decoding="async"
@@ -224,7 +262,8 @@ const mcp = `{
         <p class="section-intro">
           <code>shine-mcp</code> is a Model Context Protocol server. Assistants can list the
           building blocks, simulate circuits and sweep spectra, program MZI meshes for a matrix,
-          and save a circuit as a project you open and refine in the editor.
+          read the displays and outputs of a saved project, and save a circuit as a project you
+          open and refine in the editor.
         </p>
         <pre><code>{mcp}</code></pre>
       </div>
