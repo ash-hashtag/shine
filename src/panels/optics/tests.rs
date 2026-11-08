@@ -964,11 +964,19 @@ fn waveguides_and_signal_light_mismatches() {
     let path = panel.waveguide_points(0).unwrap();
     assert!(panel.hover_text(panel.hit(path[12])).unwrap().starts_with("Waveguide"));
 
-    // Light can't go into a signal terminal.
+    // Light can't go into a signal terminal: the editor offers a detector.
     let signal_in = scr(&panel, panel.terminal_pos(Terminal { item: Item::Box(f), port: 0 }, false).unwrap());
     h.drag(out, signal_in, &mut panel, PointerButton::Primary);
-    assert!(panel.status.as_ref().unwrap().0.contains("don't connect"));
     assert_eq!(panel.layout.wires.len(), 1);
+    let offer = panel.bridge.expect("converter offered");
+    assert!(matches!(offer.bridge, bridge::Bridge::Detect { .. }));
+    h.frame(&mut panel, Vec::new());
+    h.key(&mut panel, Key::Escape);
+    assert!(panel.bridge.is_none(), "Escape dismisses the offer");
+    // Light into a light output, or signals into each other's kind of
+    // output, only get a hint.
+    assert!(bridge::mismatch_hint(Hit::LightOut(PortRef { instance: a, port: 0 }), Hit::SignalOut(Terminal { item: Item::Box(f), port: 0 })).is_some());
+    assert!(bridge::mismatch_hint(Hit::LightOut(PortRef { instance: a, port: 0 }), Hit::LightIn(PortRef { instance: b, port: 0 })).is_none());
 
     // Shrinking a block drops wires to ports it no longer has.
     panel.layout.signals.push(model::SignalWire {
@@ -1063,4 +1071,58 @@ fn add_menu_search_places_the_first_match() {
     panel.embedded = true;
     panel.place(Placeable::Example(0), cell_center(9, 9));
     assert_eq!(panel.requests, vec![Request::PlaceExample { example: 0, cell: (9, 9) }]);
+}
+
+#[test]
+fn converters_bridge_light_and_signals() {
+    // A laser beam into a coupler box; its upper output should drive a display.
+    let mut panel = OpticsPanel::default();
+    place(&mut panel, 0, 1, OpticComponentKind::palette()[0]);
+    let dc = add_box(&mut panel, Builtin::Coupler { coupling: 0.0 }, (2, 1));
+    let d = add_box(&mut panel, Builtin::Display { bits: 1 }, (8, 6));
+    let light = PortRef { instance: dc, port: 0 };
+    let display_in = Terminal { item: Item::Box(d), port: 0 };
+    let mut h = Harness::new(&mut panel);
+    let from = scr(&panel, panel.light_port_pos(light, true).unwrap());
+    let to = scr(&panel, panel.terminal_pos(display_in, false).unwrap());
+    // Hovering the wrong kind of port while dragging shows the warning.
+    h.move_to(from, &mut panel);
+    let press = h.button(from, PointerButton::Primary, true);
+    h.frame(&mut panel, vec![press]);
+    for k in 1..=6 {
+        h.frame(&mut panel, vec![Event::PointerMoved(from + (to - from) * (k as f32 / 6.0))]);
+    }
+    assert!(panel.connecting());
+    let release = h.button(to, PointerButton::Primary, false);
+    h.frame(&mut panel, vec![release]);
+    let offer = panel.bridge.expect("offered");
+    assert_eq!(offer.bridge, bridge::Bridge::Detect { light, signal: display_in });
+    h.frame(&mut panel, Vec::new());
+    panel.insert_bridge(offer.bridge).unwrap();
+    let detector = panel.layout.components.len() - 1;
+    assert_eq!(cell_of(panel.layout.components[detector].pos), (4, 1), "right of the port");
+    assert_eq!(panel.layout.components[detector].kind, OpticComponentKind::Detector { threshold: 0.5 }, "a display wants bits");
+    h.frame(&mut panel, Vec::new());
+    assert_eq!(input_number(&panel.layout, panel.outcome().unwrap(), d, 1), 1, "the light reaches the display");
+    assert!(panel.insert_bridge(offer.bridge).unwrap_err().contains("no room"));
+
+    // A bit switching light into a box input gets a laser in front of it.
+    let n = add_box(&mut panel, Builtin::NumberInput { bits: 1, value: 1 }, (10, 0));
+    let att = add_box(&mut panel, Builtin::Attenuator { loss_db: 0.0 }, (12, 4));
+    let bit = Terminal { item: Item::Box(n), port: 0 };
+    let into = PortRef { instance: att, port: 0 };
+    assert_eq!(bridge::needed(Hit::LightIn(into), Hit::SignalOut(bit)), Some(bridge::Bridge::Drive { signal: bit, light: into }));
+    panel.insert_bridge(bridge::Bridge::Drive { signal: bit, light: into }).unwrap();
+    let laser = panel.layout.components.len() - 1;
+    assert_eq!(cell_of(panel.layout.components[laser].pos), (11, 4));
+    h.frame(&mut panel, Vec::new());
+    assert!((panel.outcome().unwrap().port_power[&(att, 0)] - 1.0).abs() < 1e-9, "the bit turns the laser on");
+    // The offer's buttons render and Cancel closes it.
+    panel.bridge = Some(offer);
+    h.frame(&mut panel, Vec::new());
+    h.frame(&mut panel, Vec::new());
+    assert!(panel.bridge.is_some());
+    panel.apply_bridge_choice(false);
+    assert!(panel.bridge.is_none());
+    assert!(panel.insert_bridge(bridge::Bridge::Drive { signal: bit, light: PortRef { instance: model::InstanceId(99), port: 0 } }).is_err());
 }

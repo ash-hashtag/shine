@@ -10,6 +10,7 @@
 //! - [`library`] — the parts library, add menu and parameter widgets
 //! - [`examples`] — ready-made layouts, components and demos
 
+pub mod bridge;
 pub mod canvas;
 pub mod editor;
 pub mod examples;
@@ -127,6 +128,8 @@ pub struct OpticsPanel {
     pub show_examples: bool,
     pub examples_tab: ExamplesTab,
     pub menu: Option<Menu>,
+    /// Offer to insert a converter after a light-to-signal drop.
+    pub bridge: Option<bridge::Offer>,
     /// Transient message and the time it expires.
     pub status: Option<(String, f64)>,
     pub chips: ChipBrowser,
@@ -168,6 +171,7 @@ impl Default for OpticsPanel {
             show_examples: false,
             examples_tab: ExamplesTab::Layouts,
             menu: None,
+            bridge: None,
             status: None,
             chips: ChipBrowser::default(),
             embedded: false,
@@ -186,6 +190,9 @@ impl Default for OpticsPanel {
 /// Order-independent hash of register contents and the clock.
 fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
     machine.tick.hash(hasher);
+    for v in &machine.inputs {
+        v.to_bits().hash(hasher);
+    }
     let mut entries: u64 = 0;
     for ((path, id), bits) in &machine.registers {
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -298,9 +305,29 @@ impl OpticsPanel {
         sim::clock(&self.layout, &NoDocuments, &mut self.machine, &outcome);
     }
 
+    /// Clear registers and the clock (pin values stay).
     pub fn reset_clock(&mut self) {
-        self.machine = Machine::default();
+        self.machine = Machine {
+            inputs: std::mem::take(&mut self.machine.inputs),
+            ..Machine::default()
+        };
         self.running = false;
+    }
+
+    /// Value set by hand on signal-in pin part `part`, if it is one.
+    pub fn pin_value(&self, part: usize) -> Option<f64> {
+        let k = sim::interface(&self.layout).signal_in.iter().position(|&i| i == part)?;
+        Some(self.machine.inputs.get(k).copied().unwrap_or(0.0))
+    }
+
+    /// Flip a signal-in pin between 0 and 1. Returns false for other parts.
+    pub fn toggle_pin(&mut self, part: usize) -> bool {
+        let pins = sim::interface(&self.layout).signal_in;
+        let Some(k) = pins.iter().position(|&i| i == part) else { return false };
+        self.machine.inputs.resize(pins.len().max(self.machine.inputs.len()), 0.0);
+        let v = &mut self.machine.inputs[k];
+        *v = if *v >= 0.5 { 0.0 } else { 1.0 };
+        true
     }
 
     // ---- documents --------------------------------------------------------
@@ -694,6 +721,7 @@ impl OpticsPanel {
     /// Floating UI drawn above everything (context and add menus).
     pub fn overlays(&mut self, ctx: &egui::Context) {
         self.menu_ui(ctx);
+        self.bridge_ui(ctx);
     }
 
     /// One line for the status bar: transient message, or mode and hints.

@@ -66,11 +66,15 @@ impl Key {
     }
 }
 
-/// State that persists between simulations: register contents and the clock.
+/// State that persists between simulations: register contents, the clock,
+/// and values on the top layout's own signal-in pins (set by hand to try a
+/// component on its own).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Machine {
     pub registers: HashMap<(Path, InstanceId), Vec<f64>>,
     pub tick: u64,
+    /// By signal-in pin, in interface order; missing pins read 0.
+    pub inputs: Vec<f64>,
 }
 
 /// The boundary of a layout used as a component, in the order its box shows them.
@@ -673,7 +677,7 @@ pub fn simulate(
             stack: root.into_iter().collect(),
             errors: Vec::new(),
         };
-        electronics.eval(layout, &[], &[]);
+        electronics.eval(layout, &[], &machine.inputs);
         if let Some(e) = electronics.errors.first() {
             return Outcome::failed(e.clone());
         }

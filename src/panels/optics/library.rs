@@ -65,7 +65,7 @@ pub fn part_description(kind: &OpticComponentKind) -> &'static str {
         OpticComponentKind::Attenuator { .. } => "Absorbs part of the light. A signal on top scales its transmission.",
         OpticComponentKind::InputPort { .. } => "Where light enters when this layout is used as a component box (left edge, top to bottom).",
         OpticComponentKind::OutputPort => "Where light leaves when this layout is used as a component box (right edge, top to bottom).",
-        OpticComponentKind::SignalIn => "Electrical input when this layout is used as a component box (top edge, left to right by position).",
+        OpticComponentKind::SignalIn => "Electrical input when this layout is used as a component box (top edge, left to right). Click it to switch it between 0 and 1 and try the layout on its own.",
         OpticComponentKind::SignalOut => "Electrical output when this layout is used as a component box (bottom edge).",
     }
 }
@@ -647,6 +647,12 @@ impl OpticsPanel {
                     None => RichText::new(format!("nothing ({input} fixed)")).weak(),
                 })
                 .on_hover_text("Drag from a signal output (square terminal) to the terminal above this part");
+                ui.end_row();
+            }
+            if kind == OpticComponentKind::SignalIn {
+                ui.label("Test value");
+                ui.label(RichText::new("click the pin to toggle").weak())
+                    .on_hover_text("Used when this layout is simulated on its own; inside a box the pin follows its wire");
                 ui.end_row();
             }
             if let (Some(v), false) = (output, kind.signal_outputs().is_empty()) {

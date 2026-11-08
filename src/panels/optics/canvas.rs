@@ -212,6 +212,9 @@ impl OpticsPanel {
             Hit::Part(i) => {
                 let c = self.layout.components.get(i)?;
                 let mut text = format!("{}\n{}", c.kind.name(), part_description(&c.kind));
+                if let Some(v) = self.pin_value(i) {
+                    text += &format!("\n\nNow {}: click to toggle and try this layout on its own", fmt_value(v));
+                }
                 if let Some(p) = self.detector_reading(i) {
                     text += &format!("\n\nPower {p:.4}");
                 }
@@ -420,6 +423,16 @@ impl OpticsPanel {
                 continue;
             }
             render::draw_component(&painter, at, &c.kind, 1.0, zoom);
+            if let Some(v) = self.pin_value(i) {
+                // Pins light up like a number input's bits.
+                let lamp = at + Vec2::new(14.0, -12.0) * zoom;
+                if v >= 0.5 {
+                    painter.circle_filled(lamp, 7.0 * zoom, render::SIGNAL_HIGH.gamma_multiply(0.3));
+                    painter.circle_filled(lamp, 4.5 * zoom, render::SIGNAL_HIGH);
+                } else {
+                    painter.circle(lamp, 4.5 * zoom, theme.background, Stroke::new(1.0, render::SIGNAL_LOW));
+                }
+            }
             if let Some(label) = self.layout.label(i) {
                 painter.text(
                     at - Vec2::new(0.0, 15.0 * zoom),
@@ -494,7 +507,18 @@ impl OpticsPanel {
                     Hit::LightOut(_) => (waveguide_path(start, world), theme.active, 3.0),
                     _ => (waveguide_path(world, start), theme.active, 3.0),
                 };
+                // Over a port of the other kind: warn and say what fixes it.
+                let hint = super::bridge::mismatch_hint(from, hovered);
+                let color = if hint.is_some() { ui.visuals().warn_fg_color } else { color };
                 painter.add(Shape::line(path.into_iter().map(to_screen).collect(), Stroke::new(width, color.gamma_multiply(0.7))));
+                if let (Some(hint), Some(screen)) = (hint, pointer) {
+                    let more = if super::bridge::needed(from, hovered).is_some() { " — drop to add one" } else { "" };
+                    let text = format!("⚠ {hint}{more}");
+                    let galley = painter.layout_no_wrap(text, FontId::proportional(12.5), ui.visuals().warn_fg_color);
+                    let at = screen + Vec2::new(14.0, 14.0);
+                    painter.rect_filled(Rect::from_min_size(at, galley.size()).expand(5.0), 4.0, theme.background);
+                    painter.galley(at, galley, ui.visuals().warn_fg_color);
+                }
             }
         }
 
@@ -548,6 +572,10 @@ impl OpticsPanel {
 
     /// Finish drawing a wire from `from` by dropping it on `to`.
     fn connect(&mut self, from: Hit, to: Hit) {
+        if let Some(bridge) = super::bridge::needed(from, to) {
+            self.offer_bridge(bridge);
+            return;
+        }
         match (from, to) {
             (Hit::SignalOut(a), Hit::SignalIn(b)) | (Hit::SignalIn(b), Hit::SignalOut(a)) => {
                 self.layout.connect_signal(a, b);
@@ -557,7 +585,9 @@ impl OpticsPanel {
             }
             (Hit::SignalOut(_) | Hit::SignalIn(_), Hit::LightIn(_) | Hit::LightOut(_))
             | (Hit::LightIn(_) | Hit::LightOut(_), Hit::SignalIn(_) | Hit::SignalOut(_)) => {
-                self.notify("Signals and light don't connect: use a detector or a driven laser between them");
+                self.notify(
+                    "Light and signals don't connect: light → signal goes through a detector, signal → light through a laser wired to the signal",
+                );
             }
             (Hit::SignalOut(_), Hit::SignalOut(_)) | (Hit::LightOut(_), Hit::LightOut(_)) => {
                 self.notify("Connect an output to an input");
@@ -677,9 +707,11 @@ impl OpticsPanel {
             self.menu = None;
             let hit = self.hit(world);
             match hit {
-                Hit::Part(_) => {
+                Hit::Part(i) => {
                     self.select_hit(hit, world, shift);
-                    if response.double_clicked() {
+                    // A signal-in pin is a switch while the layout is tried on its own.
+                    let pin = !shift && self.toggle_pin(i);
+                    if response.double_clicked() && !pin {
                         self.editor.rotate_selected(&mut self.layout, 1);
                     }
                 }

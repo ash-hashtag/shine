@@ -583,3 +583,43 @@ fn url_queries_open_examples_tabs_and_windows() {
     ws.apply_url_query("example=nope&tab=nope&chip=nope&other=1&");
     assert_eq!(ws.tabs.len(), before);
 }
+
+#[test]
+fn a_components_pins_toggle_to_try_it_on_its_own() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    demo(&mut ws, ADDER);
+    let fa = ws.project.find("Full adder").unwrap();
+    ws.open_tab(fa);
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    let pins = crate::panels::circuit::sim::interface(&panel(&mut ws, fa).layout).signal_in;
+    let outs = crate::panels::circuit::sim::interface(&panel(&mut ws, fa).layout).signal_out;
+    let read = |ws: &mut Workspace| {
+        let p = panel(ws, fa);
+        let o = p.sim.as_ref().unwrap().outcome.clone();
+        assert!(o.error.is_none(), "{:?}", o.error);
+        let v = |k: usize| o.input(&p.layout, Terminal { item: Item::Part(outs[k]), port: 0 });
+        (v(0), v(1))
+    };
+    assert_eq!(read(&mut ws), (0.0, 0.0));
+    // Click pin a, then b, with the mouse: 1 + 1 = 10.
+    for (k, expected) in [(0, (1.0, 0.0)), (1, (0.0, 1.0)), (2, (1.0, 1.0))] {
+        let p = panel(&mut ws, fa);
+        let at = p.view.to_screen(p.canvas_rect().unwrap(), p.layout.components[pins[k]].pos);
+        for pressed in [true, false] {
+            h.frame(&mut ws, vec![Event::PointerMoved(at)]);
+            h.frame(
+                &mut ws,
+                vec![Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE }],
+            );
+        }
+        h.frame(&mut ws, Vec::new());
+        assert_eq!(read(&mut ws), expected, "after toggling pin {k}");
+    }
+    assert_eq!(panel(&mut ws, fa).pin_value(pins[2]), Some(1.0));
+    // Resetting the clock keeps the pins; the adder using it is unaffected.
+    panel(&mut ws, fa).reset_clock();
+    assert_eq!(panel(&mut ws, fa).machine.inputs, vec![1.0, 1.0, 1.0]);
+    assert!(!panel(&mut ws, fa).toggle_pin(9999));
+}
