@@ -4,7 +4,7 @@
   // WebAssembly editor. Build first with ../scripts/build-web.sh, then
   // run `npm run deploy` here.
   "name": "shine",
-  "compatibility_date": "2026-10-20",
+  "compatibility_date": "2026-11-08",
   "assets": {
     "directory": "./dist",
     // /app serves /app/index.html; /app/ and /app resolve to the same page.
