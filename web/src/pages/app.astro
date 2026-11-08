@@ -1,0 +1,69 @@
+---
+import "../styles/site.css";
+
+const base = import.meta.env.BASE_URL;
+const module = `${base}pkg/shine.js`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shine</title>
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+      #shine {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #status {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 8px;
+        text-align: center;
+        color: var(--muted);
+        background: var(--bg);
+      }
+      #status.hidden {
+        display: none;
+      }
+      #status strong {
+        color: var(--text);
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="shine"></canvas>
+    <div id="status" role="status">
+      <strong>Loading Shine…</strong>
+      <span>Downloading the simulator. This takes a moment the first time.</span>
+    </div>
+    <script type="module" define:vars={{ module, home: base }}>
+      const status = document.getElementById("status");
+      try {
+        const { default: init, start } = await import(module);
+        await init();
+        const example = new URLSearchParams(location.search).get("example");
+        await start("shine", location.search);
+        status.classList.add("hidden");
+        document.title = example ? `Shine · ${example.replaceAll("-", " ")}` : "Shine";
+      } catch (error) {
+        console.error(error);
+        status.innerHTML =
+          "<strong>Shine could not start</strong>" +
+          "<span>Your browser needs WebGL 2 and WebAssembly. " +
+          `Details are in the developer console. <a href="${home}">Back to the home page</a></span>`;
+      }
+    </script>
+  </body>
+</html>

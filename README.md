@@ -14,6 +14,30 @@ cargo run --release --no-default-features --example matmul   # library only
 
 Logs always go to stderr; `--log-file <path>` / `SHINE_LOG_FILE` adds a file (appended, directories created).
 
+## Website and browser build
+
+`web/` is an Astro site: a home page with screenshots and `/app`, which runs the editor
+compiled to WebAssembly. Links like `/app?example=optical-dft` open an example.
+
+```sh
+scripts/build-web.sh                # WASM build + site into web/dist
+scripts/build-web.sh --screenshots  # also refresh the screenshots (headless Chromium)
+cd web && npm run dev               # live-reload the site
+```
+
+The script installs the `wasm-bindgen` CLI matching `Cargo.lock` into `target/tools`.
+
+## Using Shine from an AI assistant
+
+`shine-mcp` is a Model Context Protocol server (stdio). Point your client at it:
+
+```json
+{ "mcpServers": { "shine": { "command": "/path/to/shine-mcp" } } }
+```
+
+Tools: `list_blocks`, `simulate_circuit`, `sweep_wavelength`, `decompose_matrix`,
+`simulate_project`, `save_project`.
+
 ## Editor controls (Blender-style)
 
 | Input | Action |

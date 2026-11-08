@@ -48,3 +48,10 @@ console_error_panic_hook = "0.1.7"
 tracing-web = "0.1.4"
 web-sys = { version = "0.3", features = ["Blob", "BlobPropertyBag", "Document", "Element", "HtmlAnchorElement", "HtmlCanvasElement", "Location", "Url", "Window"] }
 js-sys = "0.3"
+
+# Used by scripts/build-web.sh for the browser build.
+[profile.web]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true

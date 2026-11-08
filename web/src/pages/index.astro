@@ -1,0 +1,209 @@
+---
+import Base from "../layouts/Base.astro";
+
+const base = import.meta.env.BASE_URL;
+const app = `${base}app`;
+const shot = (name: string) => `${base}screenshots/${name}.png`;
+
+const keys: [string, string][] = [
+  ["Middle drag", "Pan"],
+  ["Wheel / pinch", "Zoom at cursor"],
+  ["G, then X / Y", "Move, locked to an axis"],
+  ["Shift D", "Duplicate"],
+  ["Shift A", "Add menu"],
+  ["Tab", "Open a component"],
+  ["Space", "Run / stop simulation"],
+  ["Ctrl Z", "Undo"],
+];
+
+const rust = `use shine::photonics::*;
+
+let mut c = Circuit::new();
+let laser = c.add(Laser::new(1.0, 1550.0));
+let split = c.add(DirectionalCoupler::balanced());
+let heat  = c.add(PhaseShifter::new(std::f64::consts::PI));
+let join  = c.add(DirectionalCoupler::balanced());
+let pd    = c.add(Detector::new());
+c.connect(laser.output(0), split.input(0))?;
+c.connect(split.output(0), heat.input(0))?;
+c.connect(heat.output(0), join.input(0))?;
+c.connect(split.output(1), join.input(1))?;
+c.connect(join.output(0), pd.input(0))?;
+
+let power = c.simulate(1550.0, &[])?.detected_power(pd); // 1.0`;
+
+const mcp = `{
+  "mcpServers": {
+    "shine": { "command": "shine-mcp" }
+  }
+}`;
+---
+
+<Base
+  title="Shine — photonic circuit simulator"
+  description="Design optical circuits from free-space benches to on-chip waveguides, reuse them as components, and simulate them exactly — in the browser, from Rust, or through an AI assistant."
+>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href={base}><img src={`${base}favicon.svg`} alt="" />Shine</a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#library">Library</a>
+        <a href="#ai">AI</a>
+        <a class="button primary" href={app}>Open the app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap hero">
+      <h1>Design photonic circuits and watch the light.</h1>
+      <p class="lead">
+        Shine is a simulator for optical circuits, from beam splitters on a bench to waveguide
+        networks on a chip. It solves interference, resonances and feedback loops exactly, lets
+        you turn any design into a reusable component, and runs right here in your browser.
+      </p>
+      <div class="actions">
+        <a class="button primary" href={app}>Open the app</a>
+        <a class="button" href={`${app}?example=reusable-free-space-component`}>Try an example</a>
+      </div>
+      <img
+        class="shot"
+        src={shot("components")}
+        width="1400"
+        height="900"
+        alt="Shine editor showing a laser feeding two instances of a free-space Mach–Zehnder component, with detector readings."
+      />
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <h2>From a bench to a chip</h2>
+        <p class="section-intro">
+          Two editors share one simulator. Lay out free-space optics on a grid, or wire blocks
+          together with waveguides. Every result updates as you edit.
+        </p>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Free-space layouts</h3>
+            <p>
+              Place lasers, mirrors, beam splitters, phase shifters and detectors on a grid. Beams
+              pick up phase over distance, so interference and cavity resonances come out right,
+              not approximated by a fixed number of bounces.
+            </p>
+            <a href={`${app}?example=mach-zehnder-interferometer`}>Open the Mach–Zehnder layout →</a>
+          </div>
+          <img class="shot" src={shot("free-space")} width="1400" height="900" loading="lazy"
+            alt="Free-space Mach–Zehnder interferometer with coloured beams and detector readings." />
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Reusable components</h3>
+            <p>
+              Save any layout or schematic as a component with a name, initials and description.
+              It becomes a box with ports you can drop anywhere and connect with waveguides.
+            </p>
+            <ul>
+              <li>Hover a box to read its description.</li>
+              <li>Press <kbd>Tab</kbd> to open its definition in its own tab.</li>
+              <li>Edits there update every place it is used.</li>
+            </ul>
+            <a href={`${app}?example=reusable-free-space-component`}>Open the component example →</a>
+          </div>
+          <img class="shot" src={shot("component-definition")} width="1400" height="900" loading="lazy"
+            alt="The free-space Mach–Zehnder component opened in its own tab, with input and output port parts." />
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Computing with light</h3>
+            <p>
+              Meshes of Mach–Zehnder interferometers perform linear algebra as light passes
+              through. Shine programs them for you: a Fourier transform, a switch tree, or any
+              matrix through its singular value decomposition.
+            </p>
+            <a href={`${app}?example=optical-dft`}>Open the optical DFT →</a>
+          </div>
+          <img class="shot" src={shot("dft")} width="1400" height="900" loading="lazy"
+            alt="Four lasers carrying a sampled tone into an optical DFT block; one detector lights up." />
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Filters and wavelengths</h3>
+            <p>
+              Rings, interleavers and add–drop filters respond to wavelength. Several lasers can
+              share a waveguide, and each colour is solved on its own. Sweep a design to see its
+              spectrum, like this four-channel demultiplexer.
+            </p>
+            <a href={`${app}?example=add-drop-filter`}>Open the add–drop filter →</a> ·
+            <a href={`${app}?examples=chips&chip=wdm-demultiplexer`}>See the WDM spectrum →</a>
+          </div>
+          <img class="shot" src={shot("wdm")} width="1400" height="900" loading="lazy"
+            alt="Spectrum of a four-channel ring demultiplexer: each drop port peaks at its own wavelength." />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Feels like Blender</h2>
+        <p class="section-intro">
+          Navigation and editing follow Blender's conventions, so the keys you already know work.
+          Press <kbd>F1</kbd> in the app for the full list.
+        </p>
+        <ul class="keys">
+          {keys.map(([k, what]) => <li><span>{what}</span><kbd>{k}</kbd></li>)}
+        </ul>
+      </div>
+    </section>
+
+    <section id="library">
+      <div class="wrap">
+        <h2>A library, not just an app</h2>
+        <p class="section-intro">
+          The simulator is a Rust crate you can use on its own. Circuits compile per wavelength
+          into a flat program: straight-through parts become SIMD multiply-adds over whole batches
+          of inputs, and feedback loops get an LU factorisation computed once.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <h3>Exact</h3>
+            <p>Steady state solved as a linear system; loops and resonances need no iteration limit.</p>
+          </div>
+          <div class="card">
+            <h3>Fast</h3>
+            <p>Batched SIMD kernels with runtime CPU dispatch; wavelength sweeps run in parallel.</p>
+          </div>
+          <div class="card">
+            <h3>Composable</h3>
+            <p>Rings, meshes, switch trees and WDM demultiplexers are blocks you can nest.</p>
+          </div>
+          <div class="card">
+            <h3>Compact files</h3>
+            <p>Projects save in a binary <code>.shine</code> format, about five times smaller than JSON.</p>
+          </div>
+        </div>
+        <pre><code>{rust}</code></pre>
+      </div>
+    </section>
+
+    <section id="ai">
+      <div class="wrap">
+        <h2>Usable by AI assistants</h2>
+        <p class="section-intro">
+          <code>shine-mcp</code> is a Model Context Protocol server. Assistants can list the
+          building blocks, simulate circuits and sweep spectra, program MZI meshes for a matrix,
+          and save a circuit as a project you open and refine in the editor.
+        </p>
+        <pre><code>{mcp}</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">Shine · photonic circuit simulator · <a href={app}>Open the app</a></div>
+  </footer>
+</Base>
