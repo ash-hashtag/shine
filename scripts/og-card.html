@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Social preview card (1200×630). scripts/screenshots.sh fills in SCREENSHOT. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0f1c1c;
+    color: #f2f5f4;
+    position: relative;
+  }
+  .text { position: absolute; left: 72px; top: 76px; width: 520px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 650; }
+  .brand svg { width: 44px; height: 44px; }
+  h1 { font-size: 54px; line-height: 1.08; letter-spacing: -0.02em; margin: 44px 0 22px; }
+  p { font-size: 24px; line-height: 1.4; color: #a9bdbb; margin: 0; }
+  .shot {
+    position: absolute; left: 640px; top: 70px; width: 820px; height: auto;
+    border-radius: 12px; border: 1px solid #2c4442;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+  }
+</style>
+</head>
+<body>
+  <div class="text">
+    <div class="brand">
+      <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#3fb8b0"/><path d="M5 20h8l3-8 3 8h8" fill="none" stroke="#0f1c1c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Shine
+    </div>
+    <h1>Design photonic circuits and watch the light.</h1>
+    <p>Exact simulation, reusable components, in your browser.</p>
+  </div>
+  <img class="shot" src="SCREENSHOT" alt="">
+</body>
+</html>
