@@ -30,14 +30,14 @@ cd web && pnpm dev                 # live-reload the site
 The site deploys as Workers static assets (`web/wrangler.jsonc`, no Worker script):
 
 ```sh
-SITE_URL=https://your.domain scripts/build-web.sh   # build web/dist
+scripts/build-web.sh                # build web/dist
 cd web && pnpm exec wrangler login  # once
 pnpm cf:dev                         # optional: serve dist on the local Workers runtime
 pnpm run deploy                     # wrangler deploy (not `pnpm deploy`, a pnpm built-in)
 ```
 
-`SITE_URL` is the public address; it enables canonical links, `og:url`, absolute social
-preview images and `sitemap.xml` (without it the build warns and leaves them out).
+The site lives at <https://shine.lupyd.com>; canonical links, `og:url`, social preview
+images and `sitemap.xml` use that address (override with `SITE_URL=…` for another host).
 Images are lossless WebP; `scripts/screenshots.sh` also renders the 1200×630 Open Graph
 card from `scripts/og-card.html`.
 
