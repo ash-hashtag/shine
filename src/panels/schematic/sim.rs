@@ -147,9 +147,9 @@ impl SchematicSim {
     }
 
     pub fn wire_power(&self, wire: usize) -> f64 {
-        self.wire_fields
-            .get(wire)
-            .map_or(0.0, |f| f.iter().map(|v| v.norm_sqr()).sum())
+        self.wire_fields.get(wire).map_or(0.0, |f| {
+            f.iter().map(|v| v.norm_sqr()).fold(0.0, |a, b| a + b)
+        })
     }
 
     pub fn reading(&self, instance: InstanceId) -> Option<f64> {
@@ -188,7 +188,7 @@ pub fn simulate(
             let power = solutions
                 .iter()
                 .map(|s| s.output_field(out).norm_sqr())
-                .sum();
+                .fold(0.0, |a, b| a + b);
             sim.port_power.insert((inst.id, k), power);
         }
         let reading = match &inst.block {
@@ -196,7 +196,7 @@ pub fn simulate(
                 solutions
                     .iter()
                     .map(|s| s.detected_power(ports.inputs[0].node))
-                    .sum(),
+                    .fold(0.0, |a, b| a + b),
             ),
             BlockRef::Builtin(Builtin::OutputPin { .. }) => {
                 sim.port_power.get(&(inst.id, 0)).copied()
@@ -348,6 +348,9 @@ mod tests {
         let sim = simulate(&s, &NoComponents, &mut Vec::new());
         assert!(sim.error.is_none() && sim.wavelengths.is_empty());
         assert_eq!(sim.readings.len(), 2);
+        for (_, power) in &sim.readings {
+            assert!(power.is_sign_positive(), "dark readings print as 0, not -0");
+        }
     }
 
     #[test]

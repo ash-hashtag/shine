@@ -334,11 +334,14 @@ pub fn simulate_layout(
     for (i, comp) in components.iter().enumerate() {
         let node = built.nodes[i];
         let power = match comp.kind {
-            OpticComponentKind::Detector => solutions.iter().map(|s| s.detected_power(node)).sum(),
+            OpticComponentKind::Detector => solutions
+                .iter()
+                .map(|s| s.detected_power(node))
+                .fold(0.0, |a, b| a + b),
             OpticComponentKind::OutputPort => solutions
                 .iter()
                 .map(|s| s.output_field(node.output(0)).norm_sqr())
-                .sum(),
+                .fold(0.0, |a, b| a + b),
             _ => continue,
         };
         result.detector_power.push((i, power));
@@ -665,5 +668,30 @@ mod layout_tests {
                 .error
                 .is_none()
         );
+    }
+}
+
+#[cfg(test)]
+mod zero_tests {
+    use super::*;
+
+    #[test]
+    fn dark_readings_are_positive_zero() {
+        // No laser, so there are no wavelengths to sum over.
+        let parts = [
+            PlacedComponent {
+                kind: OpticComponentKind::Detector,
+                pos: Pos2::new(20.0, 20.0),
+            },
+            PlacedComponent {
+                kind: OpticComponentKind::OutputPort,
+                pos: Pos2::new(60.0, 20.0),
+            },
+        ];
+        let sim = simulate_layout(&parts, 40.0, 10.0, 1000.0);
+        for (_, power) in sim.detector_power {
+            assert!(power == 0.0 && power.is_sign_positive(), "{power}");
+            assert_eq!(format!("{power:.3}"), "0.000");
+        }
     }
 }
