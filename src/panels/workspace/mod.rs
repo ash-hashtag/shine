@@ -734,6 +734,9 @@ impl Workspace {
         ui.menu_button("View", |ui| {
             ui.checkbox(&mut self.show_library, "Library");
             ui.checkbox(&mut self.show_inspector, "Inspector");
+            if let Some(on) = self.simulation_flag() {
+                ui.checkbox(on, "Live simulation");
+            }
             ui.separator();
             if ui.button("Frame all").clicked() {
                 self.apply(Action::FrameAll);
@@ -782,6 +785,38 @@ impl Workspace {
                 self.show_examples = true;
             }
         });
+
+        // The one control people look for first: always visible, top right.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(on) = self.simulation_flag() {
+                let (label, tip) = if *on {
+                    (
+                        "■  Stop simulation",
+                        "Simulation is live: results update as you edit (Space)",
+                    )
+                } else {
+                    (
+                        "▶  Simulate",
+                        "Solve the circuit and show the light (Space)",
+                    )
+                };
+                if ui
+                    .add(egui::Button::new(label).selected(*on))
+                    .on_hover_text(tip)
+                    .clicked()
+                {
+                    *on = !*on;
+                }
+            }
+        });
+    }
+
+    /// The active document's live-simulation switch.
+    pub fn simulation_flag(&mut self) -> Option<&mut bool> {
+        match &mut self.project.doc_mut(self.active?)?.content {
+            Content::Layout(p) => Some(&mut p.simulation_active),
+            Content::Schematic(p) => Some(&mut p.simulation_active),
+        }
     }
 
     fn empty_ui(&mut self, ui: &mut Ui) {

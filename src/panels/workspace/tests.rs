@@ -384,3 +384,54 @@ fn simulation_is_cached_by_fingerprint() {
     ws.refresh_simulation();
     assert!(schematic(&mut ws, id).sim.is_none(), "live simulation off");
 }
+
+#[test]
+fn simulate_toggle_is_on_by_default_and_flips() {
+    let mut ws = Workspace::default();
+    assert_eq!(
+        ws.simulation_flag().copied(),
+        Some(true),
+        "new layouts simulate"
+    );
+    *ws.simulation_flag().unwrap() = false;
+    let id = ws.active.unwrap();
+    assert!(!layout(&mut ws, id).simulation_active);
+    ws.new_schematic();
+    assert_eq!(
+        ws.simulation_flag().copied(),
+        Some(true),
+        "new schematics simulate"
+    );
+    ws.active = None;
+    assert!(ws.simulation_flag().is_none());
+
+    // The toggle sits in the menu bar; clicking it flips the active document.
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    h.frame(&mut ws, Vec::new());
+    let button = egui::Pos2::new(1330.0, 11.0);
+    h.frame(&mut ws, vec![Event::PointerMoved(button)]);
+    h.frame(
+        &mut ws,
+        vec![Event::PointerButton {
+            pos: button,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    h.frame(
+        &mut ws,
+        vec![Event::PointerButton {
+            pos: button,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    assert_eq!(
+        ws.simulation_flag().copied(),
+        Some(false),
+        "clicking “Stop simulation” turned it off"
+    );
+}

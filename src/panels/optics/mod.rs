@@ -143,6 +143,7 @@ impl OpticsPanel {
             cell_um,
             embedded: true,
             frame_pending: true,
+            simulation_active: true,
             ..Self::default()
         }
     }
