@@ -35,7 +35,11 @@ pub enum OpticComponentKind {
         /// Power transmission in `[0, 1]`.
         transmission: f32,
     },
-    Detector,
+    /// Absorbs light. Its signal output carries the received power, or a
+    /// bit (power >= threshold) when `threshold` is above zero.
+    Detector {
+        threshold: f32,
+    },
     /// Boundary input when the layout is used as a component; light enters
     /// here travelling along `dir`.
     InputPort {
@@ -43,11 +47,18 @@ pub enum OpticComponentKind {
     },
     /// Boundary output when the layout is used as a component.
     OutputPort,
+    /// Electrical input of the layout when used as a component.
+    SignalIn,
+    /// Electrical output of the layout when used as a component.
+    SignalOut,
 }
+
+/// A detector with an analog (power) output.
+pub const DETECTOR: OpticComponentKind = OpticComponentKind::Detector { threshold: 0.0 };
 
 impl OpticComponentKind {
     /// Every component with its default parameters, in palette order.
-    pub fn palette() -> [Self; 9] {
+    pub fn palette() -> [Self; 11] {
         let diagonal = Vec2::new(-1.0, -1.0).normalized();
         [
             Self::Laser {
@@ -65,11 +76,13 @@ impl OpticComponentKind {
             Self::Lens,
             Self::PhaseShifter { phase: 0.0 },
             Self::Attenuator { transmission: 0.5 },
-            Self::Detector,
+            DETECTOR,
             Self::InputPort {
                 dir: Vec2::new(1.0, 0.0),
             },
             Self::OutputPort,
+            Self::SignalIn,
+            Self::SignalOut,
         ]
     }
 
@@ -81,9 +94,11 @@ impl OpticComponentKind {
             Self::Lens => "Lens",
             Self::PhaseShifter { .. } => "Phase Shifter",
             Self::Attenuator { .. } => "Attenuator",
-            Self::Detector => "Detector",
+            Self::Detector { .. } => "Detector",
             Self::InputPort { .. } => "Input port",
             Self::OutputPort => "Output port",
+            Self::SignalIn => "Signal in",
+            Self::SignalOut => "Signal out",
         }
     }
 
@@ -95,9 +110,31 @@ impl OpticComponentKind {
             Self::Lens => "🔍",
             Self::PhaseShifter { .. } => "φ",
             Self::Attenuator { .. } => "▒",
-            Self::Detector => "◉",
+            Self::Detector { .. } => "◉",
             Self::InputPort { .. } => "⇥",
             Self::OutputPort => "⇤",
+            Self::SignalIn => "▾",
+            Self::SignalOut => "▴",
+        }
+    }
+
+    /// Electrical inputs: a driven laser scales its amplitude, a phase
+    /// shifter adds π per unit, an attenuator scales its transmission.
+    pub fn signal_inputs(&self) -> &'static [&'static str] {
+        match self {
+            Self::Laser { .. } => &["amplitude"],
+            Self::PhaseShifter { .. } => &["phase"],
+            Self::Attenuator { .. } => &["transmission"],
+            Self::SignalOut => &["value"],
+            _ => &[],
+        }
+    }
+
+    pub fn signal_outputs(&self) -> &'static [&'static str] {
+        match self {
+            Self::Detector { .. } => &["power"],
+            Self::SignalIn => &["value"],
+            _ => &[],
         }
     }
 
@@ -143,13 +180,214 @@ pub fn snap(p: Pos2) -> Pos2 {
     cell_center(i, j)
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+pub use crate::panels::schematic::model::{BlockRef, Builtin, InstanceId, PortRef, Wire};
+
+/// Something with electrical terminals: a primitive (by index into
+/// [`Layout::components`]) or a component instance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Item {
+    Part(usize),
+    Box(InstanceId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Terminal {
+    pub item: Item,
+    pub port: usize,
+}
+
+/// An electrical connection from a signal output to a signal input.
+/// Unlike light, a signal can drive any number of inputs.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SignalWire {
+    pub from: Terminal,
+    pub to: Terminal,
+}
+
+/// A component placed on the grid as a box, its top-left cell at `cell`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Instance {
+    pub id: InstanceId,
+    pub block: BlockRef,
+    pub cell: (i32, i32),
+}
+
+/// Ports of a box: light on the left (in) and right (out) edges, one per
+/// row; signals on the top (in) and bottom (out) edges, one per column.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PortCounts {
+    pub optical_in: usize,
+    pub optical_out: usize,
+    pub signal_in: usize,
+    pub signal_out: usize,
+}
+
+/// Size of a box in cells (columns, rows).
+pub fn box_size(c: PortCounts) -> (i32, i32) {
+    (
+        c.signal_in.max(c.signal_out).max(2) as i32,
+        c.optical_in.max(c.optical_out).max(1) as i32,
+    )
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BoxGeometry {
+    pub rect: Rect,
+    pub optical_in: Vec<Pos2>,
+    pub optical_out: Vec<Pos2>,
+    pub signal_in: Vec<Pos2>,
+    pub signal_out: Vec<Pos2>,
+    /// Cells the box covers.
+    pub cells: Vec<(i32, i32)>,
+}
+
+pub fn box_geometry(cell: (i32, i32), counts: PortCounts) -> BoxGeometry {
+    let (w, h) = box_size(counts);
+    let (i, j) = cell;
+    let g = GRID;
+    let rect = Rect::from_min_size(Pos2::new(i as f32 * g, j as f32 * g), Vec2::new(w as f32 * g, h as f32 * g));
+    let row = |k: usize| (j as f32 + k as f32 + 0.5) * g;
+    let col = |k: usize| (i as f32 + k as f32 + 0.5) * g;
+    BoxGeometry {
+        optical_in: (0..counts.optical_in).map(|k| Pos2::new(rect.left(), row(k))).collect(),
+        optical_out: (0..counts.optical_out).map(|k| Pos2::new(rect.right(), row(k))).collect(),
+        signal_in: (0..counts.signal_in).map(|k| Pos2::new(col(k), rect.top())).collect(),
+        signal_out: (0..counts.signal_out).map(|k| Pos2::new(col(k), rect.bottom())).collect(),
+        cells: (0..w).flat_map(|di| (0..h).map(move |dj| (i + di, j + dj))).collect(),
+        rect,
+    }
+}
+
+/// Where a primitive's electrical input (top edge) and output (bottom edge) sit.
+pub fn part_signal_in(pos: Pos2) -> Pos2 {
+    pos - Vec2::new(0.0, GRID / 2.0)
+}
+
+pub fn part_signal_out(pos: Pos2) -> Pos2 {
+    pos + Vec2::new(0.0, GRID / 2.0)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Layout {
     pub components: Vec<PlacedComponent>,
     pub lines: Vec<Line>,
+    pub instances: Vec<Instance>,
+    /// Waveguides between component ports.
+    pub wires: Vec<Wire>,
+    pub signals: Vec<SignalWire>,
+    pub next_instance: u32,
+    /// Names of port and pin parts (by part index), shown on the component's box.
+    pub labels: Vec<(usize, String)>,
 }
 
 impl Layout {
+    pub fn with_components(components: Vec<PlacedComponent>) -> Self {
+        Self {
+            components,
+            ..Self::default()
+        }
+    }
+
+    pub fn label(&self, part: usize) -> Option<&str> {
+        self.labels.iter().find(|(i, _)| *i == part).map(|(_, l)| l.as_str())
+    }
+
+    pub fn set_label(&mut self, part: usize, label: &str) {
+        self.labels.retain(|(i, _)| *i != part);
+        if !label.trim().is_empty() {
+            self.labels.push((part, label.trim().to_owned()));
+        }
+    }
+
+    pub fn add_instance(&mut self, block: BlockRef, cell: (i32, i32)) -> InstanceId {
+        let id = InstanceId(self.next_instance);
+        self.next_instance += 1;
+        self.instances.push(Instance { id, block, cell });
+        id
+    }
+
+    pub fn instance(&self, id: InstanceId) -> Option<&Instance> {
+        self.instances.iter().find(|i| i.id == id)
+    }
+
+    pub fn instance_index(&self, id: InstanceId) -> Option<usize> {
+        self.instances.iter().position(|i| i.id == id)
+    }
+
+    /// Instance covering world position `p`, given each block's port counts.
+    pub fn instance_at(&self, p: Pos2, counts: &dyn Fn(&BlockRef) -> PortCounts) -> Option<usize> {
+        let cell = cell_of(p);
+        self.instances
+            .iter()
+            .rposition(|inst| box_geometry(inst.cell, counts(&inst.block)).cells.contains(&cell))
+    }
+
+    /// Whether `cell` is taken by a primitive or a box.
+    pub fn occupied(&self, cell: (i32, i32), counts: &dyn Fn(&BlockRef) -> PortCounts) -> bool {
+        self.components.iter().any(|c| cell_of(c.pos) == cell)
+            || self.instances.iter().any(|inst| box_geometry(inst.cell, counts(&inst.block)).cells.contains(&cell))
+    }
+
+    /// Connect a signal output to an input; an input has one driver, so any
+    /// wire already into `to` is replaced.
+    pub fn connect_signal(&mut self, from: Terminal, to: Terminal) {
+        self.signals.retain(|w| w.to != to);
+        self.signals.push(SignalWire { from, to });
+    }
+
+    /// Driver of a signal input, if wired.
+    pub fn signal_source(&self, to: Terminal) -> Option<Terminal> {
+        self.signals.iter().find(|w| w.to == to).map(|w| w.from)
+    }
+
+    /// Connect two box ports with a waveguide. Light ports take one
+    /// waveguide each, so wires on either end are replaced.
+    pub fn connect_optical(&mut self, from: PortRef, to: PortRef) {
+        self.wires.retain(|w| w.from != from && w.to != to);
+        self.wires.push(Wire {
+            from,
+            to,
+            length_um: None,
+        });
+    }
+
+    /// Remove primitives by index, with their signal wires; later indices shift down.
+    pub fn remove_parts(&mut self, indices: &[usize]) {
+        let mut doomed: Vec<usize> = indices.iter().copied().filter(|&i| i < self.components.len()).collect();
+        doomed.sort_unstable();
+        doomed.dedup();
+        for &i in doomed.iter().rev() {
+            self.components.remove(i);
+        }
+        self.labels = std::mem::take(&mut self.labels)
+            .into_iter()
+            .filter(|(i, _)| doomed.binary_search(i).is_err())
+            .map(|(i, l)| (i - doomed.partition_point(|&d| d < i), l))
+            .collect();
+        let remap = |item: Item| match item {
+            Item::Part(i) if doomed.binary_search(&i).is_ok() => None,
+            Item::Part(i) => Some(Item::Part(i - doomed.partition_point(|&d| d < i))),
+            other => Some(other),
+        };
+        self.signals = std::mem::take(&mut self.signals)
+            .into_iter()
+            .filter_map(|w| {
+                Some(SignalWire {
+                    from: Terminal { item: remap(w.from.item)?, port: w.from.port },
+                    to: Terminal { item: remap(w.to.item)?, port: w.to.port },
+                })
+            })
+            .collect();
+    }
+
+    /// Remove instances, with every waveguide and signal wire touching them.
+    pub fn remove_instances(&mut self, ids: &[InstanceId]) {
+        self.instances.retain(|i| !ids.contains(&i.id));
+        self.wires.retain(|w| !ids.contains(&w.from.instance) && !ids.contains(&w.to.instance));
+        let touches = |t: &Terminal| matches!(t.item, Item::Box(id) if ids.contains(&id));
+        self.signals.retain(|w| !touches(&w.from) && !touches(&w.to));
+    }
+
     /// Component occupying the cell that contains `p`.
     pub fn component_at(&self, p: Pos2) -> Option<usize> {
         let cell = cell_of(p);
@@ -189,7 +427,16 @@ struct LayoutFile {
 
 /// Import a layout saved as JSON by an earlier version, and its cell size if recorded.
 pub fn from_legacy_json(json: &str) -> Result<(Layout, Option<f64>), String> {
-    let file: LayoutFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    // Detectors were a plain variant before they gained a threshold.
+    if let Some(parts) = value.get_mut("components").and_then(|c| c.as_array_mut()) {
+        for part in parts {
+            if part.get("kind").and_then(|k| k.as_str()) == Some("Detector") {
+                part["kind"] = serde_json::json!({"Detector": {"threshold": 0.0}});
+            }
+        }
+    }
+    let file: LayoutFile = serde_json::from_value(value).map_err(|e| e.to_string())?;
     if file.version > LAYOUT_VERSION {
         return Err(format!(
             "file format version {} is newer than supported ({LAYOUT_VERSION})",
@@ -199,6 +446,7 @@ pub fn from_legacy_json(json: &str) -> Result<(Layout, Option<f64>), String> {
     let mut layout = Layout {
         components: file.components,
         lines: file.lines,
+        ..Layout::default()
     };
     if file.version == 0 {
         for c in &mut layout.components {
@@ -293,11 +541,11 @@ mod tests {
                     pos: cell_center(0, 0),
                 },
                 PlacedComponent {
-                    kind: OpticComponentKind::Detector,
+                    kind: crate::panels::optics::model::DETECTOR,
                     pos: cell_center(3, -2),
                 },
             ],
-            lines: Vec::new(),
+            ..Layout::default()
         };
         assert_eq!(layout.component_at(Pos2::new(5.0, 35.0)), Some(0));
         assert_eq!(

@@ -4,7 +4,8 @@ use egui::{Event, Modifiers, Pos2, Rect, Vec2};
 
 use super::*;
 use crate::panels::optics::OpticComponentKind;
-use crate::panels::schematic::model::BlockRef;
+use crate::panels::optics::model::{BlockRef, Builtin, Item, Terminal};
+use crate::panels::optics::{Hit, OpticsPanel, Placeable};
 
 struct Harness {
     ctx: egui::Context,
@@ -53,18 +54,47 @@ impl Harness {
     }
 }
 
-fn schematic(ws: &mut Workspace, id: DocId) -> &mut crate::panels::schematic::SchematicPanel {
-    match &mut ws.project.doc_mut(id).unwrap().content {
-        Content::Schematic(p) => p,
-        Content::Layout(_) => panic!("not a schematic"),
-    }
+fn panel(ws: &mut Workspace, id: DocId) -> &mut OpticsPanel {
+    ws.project.doc_mut(id).unwrap().panel_mut()
 }
 
-fn layout(ws: &mut Workspace, id: DocId) -> &mut crate::panels::optics::OpticsPanel {
-    match &mut ws.project.doc_mut(id).unwrap().content {
-        Content::Layout(p) => p,
-        Content::Schematic(_) => panic!("not a layout"),
-    }
+fn demo(ws: &mut Workspace, name: &str) -> DocId {
+    let i = demos().iter().position(|d| d.name == name).expect("demo exists");
+    ws.load_demo(i);
+    ws.active.unwrap()
+}
+
+const ADDER: &str = "8-bit photonic adder";
+const ACCUMULATOR: &str = "Photonic accumulator";
+const CASCADE: &str = "Cascaded interferometers";
+
+/// The value held by a document's first register.
+fn register_value(ws: &mut Workspace, id: DocId) -> u64 {
+    let p = panel(ws, id);
+    let o = p.sim.as_ref().expect("simulated").outcome.clone();
+    assert!(o.error.is_none(), "{:?}", o.error);
+    let inst = p
+        .layout
+        .instances
+        .iter()
+        .find(|i| matches!(i.block, BlockRef::Builtin(Builtin::Register { .. })))
+        .unwrap();
+    crate::panels::optics::output_number(&o, inst.id, 8)
+}
+
+/// The value on a document's first display.
+fn display_value(ws: &mut Workspace, id: DocId) -> u64 {
+    let p = panel(ws, id);
+    let o = p.sim.as_ref().expect("simulated").outcome.clone();
+    assert!(o.error.is_none(), "{:?}", o.error);
+    let inst = p
+        .layout
+        .instances
+        .iter()
+        .find(|i| matches!(i.block, BlockRef::Builtin(Builtin::Display { .. })))
+        .unwrap();
+    let BlockRef::Builtin(Builtin::Display { bits }) = inst.block else { unreachable!() };
+    crate::panels::optics::input_number(&p.layout, &o, inst.id, bits as usize)
 }
 
 #[test]
@@ -72,11 +102,13 @@ fn starts_with_one_layout_and_manages_tabs() {
     let mut ws = Workspace::default();
     assert_eq!(ws.tabs.len(), 1);
     let first = ws.active.unwrap();
-    let second = ws.new_schematic();
+    let second = ws.new_component();
     let third = ws.new_layout();
     assert_eq!(ws.tabs, vec![first, second, third]);
     assert_eq!(ws.active, Some(third));
     assert_eq!(ws.project.doc(third).unwrap().name, "Layout 2");
+    assert!(ws.dialog.is_some(), "a new component asks for its details");
+    ws.dialog = None;
 
     ws.open_tab(first);
     assert_eq!(ws.active, Some(first));
@@ -91,11 +123,7 @@ fn starts_with_one_layout_and_manages_tabs() {
     assert_eq!(ws.active, Some(second));
     ws.close_tab(second);
     assert_eq!(ws.active, None);
-    assert_eq!(
-        ws.project.documents.len(),
-        3,
-        "closing a tab keeps the document"
-    );
+    assert_eq!(ws.project.documents.len(), 3, "closing a tab keeps the document");
     ws.close_tab(DocId(999));
 
     // With nothing open, the empty state renders and Ctrl+N still works.
@@ -106,6 +134,21 @@ fn starts_with_one_layout_and_manages_tabs() {
 }
 
 #[test]
+fn new_components_have_ports_and_are_placeable() {
+    let mut ws = Workspace::default();
+    let top = ws.active.unwrap();
+    let c = ws.new_component();
+    ws.dialog = None;
+    let iface = ws.project.doc(c).unwrap().interface();
+    assert_eq!(iface.inputs, vec!["in"]);
+    assert_eq!(iface.outputs, vec!["out"]);
+    assert_eq!(iface.signal_inputs, vec!["s"]);
+    assert_eq!(iface.signal_outputs, vec!["q"]);
+    assert!(ws.project.catalog().can_place(c, top));
+    assert!(!ws.project.catalog().can_place(c, c));
+}
+
+#[test]
 fn examples_open_and_simulate() {
     let mut ws = Workspace::default();
     let mut h = Harness::new();
@@ -113,53 +156,151 @@ fn examples_open_and_simulate() {
         ws.load_layout_example(i);
         h.frame(&mut ws, Vec::new());
         let id = ws.active.unwrap();
-        assert!(layout(&mut ws, id).sim_cache.is_some());
+        let sim = panel(&mut ws, id).sim.clone().expect("simulated");
+        assert!(sim.outcome.error.is_none(), "{:?}", sim.outcome.error);
     }
-    for i in 0..schematic_examples().len() {
-        ws.load_schematic_example(i);
+    for i in 0..demos().len() {
+        ws.load_demo(i);
         h.frame(&mut ws, Vec::new());
         let id = ws.active.unwrap();
-        let sim = schematic(&mut ws, id).sim.clone().expect("simulated");
-        assert!(sim.error.is_none(), "{:?}", sim.error);
-        assert!(!sim.readings.is_empty());
+        let sim = panel(&mut ws, id).sim.clone().expect("simulated");
+        assert!(sim.outcome.error.is_none(), "{}: {:?}", demos()[i].name, sim.outcome.error);
     }
     ws.load_layout_example(99);
-    ws.load_schematic_example(99);
-    assert!(ws.status.as_ref().unwrap().0.contains("Optical DFT"));
+    ws.load_demo(99);
+    assert!(ws.status.as_ref().unwrap().0.contains(CASCADE));
+}
+
+#[test]
+fn the_adder_adds_and_bits_toggle_with_a_click() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = demo(&mut ws, ADDER);
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(display_value(&mut ws, id), 155, "100 + 55");
+
+    // Click the least significant bit of A (100 → 101).
+    let p = panel(&mut ws, id);
+    let a = p.layout.instances[0].cell;
+    let world = model::cell_center(a.0 + 7, a.1);
+    let canvas = p.canvas_rect().unwrap();
+    let at = p.view.to_screen(canvas, world);
+    assert_eq!(p.hit(world), Hit::Box(0));
+    for pressed in [true, false] {
+        h.frame(&mut ws, vec![Event::PointerMoved(at)]);
+        h.frame(
+            &mut ws,
+            vec![Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE }],
+        );
+    }
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(panel(&mut ws, id).layout.instances[0].block, BlockRef::Builtin(Builtin::NumberInput { bits: 8, value: 101 }));
+    assert_eq!(display_value(&mut ws, id), 156);
+}
+
+#[test]
+fn the_accumulator_counts_with_the_clock() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = demo(&mut ws, ACCUMULATOR);
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(register_value(&mut ws, id), 0);
+    ws.tick();
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(register_value(&mut ws, id), 3);
+    // The panel's Step goes through the workspace.
+    panel(&mut ws, id).tick();
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(panel(&mut ws, id).machine.tick, 2);
+    assert_eq!(register_value(&mut ws, id), 6);
+    // Running ticks on its own.
+    panel(&mut ws, id).running = true;
+    for _ in 0..12 {
+        h.frame(&mut ws, Vec::new());
+    }
+    assert!(panel(&mut ws, id).machine.tick >= 3);
+    panel(&mut ws, id).reset_clock();
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(register_value(&mut ws, id), 0);
 }
 
 #[test]
 fn reused_component_opens_with_tab_and_edits_propagate() {
     let mut ws = Workspace::default();
     let mut h = Harness::new();
-    ws.load_schematic_example(2);
-    let top = ws.active.unwrap();
+    let top = demo(&mut ws, CASCADE);
     h.frame(&mut ws, Vec::new());
-    let before = schematic(&mut ws, top).sim.clone().unwrap().readings;
+    let readings = |ws: &mut Workspace| panel(ws, top).sim.clone().unwrap().outcome.detector_power;
+    let before = readings(&mut ws);
 
-    // Select the first component instance and press Tab.
-    let component = match schematic(&mut ws, top).schematic.instances[1].block {
+    // Select the first component box and press Tab.
+    let component = match panel(&mut ws, top).layout.instances[0].block {
         BlockRef::Component(id) => id,
         _ => panic!("expected a component"),
     };
-    schematic(&mut ws, top).selection.select_only(1);
+    panel(&mut ws, top).editor.boxes.select_only(0);
     h.key(&mut ws, Key::Tab);
     assert_eq!(ws.active, Some(component), "Tab opened the definition");
-    assert!(ws.project.doc(component).unwrap().is_layout());
 
     // Change the phase shifter inside the component...
-    for c in &mut layout(&mut ws, component).layout.components {
+    for c in &mut panel(&mut ws, component).layout.components {
         if let OpticComponentKind::PhaseShifter { phase } = &mut c.kind {
             *phase = std::f32::consts::PI;
         }
     }
-    // ...and both instances in the schematic follow.
+    // ...and both instances follow.
     ws.open_tab(top);
     h.frame(&mut ws, Vec::new());
-    let after = schematic(&mut ws, top).sim.clone().unwrap().readings;
+    let after = readings(&mut ws);
     assert_ne!(before, after);
-    let total: f64 = after.iter().map(|r| r.1).sum();
-    assert!((total - 1.0).abs() < 1e-9);
+    let total: f64 = after.iter().map(|r| r.1).fold(0.0, |a, b| a + b);
+    assert!((total - 1.0).abs() < 1e-9, "{after:?}");
+}
+
+#[test]
+fn example_components_are_placed_from_the_library() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = ws.active.unwrap();
+    h.frame(&mut ws, Vec::new());
+    panel(&mut ws, id).place(Placeable::Example(0), model::cell_center(2, 2));
+    h.frame(&mut ws, Vec::new());
+    panel(&mut ws, id).place(Placeable::Example(0), model::cell_center(2, 8));
+    h.frame(&mut ws, Vec::new());
+    let fa = ws.project.find("Full adder").expect("imported once");
+    assert_eq!(ws.project.documents.len(), 2);
+    let p = panel(&mut ws, id);
+    assert_eq!(p.layout.instances.len(), 2);
+    assert!(p.layout.instances.iter().all(|i| i.block == BlockRef::Component(fa)));
+    assert_eq!(p.layout.instances[0].cell, (2, 2));
+
+    // Wire a number input into the adder by dragging between terminals.
+    let n = p.layout.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 1 }), (2, 0));
+    let from = p.terminal_pos(Terminal { item: Item::Box(n), port: 0 }, true).unwrap();
+    let to = p.terminal_pos(Terminal { item: Item::Box(p.layout.instances[0].id), port: 0 }, false).unwrap();
+    let canvas = p.canvas_rect().unwrap();
+    let (from, to) = (p.view.to_screen(canvas, from), p.view.to_screen(canvas, to));
+    let press = |pressed, pos| Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+    h.frame(&mut ws, vec![Event::PointerMoved(from)]);
+    h.frame(&mut ws, vec![press(true, from)]);
+    for k in 1..=6 {
+        h.frame(&mut ws, vec![Event::PointerMoved(from + (to - from) * (k as f32 / 6.0))]);
+    }
+    h.frame(&mut ws, vec![press(false, to)]);
+    h.frame(&mut ws, Vec::new());
+    let p = panel(&mut ws, id);
+    assert_eq!(p.layout.signals.len(), 1, "connected by dragging");
+    let o = p.sim.as_ref().unwrap().outcome.clone();
+    assert_eq!(o.signal(Item::Box(p.layout.instances[0].id), 0), 1.0, "sum = 1");
+
+    // A component can't be placed inside itself.
+    ws.open_tab(fa);
+    h.frame(&mut ws, Vec::new());
+    panel(&mut ws, fa).place(Placeable::Block(BlockRef::Component(fa)), model::cell_center(20, 20));
+    assert!(panel(&mut ws, fa).layout.instances.is_empty());
+    ws.place_example(0, (30, 30));
+    assert!(ws.status.as_ref().unwrap().0.contains("itself"));
 }
 
 #[test]
@@ -186,32 +327,20 @@ fn saving_a_document_as_a_component() {
     assert_eq!(ws.project.catalog().components().count(), 1);
 
     // Renaming to a taken name picks a free one; initials are capped at 4.
-    let other = ws.new_schematic();
+    let other = ws.new_layout();
     ws.open_document_dialog(other, false);
     let d = ws.dialog.as_mut().unwrap();
     assert!(!d.component);
     d.name = "Beam router".into();
     ws.apply_document_dialog();
     assert_eq!(ws.project.doc(other).unwrap().name, "Beam router 2");
-    assert!(
-        ws.project.doc(other).unwrap().component.is_none(),
-        "rename does not publish"
-    );
+    assert!(ws.project.doc(other).unwrap().component.is_none(), "rename does not publish");
 
     ws.open_document_dialog(id, true);
     ws.dialog.as_mut().unwrap().initials = "ABCDEFG".into();
     ws.dialog.as_mut().unwrap().name = "   ".into();
     ws.apply_document_dialog();
-    assert_eq!(
-        ws.project
-            .doc(id)
-            .unwrap()
-            .component
-            .as_ref()
-            .unwrap()
-            .initials,
-        "ABCD"
-    );
+    assert_eq!(ws.project.doc(id).unwrap().component.as_ref().unwrap().initials, "ABCD");
     assert_eq!(ws.project.doc(id).unwrap().name, "Untitled");
 
     ws.apply_document_dialog();
@@ -222,8 +351,7 @@ fn saving_a_document_as_a_component() {
 #[test]
 fn unpublishing_and_deleting_respect_users() {
     let mut ws = Workspace::default();
-    ws.load_schematic_example(2);
-    let top = ws.active.unwrap();
+    let top = demo(&mut ws, CASCADE);
     let component = ws.project.catalog().components().next().unwrap().id;
 
     ws.unpublish(component);
@@ -248,14 +376,10 @@ fn project_files_round_trip_and_layouts_import() {
     let path = dir.join("project.shine");
 
     let mut ws = Workspace::default();
-    ws.load_schematic_example(2);
+    demo(&mut ws, ADDER);
     ws.save_project_to(&path).unwrap();
     assert_eq!(ws.project.path.as_deref(), Some(path.as_path()));
-    assert_eq!(
-        &std::fs::read(&path).unwrap()[..4],
-        b"SHNE",
-        "binary, not JSON"
-    );
+    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHNE", "binary, not JSON");
 
     let mut other = Workspace::default();
     other.open_path(&path).unwrap();
@@ -276,19 +400,11 @@ fn project_files_round_trip_and_layouts_import() {
     assert_eq!(other.project.documents.len(), count + 1);
     let id = other.active.unwrap();
     assert_eq!(other.project.doc(id).unwrap().name, "my layout");
-    assert_eq!(layout(&mut other, id).cell_um, 2.0);
+    assert_eq!(panel(&mut other, id).cell_um, 2.0);
 
     // Browser uploads arrive as bytes and open on the next frame.
-    other
-        .incoming
-        .lock()
-        .unwrap()
-        .push(("upload".into(), ws.project.to_bytes()));
-    other
-        .incoming
-        .lock()
-        .unwrap()
-        .push(("junk".into(), vec![0xff, 0x00]));
+    other.incoming.lock().unwrap().push(("upload".into(), ws.project.to_bytes()));
+    other.incoming.lock().unwrap().push(("junk".into(), vec![0xff, 0x00]));
     Harness::new().frame(&mut other, Vec::new());
     assert_eq!(other.project.to_bytes(), ws.project.to_bytes());
     assert!(other.status.as_ref().unwrap().0.contains("Open failed"));
@@ -296,23 +412,16 @@ fn project_files_round_trip_and_layouts_import() {
     assert!(other.open_path(&dir.join("missing.shine")).is_err());
     std::fs::write(dir.join("bad.json"), "{").unwrap();
     assert!(other.open_path(&dir.join("bad.json")).is_err());
-    assert!(
-        ws.save_project_to(&dir.join("no/such/dir/p.shine"))
-            .is_err()
-    );
+    assert!(ws.save_project_to(&dir.join("no/such/dir/p.shine")).is_err());
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn examples_open_by_slug() {
     let mut ws = Workspace::default();
-    assert!(ws.open_example("optical-dft"));
-    assert_eq!(
-        ws.project.doc(ws.active.unwrap()).unwrap().name,
-        "Optical DFT"
-    );
+    assert!(ws.open_example("8-bit-photonic-adder"));
+    assert_eq!(ws.project.doc(ws.active.unwrap()).unwrap().name, ADDER);
     assert!(ws.open_example("mach-zehnder-interferometer"));
-    assert!(ws.project.doc(ws.active.unwrap()).unwrap().is_layout());
     assert!(!ws.open_example("no-such-example"));
 }
 
@@ -328,34 +437,28 @@ fn keyboard_routes_through_the_active_editor() {
     assert!(ws.show_shortcuts);
     h.frame(&mut ws, Vec::new());
 
-    // Ctrl+N makes a new document of the same kind.
-    let schematic_id = ws.new_schematic();
+    let before = ws.project.documents.len();
     h.key_with(&mut ws, Key::N, Modifiers::COMMAND);
-    let new = ws.active.unwrap();
-    assert_ne!(new, schematic_id);
-    assert!(!ws.project.doc(new).unwrap().is_layout());
-    ws.open_tab(ws.tabs[0]);
-    h.key_with(&mut ws, Key::N, Modifiers::COMMAND);
-    assert!(ws.project.doc(ws.active.unwrap()).unwrap().is_layout());
+    assert_eq!(ws.project.documents.len(), before + 1);
 }
 
 #[test]
 fn edit_menu_actions_reach_the_document() {
     let mut ws = Workspace::default();
-    ws.load_schematic_example(0);
-    let id = ws.active.unwrap();
+    let id = demo(&mut ws, ADDER);
     ws.apply(Action::SelectAll);
-    assert_eq!(schematic(&mut ws, id).selection.len(), 6);
+    assert_eq!(panel(&mut ws, id).editor.boxes.len(), 11);
     ws.apply(Action::Delete);
-    assert!(schematic(&mut ws, id).schematic.instances.is_empty());
+    assert!(panel(&mut ws, id).layout.instances.is_empty());
+    assert!(panel(&mut ws, id).layout.signals.is_empty(), "wires go with their boxes");
     ws.apply(Action::Undo);
-    assert_eq!(schematic(&mut ws, id).schematic.instances.len(), 6);
+    assert_eq!(panel(&mut ws, id).layout.instances.len(), 11);
 
     ws.load_layout_example(0);
     let id = ws.active.unwrap();
     ws.apply(Action::SelectAll);
     ws.apply(Action::Delete);
-    assert!(layout(&mut ws, id).layout.components.is_empty());
+    assert!(panel(&mut ws, id).layout.components.is_empty());
 
     ws.active = None;
     ws.apply(Action::Undo);
@@ -365,26 +468,38 @@ fn edit_menu_actions_reach_the_document() {
 fn whole_ui_renders_with_windows_and_dialogs() {
     let mut ws = Workspace::default();
     let mut h = Harness::new();
-    ws.load_schematic_example(2);
+    let adder = demo(&mut ws, ADDER);
     ws.show_examples = true;
     ws.show_shortcuts = true;
-    for tab in [
-        ExamplesTab::Layouts,
-        ExamplesTab::Schematics,
-        ExamplesTab::Chips,
-    ] {
+    for tab in [ExamplesTab::Demos, ExamplesTab::Layouts, ExamplesTab::Chips] {
         ws.examples_tab = tab;
         h.frame(&mut ws, Vec::new());
     }
-    let component = ws.project.catalog().components().next().unwrap().id;
-    ws.open_document_dialog(component, true);
+    // Inspect every kind of selection.
+    let n = panel(&mut ws, adder).layout.instances.len();
+    for b in 0..n {
+        panel(&mut ws, adder).editor.clear_selection();
+        panel(&mut ws, adder).editor.boxes.select_only(b);
+        h.frame(&mut ws, Vec::new());
+    }
+    panel(&mut ws, adder).editor.clear_selection();
+    panel(&mut ws, adder).selected_wire = Some(crate::panels::optics::WireRef::Signal(0));
+    h.frame(&mut ws, Vec::new());
+    let fa = ws.project.find("Full adder").unwrap();
+    ws.open_tab(fa);
+    let parts = panel(&mut ws, fa).layout.components.len();
+    for i in 0..parts {
+        panel(&mut ws, fa).editor.clear_selection();
+        panel(&mut ws, fa).editor.selection.select_only(i);
+        h.frame(&mut ws, Vec::new());
+    }
+
+    ws.open_document_dialog(fa, true);
     h.frame(&mut ws, Vec::new());
     assert!(ws.dialog.is_some(), "the dialog stays open until closed");
     // A component without ports warns in the dialog.
-    let empty = ws.new_schematic();
+    let empty = ws.new_layout();
     ws.open_document_dialog(empty, true);
-    h.frame(&mut ws, Vec::new());
-    ws.open_document_dialog(ws.tabs[0], true);
     h.frame(&mut ws, Vec::new());
     // Escape closes the modal.
     h.key(&mut ws, Key::Escape);
@@ -399,46 +514,35 @@ fn whole_ui_renders_with_windows_and_dialogs() {
 }
 
 #[test]
-fn simulation_is_cached_by_fingerprint() {
+fn simulation_is_cached_by_fingerprint_and_registers() {
     let mut ws = Workspace::default();
-    ws.load_schematic_example(0);
-    let id = ws.active.unwrap();
-    ws.refresh_simulation();
-    let key = schematic(&mut ws, id).sim_key;
-    assert!(key.is_some());
-    schematic(&mut ws, id).sim = None;
-    ws.refresh_simulation();
-    assert!(
-        schematic(&mut ws, id).sim.is_none(),
-        "unchanged project: not recomputed"
-    );
-    schematic(&mut ws, id).schematic.wire_settings.n_eff = 3.0;
-    ws.refresh_simulation();
-    assert!(schematic(&mut ws, id).sim.is_some());
-    schematic(&mut ws, id).simulation_active = false;
-    schematic(&mut ws, id).sim = None;
-    schematic(&mut ws, id).schematic.wire_settings.n_eff = 2.0;
-    ws.refresh_simulation();
-    assert!(schematic(&mut ws, id).sim.is_none(), "live simulation off");
+    let id = demo(&mut ws, ACCUMULATOR);
+    assert!(ws.refresh_simulation());
+    assert!(!ws.refresh_simulation(), "unchanged: not recomputed");
+    panel(&mut ws, id).sim.as_mut().unwrap().outcome.iterations = 999;
+    assert!(!ws.refresh_simulation());
+    assert_eq!(panel(&mut ws, id).sim.as_ref().unwrap().outcome.iterations, 999);
+    // A component used inside changes the result.
+    let fa = ws.project.find("Full adder").unwrap();
+    panel(&mut ws, fa).cell_um = 11.0;
+    assert!(ws.refresh_simulation());
+    // So does the clock.
+    ws.tick();
+    assert!(ws.refresh_simulation(), "the registers changed");
+    panel(&mut ws, id).machine.tick += 1;
+    assert!(ws.refresh_simulation());
+    panel(&mut ws, id).simulation_active = false;
+    panel(&mut ws, id).machine.tick += 1;
+    assert!(!ws.refresh_simulation(), "live simulation off");
 }
 
 #[test]
 fn simulate_toggle_is_on_by_default_and_flips() {
     let mut ws = Workspace::default();
-    assert_eq!(
-        ws.simulation_flag().copied(),
-        Some(true),
-        "new layouts simulate"
-    );
+    assert_eq!(ws.simulation_flag().copied(), Some(true), "new layouts simulate");
     *ws.simulation_flag().unwrap() = false;
     let id = ws.active.unwrap();
-    assert!(!layout(&mut ws, id).simulation_active);
-    ws.new_schematic();
-    assert_eq!(
-        ws.simulation_flag().copied(),
-        Some(true),
-        "new schematics simulate"
-    );
+    assert!(!panel(&mut ws, id).simulation_active);
     ws.active = None;
     assert!(ws.simulation_flag().is_none());
 
@@ -448,53 +552,31 @@ fn simulate_toggle_is_on_by_default_and_flips() {
     h.frame(&mut ws, Vec::new());
     let button = egui::Pos2::new(1330.0, 11.0);
     h.frame(&mut ws, vec![Event::PointerMoved(button)]);
-    h.frame(
-        &mut ws,
-        vec![Event::PointerButton {
-            pos: button,
-            button: egui::PointerButton::Primary,
-            pressed: true,
-            modifiers: Modifiers::NONE,
-        }],
-    );
-    h.frame(
-        &mut ws,
-        vec![Event::PointerButton {
-            pos: button,
-            button: egui::PointerButton::Primary,
-            pressed: false,
-            modifiers: Modifiers::NONE,
-        }],
-    );
-    assert_eq!(
-        ws.simulation_flag().copied(),
-        Some(false),
-        "clicking “Stop simulation” turned it off"
-    );
+    for pressed in [true, false] {
+        h.frame(
+            &mut ws,
+            vec![Event::PointerButton { pos: button, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE }],
+        );
+    }
+    assert_eq!(ws.simulation_flag().copied(), Some(false), "clicking “Stop simulation” turned it off");
 }
 
 #[test]
 fn url_queries_open_examples_tabs_and_windows() {
     let mut ws = Workspace::default();
-    ws.apply_url_query("?example=reusable-free-space-component&tab=free-space-mzi");
+    ws.apply_url_query("?example=cascaded-interferometers&tab=mach-zehnder-interferometer");
     let active = ws.project.doc(ws.active.unwrap()).unwrap();
-    assert_eq!(
-        active.name, "Free-space MZI",
-        "the component's definition tab is active"
-    );
+    assert_eq!(active.name, "Mach–Zehnder interferometer", "the component's definition tab is active");
     assert_eq!(ws.tabs.len(), 3);
 
     ws.apply_url_query("examples=chips&chip=wdm-demultiplexer");
     assert!(ws.show_examples);
     assert_eq!(ws.examples_tab, ExamplesTab::Chips);
-    assert_eq!(
-        ws.chips.examples[ws.chips.selected].name(),
-        "WDM demultiplexer"
-    );
-    ws.apply_url_query("examples=schematics");
-    assert_eq!(ws.examples_tab, ExamplesTab::Schematics);
-    ws.apply_url_query("examples");
+    assert_eq!(ws.chips.examples[ws.chips.selected].name(), "WDM demultiplexer");
+    ws.apply_url_query("examples=layouts");
     assert_eq!(ws.examples_tab, ExamplesTab::Layouts);
+    ws.apply_url_query("examples");
+    assert_eq!(ws.examples_tab, ExamplesTab::Demos);
 
     // Unknown values are ignored.
     let before = ws.tabs.len();

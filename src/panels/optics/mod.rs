@@ -1,59 +1,84 @@
-//! Free-space optics editor with Blender-style controls.
+//! The circuit editor: free-space optics, component boxes, waveguides and
+//! electrical signals on one grid, with Blender-style controls.
 //!
 //! - [`model`] — layout data and file format
 //! - [`view`] — pan/zoom transform
 //! - [`editor`] — selection, grab, undo (no UI)
 //! - [`input`] — keymap
-//! - [`render`] — drawing
-//! - [`examples`] — ready-made layouts
+//! - [`render`] — drawing primitives
+//! - [`canvas`] — hit testing, drawing and mouse interaction on the grid
+//! - [`library`] — the parts library, add menu and parameter widgets
+//! - [`examples`] — ready-made layouts, components and demos
 
+pub mod canvas;
 pub mod editor;
 pub mod examples;
 pub mod input;
+pub mod library;
 pub mod model;
 pub mod render;
 pub mod view;
 
-use egui::{Color32, FontId, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use std::hash::{Hash, Hasher};
+
+use egui::{Id, Pos2, Rect, Ui};
 
 pub use model::{GRID, Layout, Line, OpticComponentKind, PlacedComponent};
 
-use super::beam_sim::{self, LayoutSimulation};
 use super::chips::ChipBrowser;
+use super::circuit::sim::{self, Machine, NoDocuments, Options, Outcome};
+use super::project::{Catalog, DocId};
 use super::ui_kit;
 use editor::{Axis, Editor};
 use input::{Action, SHORTCUTS, shortcut};
+use model::{BlockRef, Builtin, Item, PortCounts, Terminal, box_geometry};
 use view::View;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+pub use crate::panels::Request;
+pub use canvas::Hit;
+pub use library::Placeable;
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Tool {
-    Place(OpticComponentKind),
+    Place(Placeable),
     DrawLine,
 }
 
-/// Last simulation and the inputs it was computed from.
+/// Last simulation and what it was computed from.
+#[derive(Clone, Debug)]
 pub struct SimCache {
-    pub components: Vec<PlacedComponent>,
-    pub cell_um: f64,
-    pub result: LayoutSimulation,
+    pub key: u64,
+    pub outcome: Outcome,
 }
 
 /// Context menu (right click) or add menu (Shift+A).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Menu {
     pub screen: Pos2,
     pub world: Pos2,
-    pub target: Option<usize>,
+    pub target: Option<Hit>,
+    pub search: String,
     opened_at: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MenuChoice {
     Rotate(i32),
     Duplicate,
     Delete,
-    Add(OpticComponentKind),
+    Inspect,
+    Add(Placeable),
     DeleteLines,
+    DeleteWire(WireRef),
+}
+
+/// A selected or hovered connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WireRef {
+    /// Index into [`Layout::wires`].
+    Waveguide(usize),
+    /// Index into [`Layout::signals`].
+    Signal(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -61,9 +86,9 @@ enum Drag {
     None,
     Box { start: Pos2, extend: bool },
     Line { start: Pos2 },
+    /// A wire being drawn from a port; the other end follows the mouse.
+    Connect(Hit),
 }
-
-pub use crate::panels::Request;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExamplesTab {
@@ -71,17 +96,31 @@ pub enum ExamplesTab {
     Chips,
 }
 
+/// Seconds between clock ticks while running.
+pub const TICK_SECONDS: f64 = 0.5;
+
 pub struct OpticsPanel {
     pub layout: Layout,
     pub editor: Editor,
     pub view: View,
     pub tool: Option<Tool>,
-    /// Component being dragged in from the toolbar.
-    pub dragging_new: Option<OpticComponentKind>,
+    /// Library entry being dragged onto the canvas.
+    pub dragging_new: Option<Placeable>,
+    pub selected_wire: Option<WireRef>,
     pub simulation_active: bool,
     /// Physical size of one grid cell in micrometres.
     pub cell_um: f64,
-    pub sim_cache: Option<SimCache>,
+    pub sim: Option<SimCache>,
+    /// Register contents and clock count.
+    pub machine: Machine,
+    /// Clock ticking by itself.
+    pub running: bool,
+    last_tick: f64,
+    /// Components of the project, set by the host each frame.
+    pub catalog: Catalog,
+    /// The document being edited, to refuse placing it inside itself.
+    pub doc_id: Option<DocId>,
+    pub search: String,
     pub show_toolbar: bool,
     pub show_properties: bool,
     pub show_shortcuts: bool,
@@ -95,6 +134,8 @@ pub struct OpticsPanel {
     pub embedded: bool,
     pub requests: Vec<Request>,
     drag: Drag,
+    /// A grab ended with a mouse press: ignore the click it completes.
+    swallow_click: bool,
     canvas: Option<Rect>,
     mouse_screen: Option<Pos2>,
     mouse_world: Option<Pos2>,
@@ -111,9 +152,16 @@ impl Default for OpticsPanel {
             view: View::default(),
             tool: None,
             dragging_new: None,
-            simulation_active: false,
+            selected_wire: None,
+            simulation_active: true,
             cell_um: 10.0,
-            sim_cache: None,
+            sim: None,
+            machine: Machine::default(),
+            running: false,
+            last_tick: 0.0,
+            catalog: Catalog::default(),
+            doc_id: None,
+            search: String::new(),
             show_toolbar: true,
             show_properties: true,
             show_shortcuts: false,
@@ -125,6 +173,7 @@ impl Default for OpticsPanel {
             embedded: false,
             requests: Vec::new(),
             drag: Drag::None,
+            swallow_click: false,
             canvas: None,
             mouse_screen: None,
             mouse_world: None,
@@ -132,6 +181,22 @@ impl Default for OpticsPanel {
             time: 0.0,
         }
     }
+}
+
+/// Order-independent hash of register contents and the clock.
+fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
+    machine.tick.hash(hasher);
+    let mut entries: u64 = 0;
+    for ((path, id), bits) in &machine.registers {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut h);
+        id.hash(&mut h);
+        for b in bits {
+            b.to_bits().hash(&mut h);
+        }
+        entries = entries.wrapping_add(h.finish());
+    }
+    entries.hash(hasher);
 }
 
 impl OpticsPanel {
@@ -143,7 +208,6 @@ impl OpticsPanel {
             cell_um,
             embedded: true,
             frame_pending: true,
-            simulation_active: true,
             ..Self::default()
         }
     }
@@ -159,44 +223,84 @@ impl OpticsPanel {
         self.status = Some((message, self.time + 3.0));
     }
 
+    /// Port counts of a block, for sizing boxes.
+    pub fn counts(&self, block: &BlockRef) -> PortCounts {
+        self.catalog.counts(block)
+    }
+
     // ---- simulation -------------------------------------------------------
 
-    /// Re-solve only when the layout or the physical scale changed.
+    /// Simulation key for this document inside a project with the given
+    /// fingerprint (which covers every document's layout and scale).
+    pub fn simulation_key(&self, project_fingerprint: u64) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        project_fingerprint.hash(&mut h);
+        hash_machine(&self.machine, &mut h);
+        h.finish()
+    }
+
+    /// Key for a panel on its own: the layout, scale and machine.
+    fn standalone_key(&self) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        postcard::to_allocvec(&self.layout).expect("serialisable").hash(&mut h);
+        self.cell_um.to_bits().hash(&mut h);
+        hash_machine(&self.machine, &mut h);
+        h.finish()
+    }
+
+    pub fn is_stale(&self, key: u64) -> bool {
+        self.sim.as_ref().is_none_or(|s| s.key != key)
+    }
+
+    pub fn set_outcome(&mut self, key: u64, outcome: Outcome) {
+        if let Some(e) = &outcome.error {
+            tracing::warn!("Simulation failed: {e}");
+        }
+        self.sim = Some(SimCache { key, outcome });
+    }
+
+    /// Re-solve a standalone layout (no components from a project) when it changed.
     pub fn refresh_simulation(&mut self) {
-        let stale = self
-            .sim_cache
-            .as_ref()
-            .is_none_or(|c| c.components != self.layout.components || c.cell_um != self.cell_um);
-        if !stale {
+        let key = self.standalone_key();
+        if !self.is_stale(key) {
             return;
         }
         let start = web_time::Instant::now();
-        let result =
-            beam_sim::simulate_layout(&self.layout.components, GRID, self.cell_um, GRID * 500.0);
-        match &result.error {
-            Some(e) => tracing::warn!("Simulation failed: {e}"),
-            None => tracing::debug!(
-                "Simulated {} components, {} beam segments in {:?}",
-                self.layout.components.len(),
-                result.beams.len(),
-                start.elapsed()
-            ),
-        }
-        self.sim_cache = Some(SimCache {
-            components: self.layout.components.clone(),
-            cell_um: self.cell_um,
-            result,
-        });
+        let outcome = sim::simulate(&self.layout, self.cell_um, &NoDocuments, &self.machine, None, &Options::default());
+        tracing::debug!(
+            "Simulated {} parts and {} boxes in {:?} ({} rounds)",
+            self.layout.components.len(),
+            self.layout.instances.len(),
+            start.elapsed(),
+            outcome.iterations
+        );
+        self.set_outcome(key, outcome);
+    }
+
+    /// The current simulation result, when simulating.
+    pub fn outcome(&self) -> Option<&Outcome> {
+        self.sim.as_ref().filter(|_| self.simulation_active).map(|s| &s.outcome)
     }
 
     pub fn detector_reading(&self, index: usize) -> Option<f64> {
-        let cache = self.sim_cache.as_ref()?;
-        cache
-            .result
-            .detector_power
-            .iter()
-            .find(|d| d.0 == index)
-            .map(|d| d.1)
+        self.outcome()?.reading(index)
+    }
+
+    /// Advance the clock: registers store their inputs. Embedded panels ask
+    /// the host, which knows the components.
+    pub fn tick(&mut self) {
+        if self.embedded {
+            self.requests.push(Request::Tick);
+            return;
+        }
+        self.refresh_simulation();
+        let outcome = self.sim.as_ref().map(|s| s.outcome.clone()).unwrap_or_default();
+        sim::clock(&self.layout, &NoDocuments, &mut self.machine, &outcome);
+    }
+
+    pub fn reset_clock(&mut self) {
+        self.machine = Machine::default();
+        self.running = false;
     }
 
     // ---- documents --------------------------------------------------------
@@ -204,9 +308,22 @@ impl OpticsPanel {
     pub fn new_layout(&mut self) {
         self.editor.cancel_grab(&mut self.layout);
         self.layout = Layout::default();
-        self.editor.selection.clear();
+        self.editor.clear_selection();
+        self.selected_wire = None;
+        self.reset_clock();
         self.view = View::default();
         self.notify("New layout");
+    }
+
+    /// Replace the layout (loading a file or an example).
+    pub fn set_layout(&mut self, layout: Layout, cell_um: f64) {
+        self.editor.cancel_grab(&mut self.layout);
+        self.layout = layout;
+        self.cell_um = cell_um;
+        self.editor.clear_selection();
+        self.selected_wire = None;
+        self.reset_clock();
+        self.frame_pending = true;
     }
 
     /// Save as a Shine project holding just this layout.
@@ -216,31 +333,17 @@ impl OpticsPanel {
         std::fs::write(path, project.to_bytes()).map_err(|e| e.to_string())
     }
 
-    /// Load the first layout of a Shine project, or a JSON layout from an earlier version.
+    /// Load the first document of a Shine project, or a JSON layout from an earlier version.
     pub fn load_from(&mut self, path: &std::path::Path) -> Result<(), String> {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let (layout, cell_um) = if crate::panels::project::Project::is_project(&bytes) {
             let project = crate::panels::project::Project::from_bytes(&bytes)?;
-            project
-                .documents
-                .iter()
-                .find_map(|d| match &d.content {
-                    crate::panels::project::Content::Layout(p) => {
-                        Some((p.layout.clone(), Some(p.cell_um)))
-                    }
-                    _ => None,
-                })
-                .ok_or("the project has no free-space layout")?
+            let doc = project.documents.first().ok_or("the project is empty")?;
+            (doc.layout().clone(), Some(doc.panel().cell_um))
         } else {
             model::from_legacy_json(&String::from_utf8_lossy(&bytes))?
         };
-        self.editor.cancel_grab(&mut self.layout);
-        self.layout = layout;
-        if let Some(cell_um) = cell_um {
-            self.cell_um = cell_um;
-        }
-        self.editor.selection.clear();
-        self.frame_pending = true;
+        self.set_layout(layout, cell_um.unwrap_or(self.cell_um));
         Ok(())
     }
 
@@ -264,10 +367,7 @@ impl OpticsPanel {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter(
-                "Shine project or JSON layout",
-                &[super::file_format::EXTENSION, "json"],
-            )
+            .add_filter("Shine project or JSON layout", &[super::file_format::EXTENSION, "json"])
             .pick_file()
         else {
             return;
@@ -297,24 +397,36 @@ impl OpticsPanel {
         let Some(example) = examples::layout_examples().into_iter().nth(index) else {
             return;
         };
-        self.editor.cancel_grab(&mut self.layout);
-        self.layout = (example.build)();
-        self.cell_um = example.cell_um;
-        self.editor.selection.clear();
+        self.set_layout((example.build)(), example.cell_um);
         self.simulation_active = true;
-        self.frame_pending = true;
         self.notify(format!("Loaded example: {}", example.name));
     }
 
     // ---- actions ----------------------------------------------------------
 
-    fn frame(&mut self, selected_only: bool) {
-        let bounds = if selected_only {
+    /// Bounds of everything, or of the selection, in world units.
+    pub fn bounds(&self, selected_only: bool) -> Option<Rect> {
+        let parts = if selected_only {
             self.layout.bounds(self.editor.selection.iter())
         } else {
             self.layout.all_bounds()
         };
-        match (self.canvas, bounds) {
+        let boxes = self
+            .layout
+            .instances
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !selected_only || self.editor.boxes.contains(*i))
+            .map(|(_, inst)| box_geometry(inst.cell, self.counts(&inst.block)).rect.expand(GRID * 0.5))
+            .reduce(|a, b| a.union(b));
+        match (parts, boxes) {
+            (Some(a), Some(b)) => Some(a.union(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    fn frame(&mut self, selected_only: bool) {
+        match (self.canvas, self.bounds(selected_only)) {
             (Some(canvas), Some(bounds)) => self.view.frame(canvas, bounds, 40.0),
             (_, None) if !selected_only => self.view = View::default(),
             (None, Some(_)) => self.frame_pending = true,
@@ -323,9 +435,32 @@ impl OpticsPanel {
     }
 
     fn confirm_grab(&mut self) {
-        if let Err(e) = self.editor.confirm_grab(&mut self.layout) {
+        let catalog = &self.catalog;
+        if let Err(e) = self.editor.confirm_grab(&mut self.layout, &|b| catalog.counts(b)) {
             self.notify(format!("Move cancelled: {e}"));
         }
+    }
+
+    /// The component behind the selected box, if any.
+    pub fn selected_component(&self) -> Option<DocId> {
+        let i = self.editor.boxes.active()?;
+        match self.layout.instances.get(i)?.block {
+            BlockRef::Component(id) => Some(id),
+            BlockRef::Builtin(_) => None,
+        }
+    }
+
+    pub fn delete_wire(&mut self, wire: WireRef) {
+        match wire {
+            WireRef::Waveguide(w) if w < self.layout.wires.len() => {
+                self.layout.wires.remove(w);
+            }
+            WireRef::Signal(w) if w < self.layout.signals.len() => {
+                self.layout.signals.remove(w);
+            }
+            _ => {}
+        }
+        self.selected_wire = None;
     }
 
     pub fn apply(&mut self, action: Action) {
@@ -333,15 +468,22 @@ impl OpticsPanel {
             .mouse_world
             .or_else(|| self.canvas.map(|c| self.view.to_world(c, c.center())))
             .unwrap_or(Pos2::ZERO);
-        let count = self.layout.components.len();
         match action {
-            Action::SelectAll => self.editor.selection.select_all(count),
-            Action::DeselectAll => self.editor.selection.clear(),
-            Action::InvertSelection => self.editor.selection.invert(count),
+            Action::SelectAll => self.editor.select_all(&self.layout),
+            Action::DeselectAll => {
+                self.editor.clear_selection();
+                self.selected_wire = None;
+            }
+            Action::InvertSelection => self.editor.invert(&self.layout),
             Action::Delete => {
+                if let Some(w) = self.selected_wire {
+                    self.delete_wire(w);
+                    self.notify("Deleted the connection");
+                    return;
+                }
                 let n = self.editor.delete_selected(&mut self.layout);
                 if n > 0 {
-                    self.notify(format!("Deleted {n} component(s)"));
+                    self.notify(format!("Deleted {n} item(s)"));
                 }
             }
             Action::Duplicate => {
@@ -370,15 +512,16 @@ impl OpticsPanel {
             Action::FrameSelected => self.frame(true),
             Action::ToggleSimulation => self.simulation_active = !self.simulation_active,
             Action::ToggleToolbar if self.embedded => self.requests.push(Request::ToggleLibrary),
-            Action::ToggleProperties if self.embedded => {
-                self.requests.push(Request::ToggleInspector)
-            }
+            Action::ToggleProperties if self.embedded => self.requests.push(Request::ToggleInspector),
             Action::ShowShortcuts if self.embedded => self.requests.push(Request::ShowShortcuts),
             Action::ToggleToolbar => self.show_toolbar = !self.show_toolbar,
             Action::ToggleProperties => self.show_properties = !self.show_properties,
             Action::ShowShortcuts => self.show_shortcuts = !self.show_shortcuts,
-            // Layout parts have nothing to open.
-            Action::Inspect => {}
+            Action::Inspect => match self.selected_component() {
+                Some(id) if self.embedded => self.requests.push(Request::Inspect(id)),
+                Some(_) => self.notify("Components open in the workspace"),
+                None => self.notify("Select a component box to open it"),
+            },
             Action::AddMenu => self.open_menu(None),
             Action::Save if self.embedded => self.requests.push(Request::Save),
             Action::Open if self.embedded => self.requests.push(Request::Open),
@@ -402,7 +545,7 @@ impl OpticsPanel {
         }
     }
 
-    fn open_menu(&mut self, target: Option<usize>) {
+    fn open_menu(&mut self, target: Option<Hit>) {
         let (Some(screen), Some(world)) = (self.mouse_screen, self.mouse_world) else {
             return;
         };
@@ -410,8 +553,34 @@ impl OpticsPanel {
             screen,
             world,
             target,
+            search: String::new(),
             opened_at: self.time,
         });
+    }
+
+    /// Put a library entry at `world`.
+    pub fn place(&mut self, item: Placeable, world: Pos2) {
+        let catalog = &self.catalog;
+        let counts = |b: &BlockRef| catalog.counts(b);
+        let placed = match item {
+            Placeable::Part(kind) => self.editor.place(&mut self.layout, kind, world, &counts).is_some(),
+            Placeable::Block(BlockRef::Component(id)) if self.doc_id.is_some_and(|me| !catalog.can_place(id, me)) => {
+                self.notify("A component can't contain itself");
+                return;
+            }
+            Placeable::Block(block) => self.editor.place_block(&mut self.layout, block, world, &counts).is_some(),
+            Placeable::Example(example) => {
+                if self.embedded {
+                    self.requests.push(Request::PlaceExample { example, cell: model::cell_of(world) });
+                } else {
+                    self.notify("Example components need a project: use the workspace");
+                }
+                return;
+            }
+        };
+        if !placed {
+            self.notify("Not enough room there");
+        }
     }
 
     pub fn apply_menu_choice(&mut self, choice: MenuChoice, world: Pos2) {
@@ -419,19 +588,51 @@ impl OpticsPanel {
             MenuChoice::Rotate(steps) => self.editor.rotate_selected(&mut self.layout, steps),
             MenuChoice::Duplicate => self.apply(Action::Duplicate),
             MenuChoice::Delete => self.apply(Action::Delete),
-            MenuChoice::Add(kind) => {
-                if self.editor.place(&mut self.layout, kind, world).is_none() {
-                    self.notify("That cell is occupied");
-                }
-            }
+            MenuChoice::Inspect => self.apply(Action::Inspect),
+            MenuChoice::Add(item) => self.place(item, world),
             MenuChoice::DeleteLines => {
                 let cell = model::cell_of(world);
                 self.layout
                     .lines
                     .retain(|l| model::cell_of(l.start) != cell && model::cell_of(l.end) != cell);
             }
+            MenuChoice::DeleteWire(w) => self.delete_wire(w),
         }
         self.menu = None;
+    }
+
+    /// Drop connections to ports that no longer exist (after a block's
+    /// parameters changed its port count).
+    pub fn prune_connections(&mut self) {
+        let catalog = &self.catalog;
+        let layout = &self.layout;
+        let fits = |t: &Terminal, output: bool| match t.item {
+            Item::Part(i) => layout.components.get(i).is_some_and(|c| {
+                t.port
+                    < if output {
+                        c.kind.signal_outputs().len()
+                    } else {
+                        c.kind.signal_inputs().len()
+                    }
+            }),
+            Item::Box(id) => layout.instance(id).is_some_and(|inst| {
+                let c = catalog.counts(&inst.block);
+                t.port < if output { c.signal_out } else { c.signal_in }
+            }),
+        };
+        let signals: Vec<_> = layout.signals.iter().filter(|w| fits(&w.from, true) && fits(&w.to, false)).copied().collect();
+        let light_fits = |p: &model::PortRef, output: bool| {
+            layout.instance(p.instance).is_some_and(|inst| {
+                let c = catalog.counts(&inst.block);
+                p.port < if output { c.optical_out } else { c.optical_in }
+            })
+        };
+        let wires: Vec<_> = layout.wires.iter().filter(|w| light_fits(&w.from, true) && light_fits(&w.to, false)).cloned().collect();
+        if signals.len() != self.layout.signals.len() || wires.len() != self.layout.wires.len() {
+            self.layout.signals = signals;
+            self.layout.wires = wires;
+            self.selected_wire = None;
+        }
     }
 
     // ---- UI ---------------------------------------------------------------
@@ -441,17 +642,15 @@ impl OpticsPanel {
         if self.show_toolbar {
             egui::Panel::left("optics_toolbar")
                 .resizable(false)
-                .exact_size(200.0)
+                .exact_size(220.0)
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| self.palette_ui(ui));
                 });
         }
         if self.show_properties {
-            egui::Panel::right("optics_properties")
-                .default_size(250.0)
-                .show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| self.inspector_ui(ui));
-                });
+            egui::Panel::right("optics_properties").default_size(270.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.inspector_ui(ui));
+            });
         }
         egui::Panel::bottom("optics_status").show(ui, |ui| {
             ui.label(egui::RichText::new(self.status_text()).small());
@@ -464,15 +663,23 @@ impl OpticsPanel {
         self.end_frame(ui);
     }
 
-    /// Per-frame bookkeeping before any part of the editor is drawn.
+    /// Per-frame bookkeeping before any part of the editor is drawn. A
+    /// standalone panel simulates here; an embedded one is simulated by its
+    /// host right after.
     pub fn begin_frame(&mut self, ui: &Ui) {
         self.time = ui.input(|i| i.time);
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
         }
         self.handle_keys(ui);
-        // Before any panel reads results, so they all see the current layout.
-        if self.simulation_active {
+        if self.running {
+            if self.time - self.last_tick >= TICK_SECONDS {
+                self.last_tick = self.time;
+                self.tick();
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(TICK_SECONDS));
+        }
+        if self.simulation_active && !self.embedded {
             self.refresh_simulation();
         }
     }
@@ -484,7 +691,7 @@ impl OpticsPanel {
         }
     }
 
-    /// Floating UI drawn above everything (context menu).
+    /// Floating UI drawn above everything (context and add menus).
     pub fn overlays(&mut self, ctx: &egui::Context) {
         self.menu_ui(ctx);
     }
@@ -505,401 +712,6 @@ impl OpticsPanel {
         }
     }
 
-    /// Parts library and tools.
-    pub fn palette_ui(&mut self, ui: &mut Ui) {
-        let palette = OpticComponentKind::palette();
-        let groups: [(&str, &[usize]); 3] = [
-            ("Sources & probes", &[0, 6]),
-            ("Optics", &[1, 2, 3, 4, 5]),
-            ("Component ports", &[7, 8]),
-        ];
-        for (title, indices) in groups {
-            ui_kit::section(ui, title);
-            for &k in indices {
-                let kind = palette[k];
-                let selected = matches!(self.tool, Some(Tool::Place(t)) if t.name() == kind.name());
-                let response = ui_kit::item_row(ui, selected, kind.name(), |painter, rect| {
-                    render::draw_component(painter, rect.center(), &kind, 1.0, 0.6);
-                });
-                if response.drag_started() {
-                    self.dragging_new = Some(kind);
-                }
-                if response.clicked() {
-                    self.tool = if selected {
-                        None
-                    } else {
-                        Some(Tool::Place(kind))
-                    };
-                }
-                if k >= 7 {
-                    response.on_hover_text(
-                        "Marks where light enters or leaves when this layout is saved as a component. \
-                         Ports are numbered top to bottom.",
-                    );
-                }
-            }
-        }
-        ui_kit::section(ui, "Tools");
-        ui.horizontal(|ui| {
-            if ui.selectable_label(self.tool.is_none(), "Select").clicked() {
-                self.tool = None;
-            }
-            if ui
-                .selectable_label(self.tool == Some(Tool::DrawLine), "Line")
-                .clicked()
-            {
-                self.tool = Some(Tool::DrawLine);
-            }
-        });
-        ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new("Drag a part onto the grid, or click it and then click the grid.")
-                .small()
-                .weak(),
-        );
-    }
-
-    /// Selection properties, simulation settings and readouts.
-    pub fn inspector_ui(&mut self, ui: &mut Ui) {
-        ui_kit::section(ui, "Selection");
-        let selected = self.editor.selection.len();
-        match self
-            .editor
-            .selection
-            .active()
-            .filter(|&i| i < self.layout.components.len())
-        {
-            None => {
-                ui.label(egui::RichText::new("Nothing selected").weak());
-                ui.label(
-                    egui::RichText::new("Click a part, or drag a box around several.")
-                        .small()
-                        .weak(),
-                );
-            }
-            Some(i) => {
-                let reading = self.detector_reading(i);
-                let (inputs, outputs) = beam_sim::port_order(&self.layout.components);
-                let component = &mut self.layout.components[i];
-                let (ci, cj) = model::cell_of(component.pos);
-                ui.horizontal(|ui| {
-                    ui.strong(component.kind.name());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(format!("cell {ci}, {cj}")).weak());
-                    });
-                });
-                if selected > 1 {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{selected} selected · showing the last clicked"
-                        ))
-                        .small()
-                        .weak(),
-                    );
-                }
-                egui::Grid::new("part_params")
-                    .num_columns(2)
-                    .spacing([10.0, 6.0])
-                    .show(ui, |ui| {
-                        match &mut component.kind {
-                            OpticComponentKind::Laser {
-                                amplitude,
-                                phase,
-                                wavelength,
-                                ..
-                            } => {
-                                ui.label("Amplitude");
-                                ui.add(egui::Slider::new(amplitude, 0.0..=2.0));
-                                ui.end_row();
-                                ui.label("Phase");
-                                ui.add(
-                                    egui::Slider::new(phase, 0.0..=std::f32::consts::TAU)
-                                        .suffix(" rad"),
-                                );
-                                ui.end_row();
-                                ui.label("Wavelength");
-                                ui.add(
-                                    egui::DragValue::new(wavelength)
-                                        .range(200.0..=2000.0)
-                                        .speed(0.5)
-                                        .suffix(" nm"),
-                                );
-                                ui.end_row();
-                            }
-                            OpticComponentKind::BeamSplitter {
-                                reflectivity,
-                                transparency,
-                                ..
-                            } => {
-                                ui.label("Reflectivity");
-                                if ui.add(egui::Slider::new(reflectivity, 0.0..=1.0)).changed() {
-                                    *transparency = 1.0 - *reflectivity;
-                                }
-                                ui.end_row();
-                            }
-                            OpticComponentKind::PhaseShifter { phase } => {
-                                ui.label("Phase");
-                                ui.add(
-                                    egui::Slider::new(phase, 0.0..=std::f32::consts::TAU)
-                                        .suffix(" rad"),
-                                );
-                                ui.end_row();
-                            }
-                            OpticComponentKind::Attenuator { transmission } => {
-                                ui.label("Transmission");
-                                ui.add(egui::Slider::new(transmission, 0.0..=1.0));
-                                ui.end_row();
-                            }
-                            OpticComponentKind::Detector | OpticComponentKind::OutputPort => {
-                                ui.label("Power");
-                                match reading {
-                                    Some(p) if self.simulation_active => {
-                                        ui.monospace(format!("{p:.4}"))
-                                    }
-                                    _ => ui.label(egui::RichText::new("simulation off").weak()),
-                                };
-                                ui.end_row();
-                            }
-                            OpticComponentKind::InputPort { .. }
-                            | OpticComponentKind::Mirror { .. }
-                            | OpticComponentKind::Lens => {}
-                        }
-                        if let Some(k) = inputs.iter().position(|&p| p == i) {
-                            ui.label("Port");
-                            ui.label(format!("input {} of {}", k + 1, inputs.len()));
-                            ui.end_row();
-                        }
-                        if let Some(k) = outputs.iter().position(|&p| p == i) {
-                            ui.label("Port");
-                            ui.label(format!("output {} of {}", k + 1, outputs.len()));
-                            ui.end_row();
-                        }
-                    });
-                ui.horizontal(|ui| {
-                    if ui.small_button("Rotate").on_hover_text("R").clicked() {
-                        self.apply(Action::RotateCw);
-                    }
-                    if ui.small_button("Delete").on_hover_text("X").clicked() {
-                        self.apply(Action::Delete);
-                    }
-                });
-            }
-        }
-
-        ui_kit::section(ui, "Simulation");
-        ui.checkbox(&mut self.simulation_active, "Live simulation")
-            .on_hover_text("Space");
-        ui.horizontal(|ui| {
-            ui.label("Cell size");
-            ui.add(
-                egui::DragValue::new(&mut self.cell_um)
-                    .range(0.01..=10_000.0)
-                    .speed(0.01)
-                    .suffix(" µm"),
-            );
-        });
-        if !self.simulation_active {
-            return;
-        }
-        let Some(cache) = &self.sim_cache else { return };
-        if let Some(e) = &cache.result.error {
-            ui.colored_label(ui.visuals().error_fg_color, e);
-            return;
-        }
-        let mut wavelengths: Vec<f64> =
-            cache.result.beams.iter().map(|b| b.wavelength_nm).collect();
-        wavelengths.sort_by(f64::total_cmp);
-        wavelengths.dedup();
-        let summary = match wavelengths.as_slice() {
-            [] => "No light — add a laser".to_owned(),
-            wls => format!(
-                "{} beams at {} nm",
-                cache.result.beams.len(),
-                wls.iter()
-                    .map(|w| format!("{w:.0}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        };
-        ui.label(egui::RichText::new(summary).small().weak());
-
-        let readings = cache.result.detector_power.clone();
-        if readings.is_empty() {
-            return;
-        }
-        ui_kit::section(ui, "Readouts");
-        let scale = readings.iter().map(|r| r.1).fold(1e-12, f64::max);
-        egui::Grid::new("readouts")
-            .num_columns(3)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                for (i, power) in readings {
-                    let Some(component) = self.layout.components.get(i) else {
-                        continue;
-                    };
-                    let (ci, cj) = model::cell_of(component.pos);
-                    let label = format!(
-                        "{} {ci},{cj}",
-                        if component.kind == OpticComponentKind::OutputPort {
-                            "Out"
-                        } else {
-                            "Det"
-                        }
-                    );
-                    if ui
-                        .selectable_label(self.editor.selection.contains(i), label)
-                        .clicked()
-                    {
-                        self.editor.selection.select_only(i);
-                    }
-                    ui.add(
-                        egui::ProgressBar::new((power / scale) as f32)
-                            .desired_width(70.0)
-                            .desired_height(8.0),
-                    );
-                    ui.monospace(format!("{power:.4}"));
-                    ui.end_row();
-                }
-            });
-    }
-
-    pub fn canvas_ui(&mut self, ui: &mut Ui) {
-        let theme = ui_kit::CanvasTheme::from_visuals(ui.visuals());
-        egui::Frame::canvas(ui.style())
-            .fill(theme.background)
-            .inner_margin(0.0)
-            .show(ui, |ui| self.canvas_contents(ui, &theme));
-    }
-
-    fn canvas_contents(&mut self, ui: &mut Ui, theme: &ui_kit::CanvasTheme) {
-        let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
-        self.canvas = Some(rect);
-        if self.frame_pending {
-            self.frame_pending = false;
-            self.frame(false);
-        }
-        let pointer = ui
-            .input(|i| i.pointer.hover_pos())
-            .filter(|p| rect.contains(*p));
-        self.mouse_screen = pointer;
-        self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
-
-        self.navigate(ui, rect, &response, pointer);
-        self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
-        self.interact(ui, rect, &response, pointer);
-
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, theme.background);
-        render::draw_grid(&painter, rect, &self.view, theme);
-
-        if self.layout.components.is_empty()
-            && self.layout.lines.is_empty()
-            && self.dragging_new.is_none()
-        {
-            ui_kit::empty_hint(
-                &painter,
-                rect,
-                theme,
-                "Empty layout",
-                "Drag parts from the library, press Shift+A, or open an example",
-            );
-        }
-
-        // Hovered cell and placement preview.
-        if let Some(world) = self.mouse_world
-            && self.editor.grab.is_none()
-        {
-            let cell = Rect::from_center_size(
-                self.view.to_screen(rect, model::snap(world)),
-                Vec2::splat(GRID * self.view.zoom),
-            );
-            painter.rect_filled(cell, 2.0, theme.hover);
-            let preview = self.dragging_new.or(match self.tool {
-                Some(Tool::Place(kind)) => Some(kind),
-                _ => None,
-            });
-            if let Some(kind) = preview {
-                render::draw_component(&painter, cell.center(), &kind, 0.45, self.view.zoom);
-            }
-        }
-
-        let line_stroke = Stroke::new(2.0, Color32::from_rgb(214, 60, 60));
-        for line in &self.layout.lines {
-            painter.line_segment(
-                [
-                    self.view.to_screen(rect, line.start),
-                    self.view.to_screen(rect, line.end),
-                ],
-                line_stroke,
-            );
-        }
-        if let (Drag::Line { start }, Some(world)) = (self.drag, self.mouse_world) {
-            painter.line_segment(
-                [
-                    self.view.to_screen(rect, start),
-                    self.view.to_screen(rect, model::snap(world)),
-                ],
-                Stroke::new(2.0, line_stroke.color.gamma_multiply(0.5)),
-            );
-        }
-
-        if self.simulation_active {
-            self.refresh_simulation();
-            let sim = &self.sim_cache.as_ref().expect("just refreshed").result;
-            let hovered = render::draw_beams(&painter, rect, &self.view, &sim.beams, pointer);
-            for &(i, power) in &sim.detector_power {
-                painter.text(
-                    self.view.to_screen(rect, self.layout.components[i].pos)
-                        + Vec2::new(0.0, 14.0 * self.view.zoom),
-                    egui::Align2::CENTER_TOP,
-                    format!("{power:.3}"),
-                    FontId::monospace(11.0),
-                    theme.text,
-                );
-            }
-            if !hovered.is_empty() && self.editor.grab.is_none() {
-                response
-                    .clone()
-                    .on_hover_text_at_pointer(hovered.join("\n\n"));
-            }
-        }
-
-        for (i, c) in self.layout.components.iter().enumerate() {
-            let at = self.view.to_screen(rect, c.pos);
-            if !rect.expand(GRID * self.view.zoom).contains(at) {
-                continue;
-            }
-            render::draw_component(&painter, at, &c.kind, 1.0, self.view.zoom);
-            if self.editor.selection.contains(i) {
-                let active = self.editor.selection.active() == Some(i);
-                painter.rect_stroke(
-                    Rect::from_center_size(at, Vec2::splat((GRID - 4.0) * self.view.zoom)),
-                    4.0,
-                    Stroke::new(
-                        if active { 2.0 } else { 1.5 },
-                        if active {
-                            theme.active
-                        } else {
-                            theme.selection
-                        },
-                    ),
-                    egui::StrokeKind::Inside,
-                );
-            }
-        }
-
-        if let (Drag::Box { start, .. }, Some(screen)) = (self.drag, pointer) {
-            let area = Rect::from_two_pos(self.view.to_screen(rect, start), screen);
-            painter.rect(
-                area,
-                0.0,
-                Color32::from_rgba_unmultiplied(80, 130, 255, 40),
-                Stroke::new(1.0, Color32::from_rgb(80, 130, 255)),
-                egui::StrokeKind::Inside,
-            );
-        }
-    }
-
     pub fn header_text(&self) -> String {
         if let Some(g) = &self.editor.grab {
             let axis = match g.axis {
@@ -912,6 +724,12 @@ impl OpticsPanel {
                 g.offset.0, g.offset.1
             );
         }
+        if let Drag::Connect(from) = self.drag {
+            return match from {
+                Hit::LightOut(_) | Hit::LightIn(_) => "Drop on a light port to connect with a waveguide".to_owned(),
+                _ => "Drop on a signal terminal to connect".to_owned(),
+            };
+        }
         let cell = self
             .mouse_world
             .map(|w| {
@@ -919,191 +737,21 @@ impl OpticsPanel {
                 format!("  ·  cell {i}, {j}")
             })
             .unwrap_or_default();
-        let tool = match self.tool {
-            Some(Tool::Place(k)) => format!("  ·  placing {}", k.name()),
+        let tool = match &self.tool {
+            Some(Tool::Place(item)) => format!("  ·  placing {}", item.name(&self.catalog)),
             Some(Tool::DrawLine) => "  ·  line tool".to_owned(),
             None => String::new(),
         };
-        format!(
-            "{:.0}%{cell}  ·  {} selected{tool}  ·  F1 shortcuts",
-            self.view.zoom * 100.0,
-            self.editor.selection.len()
-        )
-    }
-
-    fn navigate(&mut self, ui: &Ui, rect: Rect, response: &egui::Response, pointer: Option<Pos2>) {
-        view::navigate(&mut self.view, ui, rect, response, pointer);
-    }
-
-    fn interact(&mut self, ui: &Ui, rect: Rect, response: &egui::Response, pointer: Option<Pos2>) {
-        let shift = ui.input(|i| i.modifiers.shift);
-
-        if let Some(g) = &self.editor.grab {
-            let tweak = g.tweak;
-            if let Some(world) = self.mouse_world {
-                self.editor.update_grab(&mut self.layout, world);
-            }
-            let (pressed_primary, released_primary, pressed_secondary) = ui.input(|i| {
-                (
-                    i.pointer.button_pressed(egui::PointerButton::Primary),
-                    i.pointer.button_released(egui::PointerButton::Primary),
-                    i.pointer.button_pressed(egui::PointerButton::Secondary),
-                )
-            });
-            if pressed_secondary {
-                self.editor.cancel_grab(&mut self.layout);
-            } else if (tweak && released_primary)
-                || (!tweak && pressed_primary && pointer.is_some())
-            {
-                self.confirm_grab();
-            }
-            return;
-        }
-
-        if let Some(kind) = self.dragging_new
-            && ui.input(|i| i.pointer.any_released())
-        {
-            self.dragging_new = None;
-            if let Some(world) = self.mouse_world
-                && self.editor.place(&mut self.layout, kind, world).is_none()
-            {
-                self.notify("That cell is occupied");
-            }
-        }
-
-        // Finish drags wherever the button is released, even over another panel.
-        if self.drag != Drag::None && !ui.input(|i| i.pointer.primary_down()) {
-            let end = ui
-                .input(|i| i.pointer.latest_pos())
-                .map(|p| self.view.to_world(rect, p));
-            match (std::mem::replace(&mut self.drag, Drag::None), end) {
-                (Drag::Box { start, extend }, Some(end)) => {
-                    self.editor
-                        .box_select(&self.layout, Rect::from_two_pos(start, end), extend);
-                }
-                (Drag::Line { start }, Some(end))
-                    if rect.contains(self.view.to_screen(rect, end)) =>
-                {
-                    let end = model::snap(end);
-                    if end != start {
-                        self.layout.lines.push(Line { start, end });
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        let Some(pointer) = pointer else { return };
-        let world = self.view.to_world(rect, pointer);
-
-        if response.drag_started_by(egui::PointerButton::Primary) {
-            let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pointer);
-            let start = self.view.to_world(rect, origin);
-            if self.tool == Some(Tool::DrawLine) {
-                self.drag = Drag::Line {
-                    start: model::snap(start),
-                };
-            } else if let Some(i) = self.layout.component_at(start) {
-                if !self.editor.selection.contains(i) {
-                    self.editor.selection.select_only(i);
-                }
-                self.editor.begin_grab(&self.layout, start, true);
-                self.editor.update_grab(&mut self.layout, world);
-            } else {
-                self.drag = Drag::Box {
-                    start,
-                    extend: shift,
-                };
-            }
-        }
-
-        if response.clicked_by(egui::PointerButton::Primary) {
-            self.menu = None;
-            if self.layout.component_at(world).is_some() {
-                self.editor.click_select(&self.layout, world, shift);
-                if response.double_clicked() {
-                    self.editor.rotate_selected(&mut self.layout, 1);
-                }
-            } else if let Some(Tool::Place(kind)) = self.tool {
-                self.editor.place(&mut self.layout, kind, world);
-            } else {
-                self.editor.click_select(&self.layout, world, shift);
-            }
-        }
-
-        if response.clicked_by(egui::PointerButton::Secondary) {
-            let target = self.layout.component_at(world);
-            if let Some(i) = target
-                && !self.editor.selection.contains(i)
-            {
-                self.editor.selection.select_only(i);
-            }
-            self.open_menu(target);
-        }
-    }
-
-    fn menu_ui(&mut self, ctx: &egui::Context) {
-        let Some(menu) = self.menu else { return };
-        let has_lines = {
-            let cell = model::cell_of(menu.world);
-            self.layout
-                .lines
-                .iter()
-                .any(|l| model::cell_of(l.start) == cell || model::cell_of(l.end) == cell)
+        let clock = if self.machine.tick > 0 || self.running {
+            format!("  ·  tick {}", self.machine.tick)
+        } else {
+            String::new()
         };
-        let shown = egui::Area::new(Id::unique("optics_menu"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(menu.screen)
-            .show(ctx, |ui| {
-                egui::Frame::popup(ui.style())
-                    .show(ui, |ui| {
-                        let mut choice = None;
-                        ui.set_min_width(170.0);
-                        if let Some(i) = menu.target.filter(|&i| i < self.layout.components.len()) {
-                            ui.label(
-                                egui::RichText::new(self.layout.components[i].kind.name()).strong(),
-                            );
-                            if ui.button("⟳ Rotate          R").clicked() {
-                                choice = Some(MenuChoice::Rotate(1));
-                            }
-                            if ui.button("⟲ Rotate back   ⇧R").clicked() {
-                                choice = Some(MenuChoice::Rotate(-1));
-                            }
-                            if ui.button("⧉ Duplicate      ⇧D").clicked() {
-                                choice = Some(MenuChoice::Duplicate);
-                            }
-                            if ui.button("🗑 Delete           X").clicked() {
-                                choice = Some(MenuChoice::Delete);
-                            }
-                            ui.separator();
-                        }
-                        ui.label(egui::RichText::new("Add").strong());
-                        for kind in OpticComponentKind::palette() {
-                            if ui
-                                .button(format!("{} {}", kind.icon(), kind.name()))
-                                .clicked()
-                            {
-                                choice = Some(MenuChoice::Add(kind));
-                            }
-                        }
-                        if has_lines {
-                            ui.separator();
-                            if ui.button("Delete lines here").clicked() {
-                                choice = Some(MenuChoice::DeleteLines);
-                            }
-                        }
-                        choice
-                    })
-                    .inner
-            });
-        if let Some(choice) = shown.inner {
-            self.apply_menu_choice(choice, menu.world);
-        } else if menu.opened_at < self.time
-            && ctx.input(|i| i.pointer.any_pressed())
-            && !shown.response.contains_pointer()
-        {
-            self.menu = None;
-        }
+        format!(
+            "{:.0}%{cell}  ·  {} selected{tool}{clock}  ·  F1 shortcuts",
+            self.view.zoom * 100.0,
+            self.editor.len()
+        )
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
@@ -1125,20 +773,13 @@ impl OpticsPanel {
         let mut open = self.show_examples;
         let mut load = None;
         egui::Window::new("Examples library")
+            .id(Id::unique("optics_examples"))
             .open(&mut open)
             .default_size([760.0, 520.0])
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.selectable_value(
-                        &mut self.examples_tab,
-                        ExamplesTab::Layouts,
-                        "Free-space layouts",
-                    );
-                    ui.selectable_value(
-                        &mut self.examples_tab,
-                        ExamplesTab::Chips,
-                        "Chip circuits",
-                    );
+                    ui.selectable_value(&mut self.examples_tab, ExamplesTab::Layouts, "Free-space layouts");
+                    ui.selectable_value(&mut self.examples_tab, ExamplesTab::Chips, "Chip circuits");
                 });
                 ui.separator();
                 match self.examples_tab {
@@ -1164,6 +805,26 @@ impl OpticsPanel {
             self.load_example(i);
         }
     }
+}
+
+/// Number on a box's first `bits` signal inputs (MSB first).
+pub fn input_number(layout: &Layout, outcome: &Outcome, id: model::InstanceId, bits: usize) -> u64 {
+    let values: Vec<f64> = (0..bits).map(|k| outcome.input(layout, Terminal { item: Item::Box(id), port: k })).collect();
+    sim::bits_to_number(&values)
+}
+
+/// Number on a box's first `bits` signal outputs (MSB first).
+pub fn output_number(outcome: &Outcome, id: model::InstanceId, bits: usize) -> u64 {
+    let values: Vec<f64> = (0..bits).map(|k| outcome.signal(Item::Box(id), k)).collect();
+    sim::bits_to_number(&values)
+}
+
+/// Whether a block is one of the electronics blocks that show a number.
+pub fn shows_number(block: &BlockRef) -> bool {
+    matches!(
+        block,
+        BlockRef::Builtin(Builtin::NumberInput { .. } | Builtin::Display { .. } | Builtin::Register { .. })
+    )
 }
 
 #[cfg(test)]

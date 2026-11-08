@@ -6,18 +6,18 @@ use egui::{Color32, Key, Ui};
 
 use super::chips::ChipBrowser;
 use super::file_format;
-use super::optics::examples::layout_examples;
+use super::circuit::sim;
+use super::optics::examples::{self, demos, layout_examples};
 use super::optics::input::{Action, SHORTCUTS};
-use super::optics::model::{self, Layout};
-use super::project::{Catalog, ComponentMeta, Content, DocId, Project};
-use super::schematic::examples::schematic_examples;
-use super::schematic::model::Schematic;
+use super::optics::model::{self, BlockRef, Layout, OpticComponentKind, PlacedComponent, cell_center};
+use super::optics::{OpticsPanel, Placeable};
+use super::project::{Catalog, ComponentMeta, DocId, Project};
 use super::{Request, ui_kit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExamplesTab {
+    Demos,
     Layouts,
-    Schematics,
     Chips,
 }
 
@@ -65,7 +65,7 @@ impl Default for Workspace {
             show_inspector: true,
             show_shortcuts: false,
             show_examples: false,
-            examples_tab: ExamplesTab::Layouts,
+            examples_tab: ExamplesTab::Demos,
             chips: ChipBrowser::default(),
             dialog: None,
             status: None,
@@ -116,11 +116,22 @@ impl Workspace {
         id
     }
 
-    pub fn new_schematic(&mut self) -> DocId {
-        let id = self
-            .project
-            .add_schematic("Schematic", Schematic::default());
+    /// A new component with one light input and output and one signal input
+    /// and output, ready to fill; opens its details dialog.
+    pub fn new_component(&mut self) -> DocId {
+        let mut layout = Layout::with_components(vec![
+            PlacedComponent { kind: OpticComponentKind::InputPort { dir: egui::Vec2::new(1.0, 0.0) }, pos: cell_center(0, 0) },
+            PlacedComponent { kind: OpticComponentKind::OutputPort, pos: cell_center(8, 0) },
+            PlacedComponent { kind: OpticComponentKind::SignalIn, pos: cell_center(0, -3) },
+            PlacedComponent { kind: OpticComponentKind::SignalOut, pos: cell_center(0, 3) },
+        ]);
+        for (i, label) in ["in", "out", "s", "q"].into_iter().enumerate() {
+            layout.set_label(i, label);
+        }
+        let name = self.project.unique_name("Component");
+        let id = self.project.add_component(&name, &ui_kit::initials(&name), "", layout, 10.0);
         self.open_tab(id);
+        self.open_document_dialog(id, true);
         id
     }
 
@@ -146,15 +157,13 @@ impl Workspace {
         let id = self
             .project
             .add_layout(example.name, (example.build)(), example.cell_um);
-        if let Some(Content::Layout(p)) = self.project.doc_mut(id).map(|d| &mut d.content) {
-            p.simulation_active = true;
-        }
         self.open_tab(id);
         self.notify(format!("Opened example “{}”", example.name));
     }
 
-    pub fn load_schematic_example(&mut self, index: usize) {
-        let Some(example) = schematic_examples().into_iter().nth(index) else {
+    /// Open a demo circuit (adding the components it uses).
+    pub fn load_demo(&mut self, index: usize) {
+        let Some(example) = demos().into_iter().nth(index) else {
             return;
         };
         let id = (example.build)(&mut self.project);
@@ -213,11 +222,8 @@ impl Workspace {
                 .collect::<Vec<_>>()
                 .join("-")
         };
-        if let Some(i) = schematic_examples()
-            .iter()
-            .position(|e| slugify(e.name) == slug)
-        {
-            self.load_schematic_example(i);
+        if let Some(i) = demos().iter().position(|e| slugify(e.name) == slug) {
+            self.load_demo(i);
             return true;
         }
         if let Some(i) = layout_examples()
@@ -232,7 +238,7 @@ impl Workspace {
 
     /// Apply a page URL query, as used by links into the web app:
     /// `example=<slug>` opens an example, `tab=<slug>` activates a document by
-    /// name, `examples=layouts|schematics|chips` opens the examples window and
+    /// name, `examples=demos|layouts|chips` opens the examples window and
     /// `chip=<slug>` picks a chip-circuit example.
     pub fn apply_url_query(&mut self, query: &str) {
         let slugify = |name: &str| {
@@ -261,9 +267,9 @@ impl Workspace {
                 "examples" => {
                     self.show_examples = true;
                     self.examples_tab = match value {
-                        "schematics" => ExamplesTab::Schematics,
+                        "layouts" => ExamplesTab::Layouts,
                         "chips" => ExamplesTab::Chips,
-                        _ => ExamplesTab::Layouts,
+                        _ => ExamplesTab::Demos,
                     };
                 }
                 "chip" => {
@@ -440,31 +446,26 @@ impl Workspace {
 
     /// Send an editing action to the active document.
     pub fn apply(&mut self, action: Action) {
-        let catalog = self.project.catalog();
         let Some(doc) = self.active.and_then(|id| self.project.doc_mut(id)) else {
             return;
         };
-        match &mut doc.content {
-            Content::Layout(p) => p.apply(action),
-            Content::Schematic(p) => p.apply(&catalog, action),
-        }
+        doc.panel_mut().apply(action);
         self.handle_requests();
     }
 
+    fn active_panel(&mut self) -> Option<&mut OpticsPanel> {
+        let id = self.active?;
+        Some(self.project.doc_mut(id)?.panel_mut())
+    }
+
     fn handle_requests(&mut self) {
-        let Some(id) = self.active else { return };
-        let (requests, is_layout) = match self.project.doc_mut(id).map(|d| &mut d.content) {
-            Some(Content::Layout(p)) => (std::mem::take(&mut p.requests), true),
-            Some(Content::Schematic(p)) => (std::mem::take(&mut p.requests), false),
-            None => return,
+        let Some(requests) = self.active_panel().map(|p| std::mem::take(&mut p.requests)) else {
+            return;
         };
         for request in requests {
             match request {
-                Request::New if is_layout => {
-                    self.new_layout();
-                }
                 Request::New => {
-                    self.new_schematic();
+                    self.new_layout();
                 }
                 Request::Open => self.open_dialog(),
                 Request::Save => self.save(false),
@@ -472,32 +473,65 @@ impl Workspace {
                 Request::ToggleInspector => self.show_inspector = !self.show_inspector,
                 Request::ShowShortcuts => self.show_shortcuts = !self.show_shortcuts,
                 Request::Inspect(doc) => self.open_tab(doc),
+                Request::NewComponent => {
+                    self.new_component();
+                }
+                Request::PlaceExample { example, cell } => self.place_example(example, cell),
+                Request::Tick => self.tick(),
             }
         }
     }
 
-    /// Re-simulate the active schematic when it, or anything it uses, changed.
-    pub fn refresh_simulation(&mut self) {
-        let Some(id) = self.active else { return };
-        let active = match self.project.doc(id).map(|d| &d.content) {
-            Some(Content::Schematic(p)) => p.simulation_active,
-            _ => return,
+    /// Add an example component to the project (once) and place it in the active document.
+    pub fn place_example(&mut self, example: usize, cell: (i32, i32)) {
+        let Some(into) = self.active else { return };
+        let Some(component) = examples::import_component(&mut self.project, example) else {
+            return;
         };
-        if !active {
+        let catalog = self.project.catalog();
+        if !catalog.can_place(component, into) {
+            self.notify("A component can't contain itself");
             return;
         }
-        let key = self.project.fingerprint();
-        if matches!(self.project.doc(id).map(|d| &d.content), Some(Content::Schematic(p)) if p.sim_key == Some(key))
-        {
-            return;
+        if let Some(p) = self.active_panel() {
+            p.catalog = catalog;
+            p.place(Placeable::Block(BlockRef::Component(component)), cell_center(cell.0, cell.1));
+        }
+    }
+
+    /// Advance the active document's clock: its registers store their inputs.
+    pub fn tick(&mut self) {
+        let Some(id) = self.active else { return };
+        self.refresh_simulation();
+        let Some(doc) = self.project.doc(id) else { return };
+        let panel = doc.panel();
+        let outcome = panel.sim.as_ref().map(|s| s.outcome.clone()).unwrap_or_default();
+        let mut machine = panel.machine.clone();
+        sim::clock(&panel.layout, &self.project, &mut machine, &outcome);
+        if let Some(p) = self.active_panel() {
+            p.machine = machine;
+        }
+    }
+
+    /// Re-simulate the active document when it, anything it uses, or its
+    /// registers changed. Returns whether it ran.
+    pub fn refresh_simulation(&mut self) -> bool {
+        let Some(id) = self.active else { return false };
+        let Some(panel) = self.project.doc(id).map(|d| d.panel()) else { return false };
+        if !panel.simulation_active {
+            return false;
+        }
+        let key = panel.simulation_key(self.project.fingerprint());
+        if !panel.is_stale(key) {
+            return false;
         }
         let start = web_time::Instant::now();
-        let sim = self.project.simulate_schematic(id);
-        tracing::debug!("Simulated schematic {} in {:?}", id.0, start.elapsed());
-        if let Some(Content::Schematic(p)) = self.project.doc_mut(id).map(|d| &mut d.content) {
-            p.sim = Some(sim);
-            p.sim_key = Some(key);
+        let outcome = self.project.simulate(id, &panel.machine);
+        tracing::debug!("Simulated {} in {:?} ({} rounds)", id.0, start.elapsed(), outcome.iterations);
+        if let Some(p) = self.active_panel() {
+            p.set_outcome(key, outcome);
         }
+        true
     }
 
     // ---- UI ---------------------------------------------------------------
@@ -509,24 +543,15 @@ impl Workspace {
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
         }
-        // Editors refuse to place a document inside itself.
-        for doc in &mut self.project.documents {
-            if let Content::Schematic(p) = &mut doc.content {
-                p.doc_id = Some(doc.id);
-            }
-        }
-        let catalog = self.project.catalog();
+        self.sync_catalog();
         // Shortcuts first, before any widget can take Tab focus.
-        match self
-            .active
-            .and_then(|id| self.project.doc_mut(id))
-            .map(|d| &mut d.content)
-        {
-            Some(Content::Layout(p)) => p.begin_frame(ui),
-            Some(Content::Schematic(p)) => p.begin_frame(ui, &catalog),
+        match self.active_panel() {
+            Some(p) => p.begin_frame(ui),
             None => self.global_keys(ui),
         }
         self.handle_requests();
+        self.sync_catalog();
+        self.refresh_simulation();
         let catalog = self.project.catalog();
 
         egui::Panel::top("menu_bar").show(ui, |ui| {
@@ -556,10 +581,25 @@ impl Workspace {
             None => self.empty_ui(ui),
         }
         self.handle_requests();
-        self.refresh_simulation();
+        self.sync_catalog();
+        // Edits made this frame show on the next one.
+        if self.refresh_simulation() {
+            ui.ctx().request_repaint();
+        }
 
         let ctx = ui.ctx().clone();
         self.windows(&ctx);
+    }
+
+    /// Give the active editor the project's components, and tell it which
+    /// document it edits (it refuses to place a document inside itself).
+    fn sync_catalog(&mut self) {
+        let catalog = self.project.catalog();
+        let id = self.active;
+        if let Some(p) = self.active_panel() {
+            p.catalog = catalog;
+            p.doc_id = id;
+        }
     }
 
     fn global_keys(&mut self, ui: &Ui) {
@@ -581,15 +621,10 @@ impl Workspace {
         if let Some((message, _)) = &self.status {
             return message.clone();
         }
-        match self
-            .active
+        self.active
             .and_then(|id| self.project.doc(id))
-            .map(|d| &d.content)
-        {
-            Some(Content::Layout(p)) => p.status_text(),
-            Some(Content::Schematic(p)) => p.status_text(),
-            None => String::new(),
-        }
+            .map(|d| d.panel().status_text())
+            .unwrap_or_default()
     }
 
     fn document_ui(&mut self, ui: &mut Ui, id: DocId, catalog: &Catalog) {
@@ -607,10 +642,7 @@ impl Workspace {
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         if let Some(doc) = self.project.doc_mut(id) {
-                            match &mut doc.content {
-                                Content::Layout(p) => p.palette_ui(ui),
-                                Content::Schematic(p) => p.palette_ui(ui, catalog),
-                            }
+                            doc.panel_mut().palette_ui(ui);
                         }
                         ui.add_space(8.0);
                         ui.separator();
@@ -626,10 +658,7 @@ impl Workspace {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         self.document_header(ui, id);
                         if let Some(doc) = self.project.doc_mut(id) {
-                            match &mut doc.content {
-                                Content::Layout(p) => p.inspector_ui(ui),
-                                Content::Schematic(p) => p.inspector_ui(ui, catalog),
-                            }
+                            doc.panel_mut().inspector_ui(ui);
                         }
                     });
                 });
@@ -637,18 +666,10 @@ impl Workspace {
 
         let ctx = ui.ctx().clone();
         if let Some(doc) = self.project.doc_mut(id) {
-            match &mut doc.content {
-                Content::Layout(p) => {
-                    p.canvas_ui(ui);
-                    p.overlays(&ctx);
-                    p.end_frame(ui);
-                }
-                Content::Schematic(p) => {
-                    p.canvas_ui(ui, catalog);
-                    p.overlays(&ctx, catalog);
-                    p.end_frame(ui);
-                }
-            }
+            let p = doc.panel_mut();
+            p.canvas_ui(ui);
+            p.overlays(&ctx);
+            p.end_frame(ui);
         }
 
         if let Some(doc) = open {
@@ -667,11 +688,7 @@ impl Workspace {
         let Some(doc) = self.project.doc(id) else {
             return;
         };
-        let kind = if doc.is_layout() {
-            "Free-space layout"
-        } else {
-            "Schematic"
-        };
+        let kind = if doc.component.is_some() { "Component" } else { "Layout" };
         let interface = doc.interface();
         let component = doc.component.clone();
         let initials = doc.initials();
@@ -697,9 +714,11 @@ impl Workspace {
                 }
                 ui.label(
                     egui::RichText::new(format!(
-                        "Component · {} in, {} out · used in {} document(s)",
+                        "{} light in, {} out · {} signals in, {} out · used in {} document(s)",
                         interface.inputs.len(),
                         interface.outputs.len(),
+                        interface.signal_inputs.len(),
+                        interface.signal_outputs.len(),
                         self.project.users_of(id).len()
                     ))
                     .small()
@@ -712,7 +731,7 @@ impl Workspace {
             None => {
                 if ui
                     .small_button("Save as component…")
-                    .on_hover_text("Reuse this document as a block in schematics")
+                    .on_hover_text("Reuse this layout as a box in other layouts")
                     .clicked()
                 {
                     self.open_document_dialog(id, true);
@@ -737,11 +756,7 @@ impl Workspace {
             } else {
                 Color32::from_gray(120)
             };
-            let kind = if entry.is_layout {
-                "layout"
-            } else {
-                "schematic"
-            };
+            let kind = "layout";
             let response = ui_kit::item_row(ui, active, &entry.name, |painter, rect| {
                 ui_kit::badge(
                     painter,
@@ -802,11 +817,7 @@ impl Workspace {
                                 text
                             },
                         )
-                        .on_hover_text(if doc.is_layout() {
-                            "Free-space layout"
-                        } else {
-                            "Schematic"
-                        });
+                        .on_hover_text(if doc.component.is_some() { "Component" } else { "Layout" });
                     if response.clicked() {
                         activate = Some(id);
                     }
@@ -823,11 +834,11 @@ impl Workspace {
                     ui.add_space(6.0);
                 }
                 ui.menu_button("+", |ui| {
-                    if ui.button("Free-space layout").clicked() {
+                    if ui.button("New layout").clicked() {
                         self.new_layout();
                     }
-                    if ui.button("Schematic").clicked() {
-                        self.new_schematic();
+                    if ui.button("New component").clicked() {
+                        self.new_component();
                     }
                 });
             });
@@ -846,11 +857,11 @@ impl Workspace {
             .and_then(|id| self.project.doc(id))
             .is_some_and(|d| d.component.is_some());
         ui.menu_button("File", |ui| {
-            if ui.button("New free-space layout").clicked() {
+            if ui.button("New layout").clicked() {
                 self.new_layout();
             }
-            if ui.button("New schematic").clicked() {
-                self.new_schematic();
+            if ui.button("New component").clicked() {
+                self.new_component();
             }
             ui.separator();
             if ui.button("Open…").clicked() {
@@ -965,10 +976,7 @@ impl Workspace {
 
     /// The active document's live-simulation switch.
     pub fn simulation_flag(&mut self) -> Option<&mut bool> {
-        match &mut self.project.doc_mut(self.active?)?.content {
-            Content::Layout(p) => Some(&mut p.simulation_active),
-            Content::Schematic(p) => Some(&mut p.simulation_active),
-        }
+        Some(&mut self.project.doc_mut(self.active?)?.panel_mut().simulation_active)
     }
 
     fn empty_ui(&mut self, ui: &mut Ui) {
@@ -977,11 +985,11 @@ impl Workspace {
                 ui.add_space(ui.available_height() * 0.3);
                 ui.heading("No document open");
                 ui.add_space(8.0);
-                if ui.button("New free-space layout").clicked() {
+                if ui.button("New layout").clicked() {
                     self.new_layout();
                 }
-                if ui.button("New schematic").clicked() {
-                    self.new_schematic();
+                if ui.button("New component").clicked() {
+                    self.new_component();
                 }
                 if ui.button("Examples…").clicked() {
                     self.show_examples = true;
@@ -1008,21 +1016,17 @@ impl Workspace {
 
         let mut open = self.show_examples;
         let mut load_layout = None;
-        let mut load_schematic = None;
+        let mut load_demo = None;
         egui::Window::new("Examples")
             .open(&mut open)
             .default_size([760.0, 520.0])
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.examples_tab, ExamplesTab::Demos, "Circuits");
                     ui.selectable_value(
                         &mut self.examples_tab,
                         ExamplesTab::Layouts,
-                        "Free-space layouts",
-                    );
-                    ui.selectable_value(
-                        &mut self.examples_tab,
-                        ExamplesTab::Schematics,
-                        "Schematics",
+                        "Free-space optics",
                     );
                     ui.selectable_value(
                         &mut self.examples_tab,
@@ -1061,13 +1065,10 @@ impl Workspace {
                             .collect(),
                         &mut load_layout,
                     ),
-                    ExamplesTab::Schematics => list(
+                    ExamplesTab::Demos => list(
                         ui,
-                        schematic_examples()
-                            .iter()
-                            .map(|e| (e.name, e.description))
-                            .collect(),
-                        &mut load_schematic,
+                        demos().iter().map(|e| (e.name, e.description)).collect(),
+                        &mut load_demo,
                     ),
                     ExamplesTab::Chips => self.chips.ui(ui),
                 }
@@ -1076,8 +1077,8 @@ impl Workspace {
         if let Some(i) = load_layout {
             self.load_layout_example(i);
         }
-        if let Some(i) = load_schematic {
-            self.load_schematic_example(i);
+        if let Some(i) = load_demo {
+            self.load_demo(i);
         }
 
         self.dialog_ui(ctx);
@@ -1090,7 +1091,7 @@ impl Workspace {
         let interface = self
             .project
             .doc(d.doc)
-            .map(|doc| (doc.interface(), doc.is_layout()));
+            .map(|doc| doc.interface());
         let mut save = false;
         let mut cancel = false;
         let modal = egui::Modal::new(egui::Id::unique("document_dialog")).show(ctx, |ui| {
@@ -1116,20 +1117,25 @@ impl Workspace {
                 }
             });
             if d.component
-                && let Some((interface, is_layout)) = &interface
+                && let Some(interface) = &interface
             {
                 ui.add_space(6.0);
-                if interface.inputs.is_empty() && interface.outputs.is_empty() {
-                    let hint = if *is_layout {
-                        "No ports yet. Add Input port and Output port parts so the component can be connected."
-                    } else {
-                        "No pins yet. Add Input pin and Output pin blocks so the component can be connected."
-                    };
-                    ui.colored_label(ui.visuals().warn_fg_color, hint);
+                if interface.is_empty() {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        "No ports yet. Add Input/Output port parts (light) or Signal in/out parts (electrical) so the box can be connected.",
+                    );
                 } else {
                     let join = |v: &[String]| if v.is_empty() { "—".to_owned() } else { v.join(", ") };
                     ui.label(
-                        egui::RichText::new(format!("Inputs: {}\nOutputs: {}", join(&interface.inputs), join(&interface.outputs))).weak(),
+                        egui::RichText::new(format!(
+                            "Light in: {}\nLight out: {}\nSignals in: {}\nSignals out: {}",
+                            join(&interface.inputs),
+                            join(&interface.outputs),
+                            join(&interface.signal_inputs),
+                            join(&interface.signal_outputs)
+                        ))
+                        .weak(),
                     );
                 }
             }

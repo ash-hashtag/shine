@@ -11,11 +11,10 @@ use std::f32::consts::FRAC_PI_4;
 
 use egui::{Pos2, Vec2};
 
-use super::optics::{GRID, OpticComponentKind, PlacedComponent};
-use crate::photonics::{
-    Block, C64, Circuit, CircuitError, Custom, Detector, InPort, Laser, Matrix, NodeId, OutPort,
-    PhaseShifter, Ports, Waveguide,
-};
+use super::circuit::sim;
+use super::optics::model::Layout;
+use super::optics::{OpticComponentKind, PlacedComponent};
+use crate::photonics::{C64, Matrix};
 
 pub const DIRECTIONS: usize = 8;
 
@@ -29,6 +28,7 @@ pub fn direction_index(v: Vec2) -> usize {
 }
 
 /// Field on one straight beam segment at one wavelength.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Beam {
     pub start: Pos2,
     pub end: Pos2,
@@ -38,7 +38,7 @@ pub struct Beam {
     pub field: C64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LayoutSimulation {
     pub beams: Vec<Beam>,
     /// `(component index, power summed over all wavelengths)`.
@@ -48,7 +48,7 @@ pub struct LayoutSimulation {
 
 /// How a component scatters light between the 8 directions, or `None` for
 /// components that are not passive scatterers (sources, detectors).
-fn scattering(kind: &OpticComponentKind) -> Option<Matrix> {
+pub fn scattering(kind: &OpticComponentKind) -> Option<Matrix> {
     let mut s = Matrix::zeros(DIRECTIONS, DIRECTIONS);
     let reflect = |s: &mut Matrix, normal: Vec2, r: C64, t: C64| {
         let n = normal.normalized();
@@ -106,247 +106,36 @@ fn scattering(kind: &OpticComponentKind) -> Option<Matrix> {
             }
         }
         OpticComponentKind::Laser { .. }
-        | OpticComponentKind::Detector
+        | OpticComponentKind::Detector { .. }
         | OpticComponentKind::InputPort { .. }
-        | OpticComponentKind::OutputPort => return None,
+        | OpticComponentKind::OutputPort
+        | OpticComponentKind::SignalIn
+        | OpticComponentKind::SignalOut => return None,
     }
     Some(s)
 }
 
-struct Element {
-    node: NodeId,
-    /// `(output port, direction)` pairs that can carry light.
-    emits: Vec<(usize, usize)>,
-    accepts_input: bool,
-}
-
-/// Simulate `components` (positions in panel space). `cell_um` is the
-/// physical size of one grid cell; beams leaving the layout are drawn
-/// `max_len` long.
-/// A layout compiled into a circuit.
-pub struct BuiltLayout {
-    /// Circuit node of each component, by component index.
-    pub nodes: Vec<NodeId>,
-    pub segments: Vec<Segment>,
-    /// Boundary ports from the layout's Input/Output port parts, in
-    /// [`port_order`].
-    pub ports: Ports,
-}
-
-/// A straight free-space path from one component towards the next.
-pub struct Segment {
-    pub start: Pos2,
-    pub end: Pos2,
-    pub dir: Vec2,
-    /// Input of the free-space waveguide; its field is the field at `start`.
-    pub input: InPort,
-}
-
-/// Indices of input and output port parts, ordered top to bottom, then left
-/// to right — the order they appear on the component's box.
-pub fn port_order(components: &[PlacedComponent]) -> (Vec<usize>, Vec<usize>) {
-    let sorted = |want_input: bool| {
-        let mut v: Vec<usize> = (0..components.len())
-            .filter(|&i| match components[i].kind {
-                OpticComponentKind::InputPort { .. } => want_input,
-                OpticComponentKind::OutputPort => !want_input,
-                _ => false,
-            })
-            .collect();
-        v.sort_by(|&a, &b| {
-            let (pa, pb) = (components[a].pos, components[b].pos);
-            pa.y.total_cmp(&pb.y).then(pa.x.total_cmp(&pb.x))
-        });
-        v
-    };
-    (sorted(true), sorted(false))
-}
-
-/// Add the layout's components and free-space paths to `circuit`.
-/// `grid_size` world units span `cell_um` micrometres; beams leaving the
-/// layout are given length `max_len`.
-pub fn build_layout(
-    circuit: &mut Circuit,
-    components: &[PlacedComponent],
-    grid_size: f32,
-    cell_um: f64,
-    max_len: f32,
-) -> BuiltLayout {
-    let elements: Vec<Element> = components
-        .iter()
-        .map(|comp| match comp.kind {
-            OpticComponentKind::Laser {
-                amplitude,
-                phase,
-                wavelength,
-                dir,
-            } => Element {
-                node: circuit
-                    .add(Laser::new(amplitude as f64, wavelength as f64).with_phase(phase as f64)),
-                emits: vec![(0, direction_index(dir))],
-                accepts_input: false,
-            },
-            OpticComponentKind::Detector => Element {
-                node: circuit.add(Detector::with_inputs(DIRECTIONS)),
-                emits: Vec::new(),
-                accepts_input: true,
-            },
-            // Light entering from outside the layout, launched along `dir`.
-            OpticComponentKind::InputPort { dir } => Element {
-                node: circuit.add(PhaseShifter::new(0.0)),
-                emits: vec![(0, direction_index(dir))],
-                accepts_input: false,
-            },
-            // Collects light arriving from any direction into one output.
-            OpticComponentKind::OutputPort => Element {
-                node: circuit.add(Custom::new(
-                    "OutputPort",
-                    Matrix::full(1, DIRECTIONS, C64::ONE),
-                )),
-                emits: Vec::new(),
-                accepts_input: true,
-            },
-            ref kind => {
-                let s = scattering(kind).expect("passive component");
-                let emits = (0..DIRECTIONS)
-                    .filter(|&k| (0..DIRECTIONS).any(|j| s[(k, j)] != C64::ZERO))
-                    .map(|k| (k, k))
-                    .collect();
-                Element {
-                    node: circuit.add(Custom::new(format!("{kind:?}"), s)),
-                    emits,
-                    accepts_input: true,
-                }
-            }
-        })
-        .collect();
-
-    let mut segments = Vec::new();
-    for (i, (comp, element)) in components.iter().zip(&elements).enumerate() {
-        for &(port, k) in &element.emits {
-            let d = direction(k);
-            let (dx, dy) = (d.x as f64, d.y as f64);
-            let hit = components
-                .iter()
-                .enumerate()
-                .filter(|&(j, _)| j != i)
-                .filter_map(|(j, other)| {
-                    let (wx, wy) = (
-                        (other.pos.x - comp.pos.x) as f64,
-                        (other.pos.y - comp.pos.y) as f64,
-                    );
-                    let t = wx * dx + wy * dy;
-                    let perp = (wx * dy - wy * dx).abs();
-                    (t > 1.0 && perp < 0.5).then_some((j, t))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-
-            let length_px = hit.map_or(max_len as f64, |(_, t)| t);
-            let path = circuit.add(Waveguide::free_space(
-                length_px / grid_size as f64 * cell_um,
-            ));
-            let from = OutPort {
-                node: element.node,
-                index: port,
-            };
-            circuit
-                .connect(from, path.input(0))
-                .expect("each output is used once");
-            if let Some((j, _)) = hit
-                && elements[j].accepts_input
-            {
-                circuit
-                    .connect(path.output(0), elements[j].node.input(k))
-                    .expect("nearest hit is unique per direction");
-            }
-            segments.push(Segment {
-                start: comp.pos,
-                end: hit.map_or(comp.pos + d * max_len, |(j, _)| components[j].pos),
-                dir: d,
-                input: path.input(0),
-            });
-        }
-    }
-
-    let (inputs, outputs) = port_order(components);
-    BuiltLayout {
-        ports: Ports {
-            inputs: inputs.iter().map(|&i| elements[i].node.input(0)).collect(),
-            outputs: outputs
-                .iter()
-                .map(|&i| elements[i].node.output(0))
-                .collect(),
+/// Simulate a layout made only of primitives. `cell_um` is the physical size
+/// of one grid cell; beams leaving the layout are drawn `max_len` long.
+/// Layouts with boxes and signals use [`crate::panels::circuit::sim::simulate`].
+pub fn simulate_layout(components: &[PlacedComponent], _grid_size: f32, cell_um: f64, max_len: f32) -> LayoutSimulation {
+    let layout = Layout::with_components(components.to_vec());
+    let outcome = sim::simulate(
+        &layout,
+        cell_um,
+        &sim::NoDocuments,
+        &sim::Machine::default(),
+        None,
+        &sim::Options {
+            max_len,
+            ..sim::Options::default()
         },
-        nodes: elements.into_iter().map(|e| e.node).collect(),
-        segments,
+    );
+    LayoutSimulation {
+        beams: outcome.beams,
+        detector_power: outcome.detector_power,
+        error: outcome.error,
     }
-}
-
-/// A free-space layout used as a block inside a larger circuit.
-pub struct FreeSpaceBlock<'a> {
-    pub components: &'a [PlacedComponent],
-    pub cell_um: f64,
-}
-
-impl Block for FreeSpaceBlock<'_> {
-    fn build(&self, circuit: &mut Circuit) -> Result<Ports, CircuitError> {
-        Ok(build_layout(circuit, self.components, GRID, self.cell_um, GRID * 500.0).ports)
-    }
-}
-
-/// Simulate `components` (positions in world space). `grid_size` world
-/// units span `cell_um` micrometres; beams leaving the layout are drawn
-/// `max_len` long.
-pub fn simulate_layout(
-    components: &[PlacedComponent],
-    grid_size: f32,
-    cell_um: f64,
-    max_len: f32,
-) -> LayoutSimulation {
-    let mut circuit = Circuit::new();
-    let built = build_layout(&mut circuit, components, grid_size, cell_um, max_len);
-
-    let solutions = match circuit.simulate_sources() {
-        Ok(s) => s,
-        Err(e) => {
-            return LayoutSimulation {
-                error: Some(e.to_string()),
-                ..Default::default()
-            };
-        }
-    };
-
-    let mut result = LayoutSimulation::default();
-    for sol in &solutions {
-        for seg in &built.segments {
-            let field = sol.input_field(seg.input);
-            if field.norm_sqr() > 1e-12 {
-                result.beams.push(Beam {
-                    start: seg.start,
-                    end: seg.end,
-                    dir: seg.dir,
-                    wavelength_nm: sol.wavelength_nm(),
-                    field,
-                });
-            }
-        }
-    }
-    for (i, comp) in components.iter().enumerate() {
-        let node = built.nodes[i];
-        let power = match comp.kind {
-            OpticComponentKind::Detector => solutions
-                .iter()
-                .map(|s| s.detected_power(node))
-                .fold(0.0, |a, b| a + b),
-            OpticComponentKind::OutputPort => solutions
-                .iter()
-                .map(|s| s.output_field(node.output(0)).norm_sqr())
-                .fold(0.0, |a, b| a + b),
-            _ => continue,
-        };
-        result.detector_power.push((i, power));
-    }
-    result
 }
 
 #[cfg(test)]
@@ -392,8 +181,8 @@ mod tests {
             at(2.0, 0.0, mirror(-1.0, 1.0)),
             at(0.0, 2.0, mirror(1.0, -1.0)),
             at(2.0, 2.0, splitter(-1.0, 1.0)),
-            at(4.0, 2.0, OpticComponentKind::Detector),
-            at(2.0, 4.0, OpticComponentKind::Detector),
+            at(4.0, 2.0, crate::panels::optics::model::DETECTOR),
+            at(2.0, 4.0, crate::panels::optics::model::DETECTOR),
         ]
     }
 
@@ -507,7 +296,7 @@ mod layout_tests {
             assert!((ps[(i, i)] - C64::from_polar(1.0, 1.0)).norm() < 1e-6);
             assert_eq!(att[(i, i)], C64::new(0.5, 0.0));
         }
-        assert!(scattering(&OpticComponentKind::Detector).is_none());
+        assert!(scattering(&crate::panels::optics::model::DETECTOR).is_none());
         assert!(scattering(&laser(right(), 650.0)).is_none());
     }
 
@@ -554,7 +343,7 @@ mod layout_tests {
             let layout = [
                 at(0.0, 0.0, laser(right(), 650.0)),
                 at(2.0, 0.0, middle),
-                at(5.0, 0.0, OpticComponentKind::Detector),
+                at(5.0, 0.0, crate::panels::optics::model::DETECTOR),
             ];
             let sim = simulate_layout(&layout, GRID, 10.0, FAR);
             assert!((power(&sim, 2) - expected).abs() < 1e-9, "{middle:?}");
@@ -569,7 +358,7 @@ mod layout_tests {
         let layout = [
             at(0.0, 0.0, laser(right(), 650.0)),
             at(1.0, 0.0, OpticComponentKind::PhaseShifter { phase: 0.0 }),
-            at(3.0, 0.0, OpticComponentKind::Detector),
+            at(3.0, 0.0, crate::panels::optics::model::DETECTOR),
         ];
         let sim = simulate_layout(&layout, GRID, 0.325, FAR);
         let from_shifter = sim.beams.iter().find(|b| b.start == layout[1].pos).unwrap();
@@ -588,7 +377,7 @@ mod layout_tests {
                     normal: egui::vec2(1.0, 0.0),
                 },
             ),
-            at(4.0, 0.0, OpticComponentKind::Detector),
+            at(4.0, 0.0, crate::panels::optics::model::DETECTOR),
         ];
         let sim = simulate_layout(&layout, GRID, 10.0, FAR);
         assert_eq!(power(&sim, 2), 0.0);
@@ -616,9 +405,9 @@ mod layout_tests {
     fn diagonal_beams_connect() {
         let layout = [
             at(0.0, 0.0, laser(egui::vec2(1.0, 1.0).normalized(), 650.0)),
-            at(3.0, 3.0, OpticComponentKind::Detector),
+            at(3.0, 3.0, crate::panels::optics::model::DETECTOR),
             // Off the diagonal: must not be hit.
-            at(3.0, 2.0, OpticComponentKind::Detector),
+            at(3.0, 2.0, crate::panels::optics::model::DETECTOR),
         ];
         let sim = simulate_layout(&layout, GRID, 10.0, FAR);
         assert!((power(&sim, 1) - 1.0).abs() < 1e-9);
@@ -630,7 +419,7 @@ mod layout_tests {
         let layout = [
             at(0.0, 0.0, laser(right(), 650.0)),
             at(4.0, 0.0, laser(egui::vec2(-1.0, 0.0), 532.0)),
-            at(2.0, 0.0, OpticComponentKind::Detector),
+            at(2.0, 0.0, crate::panels::optics::model::DETECTOR),
         ];
         let sim = simulate_layout(&layout, GRID, 10.0, FAR);
         assert!((power(&sim, 2) - 2.0).abs() < 1e-9);
@@ -680,7 +469,7 @@ mod zero_tests {
         // No laser, so there are no wavelengths to sum over.
         let parts = [
             PlacedComponent {
-                kind: OpticComponentKind::Detector,
+                kind: crate::panels::optics::model::DETECTOR,
                 pos: Pos2::new(20.0, 20.0),
             },
             PlacedComponent {

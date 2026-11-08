@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub const MAGIC: [u8; 4] = *b"SHNE";
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
 pub const EXTENSION: &str = "shine";
 const HEADER: usize = MAGIC.len() + 2;
 
@@ -31,20 +31,34 @@ pub fn is_shine(bytes: &[u8]) -> bool {
     bytes.len() >= HEADER && bytes[..4] == MAGIC
 }
 
-pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+/// Format version of a Shine file, or an error if it isn't one.
+pub fn version(bytes: &[u8]) -> Result<u16, String> {
     if !is_shine(bytes) {
         return Err("not a Shine file".into());
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    match version {
-        VERSION => {
-            postcard::from_bytes(&bytes[HEADER..]).map_err(|e| format!("damaged Shine file: {e}"))
-        }
-        v if v > VERSION => Err(format!(
-            "file format {v} is newer than supported ({VERSION}); update Shine"
-        )),
-        v => Err(format!("file format {v} is no longer supported")),
+    if version > VERSION {
+        return Err(format!("file format {version} is newer than supported ({VERSION}); update Shine"));
     }
+    if version == 0 {
+        return Err(format!("file format {version} is no longer supported"));
+    }
+    Ok(version)
+}
+
+/// Decode a file in the current format.
+pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+    match version(bytes)? {
+        VERSION => decode_body(bytes),
+        v => Err(format!("file format {v} needs converting before it can be read")),
+    }
+}
+
+/// Decode the body of a Shine file of any version into `T` (the caller
+/// picks the type matching [`version`]).
+pub fn decode_body<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+    version(bytes)?;
+    postcard::from_bytes(&bytes[HEADER..]).map_err(|e| format!("damaged Shine file: {e}"))
 }
 
 #[cfg(test)]

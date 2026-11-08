@@ -1,8 +1,9 @@
 //! Headless UI tests: real egui input events drive the panel.
 
-use egui::{Event, Key, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButton};
+use egui::{Event, Key, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButton, Vec2};
 
 use super::*;
+use crate::panels::circuit::sim::Outcome;
 use model::{cell_center, cell_of};
 
 struct Harness {
@@ -127,7 +128,7 @@ fn scr(panel: &OpticsPanel, world: Pos2) -> Pos2 {
 fn place(panel: &mut OpticsPanel, i: i32, j: i32, kind: OpticComponentKind) -> usize {
     panel
         .editor
-        .place(&mut panel.layout, kind, cell_center(i, j))
+        .place(&mut panel.layout, kind, cell_center(i, j), &editor::no_ports)
         .expect("free cell")
 }
 
@@ -140,7 +141,7 @@ fn cells(panel: &OpticsPanel) -> Vec<(i32, i32)> {
         .collect()
 }
 
-const DETECTOR: OpticComponentKind = OpticComponentKind::Detector;
+const DETECTOR: OpticComponentKind = crate::panels::optics::model::DETECTOR;
 const LENS: OpticComponentKind = OpticComponentKind::Lens;
 
 fn ctrl() -> Modifiers {
@@ -170,7 +171,7 @@ fn defaults_and_layout_of_panels() {
 fn click_places_selects_and_deselects() {
     let mut panel = OpticsPanel::default();
     let mut h = Harness::new(&mut panel);
-    panel.tool = Some(Tool::Place(DETECTOR));
+    panel.tool = Some(Tool::Place(Placeable::Part(DETECTOR)));
     let a = scr(&panel, cell_center(2, 2));
     h.click(a, &mut panel, PointerButton::Primary);
     h.click(a, &mut panel, PointerButton::Primary);
@@ -383,8 +384,9 @@ fn duplicate_follows_the_mouse() {
 fn view_toggles_and_framing() {
     let mut panel = OpticsPanel::default();
     let mut h = Harness::new(&mut panel);
+    assert!(panel.simulation_active, "on by default");
     h.key(&mut panel, Key::Space);
-    assert!(panel.simulation_active);
+    assert!(!panel.simulation_active);
     h.key(&mut panel, Key::T);
     h.key(&mut panel, Key::N);
     assert!(!panel.show_toolbar && !panel.show_properties);
@@ -516,8 +518,8 @@ fn context_and_add_menus() {
     let mut h = Harness::new(&mut panel);
     let at = scr(&panel, cell_center(2, 2));
     h.click(at, &mut panel, PointerButton::Secondary);
-    let menu = panel.menu.expect("context menu");
-    assert_eq!(menu.target, Some(0));
+    let menu = panel.menu.clone().expect("context menu");
+    assert_eq!(menu.target, Some(Hit::Part(0)));
     assert_eq!(
         panel.editor.selection.active(),
         Some(0),
@@ -534,7 +536,7 @@ fn context_and_add_menus() {
 
     h.move_to(scr(&panel, cell_center(4, 4)), &mut panel);
     h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
-    let menu = panel.menu.expect("add menu");
+    let menu = panel.menu.clone().expect("add menu");
     assert_eq!((menu.target, cell_of(menu.world)), (None, (4, 4)));
     h.key(&mut panel, Key::Escape);
     assert!(panel.menu.is_none());
@@ -550,10 +552,10 @@ fn menu_choices() {
     panel.apply_menu_choice(MenuChoice::Rotate(-1), cell_center(0, 0));
     assert_eq!(panel.layout.components[0].kind, before);
 
-    panel.apply_menu_choice(MenuChoice::Add(DETECTOR), cell_center(3, 0));
+    panel.apply_menu_choice(MenuChoice::Add(Placeable::Part(DETECTOR)), cell_center(3, 0));
     assert_eq!(cells(&panel), vec![(0, 0), (3, 0)]);
-    panel.apply_menu_choice(MenuChoice::Add(DETECTOR), cell_center(3, 0));
-    assert!(panel.status.as_ref().unwrap().0.contains("occupied"));
+    panel.apply_menu_choice(MenuChoice::Add(Placeable::Part(DETECTOR)), cell_center(3, 0));
+    assert!(panel.status.as_ref().unwrap().0.contains("room"));
 
     panel.apply_menu_choice(MenuChoice::Duplicate, cell_center(3, 0));
     assert!(panel.editor.grab.is_some());
@@ -605,7 +607,7 @@ fn rendered_menu_lists_actions() {
 fn palette_drag_and_line_tool() {
     let mut panel = OpticsPanel::default();
     let mut h = Harness::new(&mut panel);
-    panel.dragging_new = Some(DETECTOR);
+    panel.dragging_new = Some(Placeable::Part(DETECTOR));
     let target = scr(&panel, cell_center(3, 1));
     h.move_to(target, &mut panel);
     let release = h.button(target, PointerButton::Primary, false);
@@ -664,7 +666,7 @@ fn simulation_readouts_and_examples() {
     for i in 0..examples::layout_examples().len() {
         panel.load_example(i);
         h.frame(&mut panel, Vec::new());
-        assert!(panel.simulation_active && panel.sim_cache.is_some());
+        assert!(panel.simulation_active && panel.sim.is_some());
         // Framed so every component is visible.
         let canvas = panel.canvas_rect().unwrap();
         for c in &panel.layout.components {
@@ -689,12 +691,12 @@ fn simulation_readouts_and_examples() {
     );
 
     // The cache is only rebuilt when inputs change.
-    panel.sim_cache.as_mut().unwrap().result.beams.clear();
+    panel.sim.as_mut().unwrap().outcome.beams.clear();
     panel.refresh_simulation();
-    assert!(panel.sim_cache.as_ref().unwrap().result.beams.is_empty());
+    assert!(panel.sim.as_ref().unwrap().outcome.beams.is_empty());
     panel.cell_um *= 2.0;
     panel.refresh_simulation();
-    assert!(!panel.sim_cache.as_ref().unwrap().result.beams.is_empty());
+    assert!(!panel.sim.as_ref().unwrap().outcome.beams.is_empty());
 
     // Hovering a beam shows its tooltip without panicking.
     let laser = panel.layout.components[0].pos;
@@ -713,20 +715,17 @@ fn properties_for_every_kind_and_errors() {
         panel.editor.selection.select_only(i);
         h.frame(&mut panel, Vec::new());
     }
-    panel.editor.selection.select_all(7);
+    panel.editor.selection.select_all(11);
     h.frame(&mut panel, Vec::new());
 
-    panel.sim_cache = Some(SimCache {
-        components: panel.layout.components.clone(),
-        cell_um: panel.cell_um,
-        result: LayoutSimulation {
-            error: Some("boom".into()),
-            ..Default::default()
-        },
+    let key = panel.sim.as_ref().unwrap().key;
+    panel.sim = Some(SimCache {
+        key,
+        outcome: Outcome::failed("boom"),
     });
     h.frame(&mut panel, Vec::new());
     assert_eq!(
-        panel.sim_cache.as_ref().unwrap().result.error.as_deref(),
+        panel.sim.as_ref().unwrap().outcome.error.as_deref(),
         Some("boom")
     );
 }
@@ -792,7 +791,7 @@ fn status_expires() {
 fn header_describes_tool_and_cell() {
     let mut panel = OpticsPanel::default();
     let mut h = Harness::new(&mut panel);
-    panel.tool = Some(Tool::Place(DETECTOR));
+    panel.tool = Some(Tool::Place(Placeable::Part(DETECTOR)));
     // Pan so a negative cell is on screen.
     panel.view.pan_by(Vec2::new(200.0, 200.0));
     h.move_to(scr(&panel, cell_center(-3, -2)), &mut panel);
@@ -808,7 +807,10 @@ fn header_describes_tool_and_cell() {
 #[test]
 fn shortcuts_are_ignored_while_typing() {
     let ctx = egui::Context::default();
-    let mut panel = OpticsPanel::default();
+    let mut panel = OpticsPanel {
+        simulation_active: false,
+        ..Default::default()
+    };
     let mut text = String::new();
     let field = Id::unique("test text field");
     let mut run = |events: Vec<Event>, focus: bool, panel: &mut OpticsPanel| {
@@ -851,7 +853,8 @@ fn shortcuts_survive_clicking_library_rows() {
     place(&mut panel, 1, 0, LENS);
     let mut h = Harness::new(&mut panel);
     // A part row in the left toolbar.
-    h.click(Pos2::new(100.0, 40.0), &mut panel, PointerButton::Primary);
+    h.click(Pos2::new(100.0, 64.0), &mut panel, PointerButton::Primary);
+    assert!(panel.tool.is_some(), "the click hit a row");
     h.key(&mut panel, Key::Escape);
     h.key(&mut panel, Key::A);
     assert_eq!(panel.editor.selection.len(), 2);
@@ -876,4 +879,188 @@ fn box_select_released_outside_the_canvas_finishes() {
     h.key(&mut panel, Key::X);
     h.key_with(&mut panel, Key::Z, ctrl());
     assert_eq!(panel.layout.components.len(), 2);
+}
+
+// ---- boxes, wires and electronics ------------------------------------------------
+
+use model::{BlockRef, Builtin, Item, PortRef, Terminal};
+
+fn add_box(panel: &mut OpticsPanel, block: Builtin, cell: (i32, i32)) -> model::InstanceId {
+    panel.layout.add_instance(BlockRef::Builtin(block), cell)
+}
+
+#[test]
+fn library_lists_sections_and_searches() {
+    let catalog = crate::panels::project::Catalog::default();
+    let all = library::entries(&catalog, true, "");
+    for section in library::SECTIONS {
+        if section != library::SECTIONS[4] {
+            assert!(all.iter().any(|e| e.section == section), "{section}");
+        }
+    }
+    // Primitives are not repeated as waveguide boxes.
+    assert!(!all.iter().any(|e| e.section == library::SECTIONS[5] && e.name == "Laser"));
+    let found = library::entries(&catalog, true, "regist");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].item, Placeable::Block(BlockRef::Builtin(Builtin::Register { bits: 8 })));
+    assert!(library::entries(&catalog, false, "full adder").is_empty(), "examples need a project");
+    assert_eq!(Placeable::Part(OpticComponentKind::Detector { threshold: 0.5 }).name(&catalog), "Threshold detector");
+    assert_eq!(Placeable::Example(0).name(&catalog), "Full adder");
+}
+
+#[test]
+fn signal_wires_are_drawn_by_dragging_between_terminals() {
+    let mut panel = OpticsPanel::default();
+    let n = add_box(&mut panel, Builtin::NumberInput { bits: 2, value: 3 }, (0, 0));
+    let d = add_box(&mut panel, Builtin::Display { bits: 2 }, (0, 4));
+    let mut h = Harness::new(&mut panel);
+    let terminal = |p: &OpticsPanel, item, port, out| scr(p, p.terminal_pos(Terminal { item, port }, out).unwrap());
+    // Output to input, and input to output: both connect.
+    let (a, b) = (terminal(&panel, Item::Box(n), 0, true), terminal(&panel, Item::Box(d), 0, false));
+    h.drag(a, b, &mut panel, PointerButton::Primary);
+    let (a, b) = (terminal(&panel, Item::Box(d), 1, false), terminal(&panel, Item::Box(n), 1, true));
+    h.drag(a, b, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.signals.len(), 2);
+    h.frame(&mut panel, Vec::new());
+    let o = panel.outcome().unwrap();
+    assert_eq!(input_number(&panel.layout, o, d, 2), 3);
+    // Output to output is refused with a hint.
+    let (a, b) = (terminal(&panel, Item::Box(n), 0, true), terminal(&panel, Item::Box(n), 1, true));
+    h.drag(a, b, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.signals.len(), 2);
+    assert!(panel.status.as_ref().unwrap().0.contains("input"));
+
+    // Clicking a wire selects it; X deletes it.
+    let path = panel.signal_points(0).unwrap();
+    let mid = scr(&panel, path[1] + (path[2] - path[1]) * 0.5);
+    h.click(mid, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.selected_wire, Some(WireRef::Signal(0)));
+    h.frame(&mut panel, Vec::new());
+    h.key(&mut panel, Key::X);
+    assert_eq!(panel.layout.signals.len(), 1);
+    assert!(panel.selected_wire.is_none());
+}
+
+#[test]
+fn waveguides_and_signal_light_mismatches() {
+    let mut panel = OpticsPanel::default();
+    let a = add_box(&mut panel, Builtin::YSplitter, (0, 0));
+    let b = add_box(&mut panel, Builtin::Attenuator { loss_db: 0.0 }, (6, 3));
+    let f = add_box(&mut panel, Builtin::FunctionCell {
+        name: "f".into(),
+        inputs: 1,
+        light_inputs: 0,
+        outputs: vec!["in1".into()],
+        light_outputs: Vec::new(),
+        wavelength_nm: 1550.0,
+    }, (6, 7));
+    let mut h = Harness::new(&mut panel);
+    let out = scr(&panel, panel.light_port_pos(PortRef { instance: a, port: 1 }, true).unwrap());
+    let into = scr(&panel, panel.light_port_pos(PortRef { instance: b, port: 0 }, false).unwrap());
+    assert_eq!(panel.hit(panel.view.to_world(panel.canvas_rect().unwrap(), out)), Hit::LightOut(PortRef { instance: a, port: 1 }));
+    h.drag(out, into, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.wires.len(), 1);
+    // Hovering the waveguide describes it.
+    let path = panel.waveguide_points(0).unwrap();
+    assert!(panel.hover_text(panel.hit(path[12])).unwrap().starts_with("Waveguide"));
+
+    // Light can't go into a signal terminal.
+    let signal_in = scr(&panel, panel.terminal_pos(Terminal { item: Item::Box(f), port: 0 }, false).unwrap());
+    h.drag(out, signal_in, &mut panel, PointerButton::Primary);
+    assert!(panel.status.as_ref().unwrap().0.contains("don't connect"));
+    assert_eq!(panel.layout.wires.len(), 1);
+
+    // Shrinking a block drops wires to ports it no longer has.
+    panel.layout.signals.push(model::SignalWire {
+        from: Terminal { item: Item::Box(f), port: 0 },
+        to: Terminal { item: Item::Box(f), port: 0 },
+    });
+    if let BlockRef::Builtin(Builtin::FunctionCell { inputs, .. }) = &mut panel.layout.instances[2].block {
+        *inputs = 0;
+    }
+    panel.layout.instances[0].block = BlockRef::Builtin(Builtin::Attenuator { loss_db: 0.0 });
+    panel.prune_connections();
+    assert!(panel.layout.signals.is_empty() && panel.layout.wires.is_empty());
+}
+
+#[test]
+fn registers_tick_in_a_standalone_panel() {
+    let mut panel = OpticsPanel::default();
+    let n = add_box(&mut panel, Builtin::NumberInput { bits: 1, value: 1 }, (0, 0));
+    let r = add_box(&mut panel, Builtin::Register { bits: 1 }, (0, 3));
+    panel.layout.connect_signal(Terminal { item: Item::Box(n), port: 0 }, Terminal { item: Item::Box(r), port: 0 });
+    let mut h = Harness::new(&mut panel);
+    assert_eq!(panel.outcome().unwrap().signal(Item::Box(r), 0), 0.0);
+    panel.tick();
+    h.frame(&mut panel, Vec::new());
+    assert_eq!(panel.outcome().unwrap().signal(Item::Box(r), 0), 1.0);
+    assert!(panel.header_text().contains("tick 1"));
+    panel.running = true;
+    for _ in 0..25 {
+        h.frame(&mut panel, Vec::new());
+    }
+    assert!(panel.machine.tick >= 2, "running ticks every {TICK_SECONDS}s");
+    panel.reset_clock();
+    assert_eq!(panel.machine.tick, 0);
+    assert!(!panel.running);
+    // Embedded panels ask their host.
+    panel.embedded = true;
+    panel.tick();
+    assert_eq!(panel.requests, vec![Request::Tick]);
+}
+
+#[test]
+fn boxes_select_move_and_inspect() {
+    let mut panel = OpticsPanel::default();
+    add_box(&mut panel, Builtin::NumberInput { bits: 4, value: 0 }, (0, 0));
+    add_box(&mut panel, Builtin::Coupler { coupling: 0.5 }, (0, 3));
+    place(&mut panel, 5, 5, LENS);
+    let mut h = Harness::new(&mut panel);
+    // Clicking a number input's bit toggles it (most significant first).
+    h.click(scr(&panel, cell_center(1, 0)), &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.instances[0].block, BlockRef::Builtin(Builtin::NumberInput { bits: 4, value: 4 }));
+    assert_eq!(panel.editor.boxes.active(), Some(0));
+    // Dragging a box moves it; it can't land on another box.
+    h.drag(scr(&panel, cell_center(0, 3)), scr(&panel, cell_center(0, 6)), &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.instances[1].cell, (0, 6));
+    h.drag(scr(&panel, cell_center(0, 6)), scr(&panel, cell_center(0, 0)), &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.instances[1].cell, (0, 6));
+    // Every selection renders in the inspector; hover texts exist.
+    for b in 0..2 {
+        panel.editor.clear_selection();
+        panel.editor.boxes.select_only(b);
+        h.frame(&mut panel, Vec::new());
+        assert!(panel.hover_text(Hit::Box(b)).is_some());
+    }
+    assert!(panel.hover_text(Hit::Box(0)).unwrap().contains("toggle"));
+    assert!(panel.hover_text(Hit::Part(0)).unwrap().contains("Lens"));
+    assert!(panel.hover_text(Hit::Empty).is_none());
+    // Tab on a built-in box has nothing to open.
+    panel.apply(Action::Inspect);
+    assert!(panel.status.as_ref().unwrap().0.contains("component box"));
+    // Box select catches boxes and parts.
+    h.drag(scr(&panel, cell_center(-1, -1)), scr(&panel, cell_center(6, 7)), &mut panel, PointerButton::Primary);
+    assert_eq!((panel.editor.boxes.len(), panel.editor.selection.len()), (2, 1));
+    assert!(panel.bounds(true).unwrap().contains(cell_center(0, 6)));
+}
+
+#[test]
+fn add_menu_search_places_the_first_match() {
+    let mut panel = OpticsPanel::default();
+    let mut h = Harness::new(&mut panel);
+    h.move_to(scr(&panel, cell_center(2, 2)), &mut panel);
+    h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
+    assert!(panel.menu.is_some());
+    h.frame(&mut panel, vec![Event::Text("display".into())]);
+    assert_eq!(panel.menu.as_ref().unwrap().search, "display");
+    h.key(&mut panel, Key::Enter);
+    assert!(panel.menu.is_none());
+    assert_eq!(panel.layout.instances.len(), 1);
+    assert_eq!(panel.layout.instances[0].cell, (2, 2));
+    // Example components need a host.
+    panel.place(Placeable::Example(0), cell_center(9, 9));
+    assert!(panel.status.as_ref().unwrap().0.contains("project"));
+    panel.embedded = true;
+    panel.place(Placeable::Example(0), cell_center(9, 9));
+    assert_eq!(panel.requests, vec![Request::PlaceExample { example: 0, cell: (9, 9) }]);
 }

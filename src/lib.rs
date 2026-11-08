@@ -40,7 +40,7 @@ mod app {
         fn starts_with_an_empty_layout() {
             let app = ShineApp::default();
             assert_eq!(app.workspace.tabs.len(), 1);
-            assert!(app.workspace.project.documents[0].is_layout());
+            assert!(app.workspace.project.documents[0].layout().components.is_empty());
         }
 
         #[test]

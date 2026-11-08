@@ -19,6 +19,7 @@ pub enum Category {
     Pins,
     Elements,
     Circuits,
+    Electronics,
 }
 
 impl Category {
@@ -28,6 +29,7 @@ impl Category {
             Self::Pins => "Component pins",
             Self::Elements => "Waveguide elements",
             Self::Circuits => "Circuits",
+            Self::Electronics => "Electronics & I/O",
         }
     }
 }
@@ -96,6 +98,28 @@ pub enum Builtin {
     Dft {
         n: u32,
     },
+    /// External input: a number set by the user, out on `bits` signals (MSB first).
+    NumberInput { bits: u32, value: u64 },
+    /// External output: shows the number on its `bits` inputs (MSB first).
+    Display { bits: u32 },
+    /// Clocked memory: on each clock tick, stores its data inputs when
+    /// `write` is high (or unconnected) and holds them on its outputs.
+    Register { bits: u32 },
+    /// Computes its outputs from expressions over its inputs
+    /// (`in1`… signals, `p1`… received light power, `t` clock ticks).
+    /// `light` expressions drive optical outputs (field amplitude).
+    FunctionCell {
+        name: String,
+        inputs: u32,
+        light_inputs: u32,
+        outputs: Vec<String>,
+        light_outputs: Vec<String>,
+        wavelength_nm: f64,
+    },
+}
+
+fn msb_first(prefix: &str, bits: u32) -> Vec<String> {
+    (0..bits).rev().map(|k| format!("{prefix}{k}")).collect()
 }
 
 fn numbered(prefix: &str, n: usize) -> Vec<String> {
@@ -147,6 +171,47 @@ impl Builtin {
             },
             Self::Dft { n: 4 },
         ]
+    }
+
+    /// Electronic and mixed-signal blocks, in library order.
+    pub fn electronic_palette() -> Vec<Builtin> {
+        vec![
+            Self::NumberInput { bits: 8, value: 0 },
+            Self::Display { bits: 8 },
+            Self::Register { bits: 8 },
+            Self::FunctionCell {
+                name: "Function".into(),
+                inputs: 2,
+                light_inputs: 0,
+                outputs: vec!["in1 + in2".into()],
+                light_outputs: Vec::new(),
+                wavelength_nm: 1550.0,
+            },
+        ]
+    }
+
+    /// Electrical inputs, left to right on the box's top edge.
+    pub fn signal_inputs(&self) -> Vec<String> {
+        match self {
+            Self::Display { bits } => msb_first("b", *bits),
+            Self::Register { bits } => {
+                let mut names = msb_first("d", *bits);
+                names.push("write".into());
+                names
+            }
+            Self::FunctionCell { inputs, .. } => numbered("in", *inputs as usize),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Electrical outputs, left to right on the box's bottom edge.
+    pub fn signal_outputs(&self) -> Vec<String> {
+        match self {
+            Self::NumberInput { bits, .. } => msb_first("b", *bits),
+            Self::Register { bits } => msb_first("q", *bits),
+            Self::FunctionCell { outputs, .. } => numbered("out", outputs.len()),
+            _ => Vec::new(),
+        }
     }
 
     pub fn info(&self) -> BlockInfo {
@@ -251,6 +316,30 @@ impl Builtin {
                 "MZI mesh computing the discrete Fourier transform.",
                 Circuits,
             ),
+            Self::NumberInput { .. } => (
+                "Number input",
+                "NUM",
+                "External input: a number you set, sent out as bits (most significant first). Click its bits to toggle them.",
+                Electronics,
+            ),
+            Self::Display { .. } => (
+                "Display",
+                "DISP",
+                "External output: shows the bits on its inputs as a binary and decimal number.",
+                Electronics,
+            ),
+            Self::Register { .. } => (
+                "Register",
+                "REG",
+                "Memory: on each clock tick it stores its d inputs (when write is high or unconnected) and holds them on its q outputs.",
+                Electronics,
+            ),
+            Self::FunctionCell { .. } => (
+                "Function cell",
+                "f(x)",
+                "Computes outputs from expressions over its inputs: in1… signals, p1… received light power, t clock ticks. Light outputs emit light with the computed amplitude.",
+                Electronics,
+            ),
         };
         BlockInfo {
             name,
@@ -262,7 +351,8 @@ impl Builtin {
 
     pub fn inputs(&self) -> Vec<String> {
         match self {
-            Self::Laser { .. } => Vec::new(),
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
+            Self::FunctionCell { light_inputs, .. } => numbered("p", *light_inputs as usize),
             Self::InputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing => numbered("in", 2),
             Self::YCombiner => numbered("in", 2),
@@ -274,7 +364,8 @@ impl Builtin {
 
     pub fn outputs(&self) -> Vec<String> {
         match self {
-            Self::Detector => Vec::new(),
+            Self::Detector | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
+            Self::FunctionCell { light_outputs, .. } => numbered("light", light_outputs.len()),
             Self::OutputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter => {
                 numbered("out", 2)
@@ -289,8 +380,14 @@ impl Builtin {
         }
     }
 
-    /// Add this block to `circuit`.
+    /// Add this block to `circuit`. Function cells emit no light here; the
+    /// mixed-signal simulator passes their computed amplitudes to
+    /// [`Self::build_with_light`].
     pub fn build(&self, c: &mut Circuit) -> Result<Ports, CircuitError> {
+        self.build_with_light(c, &[])
+    }
+
+    pub fn build_with_light(&self, c: &mut Circuit, light: &[f64]) -> Result<Ports, CircuitError> {
         let single = |node: NodeId, inputs: usize, outputs: usize| Ports {
             inputs: (0..inputs).map(|k| node.input(k)).collect(),
             outputs: (0..outputs).map(|k| node.output(k)).collect(),
@@ -376,6 +473,21 @@ impl Builtin {
             }
             .build(c)?,
             Self::Dft { n } => Dft { n: *n as usize }.build(c)?,
+            Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Ports::default(),
+            Self::FunctionCell {
+                light_inputs,
+                light_outputs,
+                wavelength_nm,
+                ..
+            } => Ports {
+                inputs: (0..*light_inputs).map(|_| c.add(Detector::new()).input(0)).collect(),
+                outputs: (0..light_outputs.len())
+                    .map(|k| {
+                        let amplitude = light.get(k).copied().unwrap_or(0.0);
+                        c.add(Laser::new(amplitude, *wavelength_nm)).output(0)
+                    })
+                    .collect(),
+            },
         })
     }
 }

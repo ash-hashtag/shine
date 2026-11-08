@@ -55,9 +55,10 @@ pub fn component_color(kind: &OpticComponentKind) -> Color32 {
         OpticComponentKind::Lens => Color32::from_rgb(100, 150, 255),
         OpticComponentKind::PhaseShifter { .. } => Color32::from_rgb(255, 150, 0),
         OpticComponentKind::Attenuator { .. } => Color32::from_gray(120),
-        OpticComponentKind::Detector => Color32::from_rgb(40, 40, 40),
+        OpticComponentKind::Detector { .. } => Color32::from_rgb(40, 40, 40),
         OpticComponentKind::InputPort { .. } => Color32::from_rgb(0, 137, 123),
         OpticComponentKind::OutputPort => Color32::from_rgb(123, 31, 162),
+        OpticComponentKind::SignalIn | OpticComponentKind::SignalOut => SIGNAL_HIGH,
     }
 }
 
@@ -169,18 +170,86 @@ pub fn draw_component(
             painter.rect_filled(body, 5.0 * scale, color);
             painter.circle_stroke(pos, 6.0 * scale, Stroke::new(2.0 * scale, white));
         }
-        OpticComponentKind::Detector => {
-            painter.rect_filled(
-                Rect::from_center_size(pos, Vec2::splat(24.0 * scale)),
-                2.0 * scale,
-                color,
-            );
-            painter.circle_filled(
-                pos,
-                7.0 * scale,
-                Color32::from_rgb(90, 200, 120).gamma_multiply(alpha),
-            );
+        OpticComponentKind::Detector { threshold } => {
+            painter.rect_filled(Rect::from_center_size(pos, Vec2::splat(24.0 * scale)), 2.0 * scale, color);
+            painter.circle_filled(pos, 7.0 * scale, Color32::from_rgb(90, 200, 120).gamma_multiply(alpha));
+            if threshold > 0.0 {
+                // A comparator mark: this detector outputs bits.
+                let y = pos.y + 9.0 * scale;
+                painter.line_segment(
+                    [Pos2::new(pos.x - 6.0 * scale, y), Pos2::new(pos.x + 6.0 * scale, y)],
+                    Stroke::new(1.5 * scale, SIGNAL_HIGH.gamma_multiply(alpha)),
+                );
+            }
         }
+        OpticComponentKind::SignalIn | OpticComponentKind::SignalOut => {
+            let body = Rect::from_center_size(pos, Vec2::new(22.0, 18.0) * scale);
+            painter.rect_filled(body, 4.0 * scale, color);
+            let down = matches!(kind, OpticComponentKind::SignalIn);
+            let (tip, base) = if down { (5.0, -4.0) } else { (-5.0, 4.0) };
+            painter.add(Shape::convex_polygon(
+                vec![
+                    pos + Vec2::new(0.0, tip) * scale,
+                    pos + Vec2::new(-5.0, base) * scale,
+                    pos + Vec2::new(5.0, base) * scale,
+                ],
+                Color32::from_rgb(60, 40, 0).gamma_multiply(alpha),
+                Stroke::NONE,
+            ));
+        }
+    }
+}
+
+/// Colours of electrical signals: low, high, and values between.
+pub const SIGNAL_LOW: Color32 = Color32::from_rgb(140, 146, 158);
+pub const SIGNAL_HIGH: Color32 = Color32::from_rgb(232, 163, 61);
+pub const SIGNAL_ANALOG: Color32 = Color32::from_rgb(86, 150, 220);
+
+pub fn signal_color(value: Option<f64>) -> Color32 {
+    match value {
+        None | Some(0.0) => SIGNAL_LOW,
+        Some(1.0) => SIGNAL_HIGH,
+        Some(_) => SIGNAL_ANALOG,
+    }
+}
+
+/// An electrical terminal: a small square, filled when it is an output.
+pub fn draw_terminal(painter: &Painter, at: Pos2, output: bool, value: Option<f64>, hovered: bool, scale: f32, background: Color32) {
+    let size = if hovered { 10.0 } else { 7.0 } * scale.clamp(0.6, 1.4);
+    let rect = Rect::from_center_size(at, Vec2::splat(size));
+    let color = signal_color(value);
+    if output || value.is_some() {
+        painter.rect_filled(rect, 1.5, color);
+    } else {
+        painter.rect(rect, 1.5, background, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+    }
+}
+
+/// Right-angled route for a signal wire from an output (bottom edge) to an
+/// input (top edge).
+pub fn signal_route(from: Pos2, to: Pos2, scale: f32) -> Vec<Pos2> {
+    signal_route_in_lane(from, to, 0, 1, scale)
+}
+
+/// Like [`signal_route`], with the horizontal run in `lane` of `lanes`, so
+/// parallel wires between the same rows stay apart instead of overlapping.
+pub fn signal_route_in_lane(from: Pos2, to: Pos2, lane: usize, lanes: usize, scale: f32) -> Vec<Pos2> {
+    let step = 10.0 * scale;
+    let lanes = lanes.max(1) as f32;
+    let t = (lane as f32 + 0.5) / lanes;
+    let a = from + Vec2::new(0.0, step);
+    let b = to - Vec2::new(0.0, step);
+    if b.y >= a.y {
+        let mid = a.y + (b.y - a.y) * t;
+        vec![from, Pos2::new(from.x, mid), Pos2::new(to.x, mid), to]
+    } else {
+        // Going back up: drop out of the source, run beside it (on the
+        // boundary between grid columns), then cross over above the target.
+        let spread = (3.0 * scale).min(16.0 * scale / lanes);
+        let down = a.y + spread * lane as f32;
+        let up = b.y - spread * lane as f32;
+        let x = from.x - 20.0 * scale + spread * lane as f32 * 0.5;
+        vec![from, Pos2::new(from.x, down), Pos2::new(x, down), Pos2::new(x, up), Pos2::new(to.x, up), to]
     }
 }
 

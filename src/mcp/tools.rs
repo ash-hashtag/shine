@@ -5,9 +5,9 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 
 use super::spec::{self, CircuitSpec};
-use crate::panels::beam_sim;
-use crate::panels::optics::GRID;
-use crate::panels::project::{Content, DocId, Project};
+use crate::panels::circuit::sim::{Machine, bits_to_number};
+use crate::panels::optics::model::{Item, OpticComponentKind, Terminal, cell_of};
+use crate::panels::project::{DocId, Project, v1};
 use crate::panels::schematic::model::{BlockRef, Builtin, PortRef};
 use crate::panels::schematic::sim::{self as schematic_sim, Resolver};
 use crate::photonics::{C64, Circuit, InPort, Matrix, OutPort, Ports, SvdMesh, UnitaryMesh};
@@ -445,44 +445,69 @@ fn simulate_project(args: &Map<String, Value>) -> Result<Value, String> {
             let interface = doc.interface();
             let mut out = json!({
                 "name": doc.name,
-                "kind": if doc.is_layout() { "free-space layout" } else { "schematic" },
-                "component": doc.component.as_ref().map(|c| json!({"initials": c.initials, "description": c.description, "inputs": interface.inputs, "outputs": interface.outputs})),
+                "kind": if doc.component.is_some() { "component" } else { "layout" },
+                "component": doc.component.as_ref().map(|c| json!({
+                    "initials": c.initials,
+                    "description": c.description,
+                    "inputs": interface.inputs,
+                    "outputs": interface.outputs,
+                    "signal_inputs": interface.signal_inputs,
+                    "signal_outputs": interface.signal_outputs,
+                })),
             });
-            match &doc.content {
-                Content::Schematic(p) => {
-                    let sim = project.simulate_schematic(doc.id);
-                    match sim.error {
-                        Some(e) => out["error"] = json!(e),
-                        None => {
-                            out["wavelengths_nm"] = json!(sim.wavelengths);
-                            out["readings"] = json!(sim
-                                .readings
-                                .iter()
-                                .map(|(id, power)| {
-                                    let block = p.schematic.instance(*id).map(|i| catalog.display(&i.block).name).unwrap_or_default();
-                                    json!({"block": format!("{block} #{}", id.0 + 1), "power": round(*power)})
-                                })
-                                .collect::<Vec<_>>());
-                        }
-                    }
+            let sim = project.simulate(doc.id, &Machine::default());
+            if let Some(e) = sim.error {
+                out["error"] = json!(e);
+                return out;
+            }
+            let layout = doc.layout();
+            let mut readings: Vec<Value> = sim
+                .detector_power
+                .iter()
+                .map(|(i, power)| {
+                    let c = &layout.components[*i];
+                    let (x, y) = cell_of(c.pos);
+                    let name = layout.label(*i).map_or_else(|| format!("{} at cell ({x}, {y})", c.kind.name()), str::to_owned);
+                    json!({"block": name, "power": round(*power)})
+                })
+                .collect();
+            // Detector and output-pin boxes read the waveguide feeding them.
+            for (w, wire) in layout.wires.iter().enumerate() {
+                let Some(inst) = layout.instance(wire.to.instance) else { continue };
+                if matches!(inst.block, BlockRef::Builtin(Builtin::Detector | Builtin::OutputPin { .. })) {
+                    let name = catalog.display(&inst.block).name;
+                    readings.push(json!({"block": format!("{name} #{}", inst.id.0 + 1), "power": round(sim.wire_power(w))}));
                 }
-                Content::Layout(p) => {
-                    let sim = beam_sim::simulate_layout(&p.layout.components, GRID, p.cell_um, GRID * 500.0);
-                    match sim.error {
-                        Some(e) => out["error"] = json!(e),
-                        None => {
-                            out["readings"] = json!(sim
-                                .detector_power
-                                .iter()
-                                .map(|(i, power)| {
-                                    let c = &p.layout.components[*i];
-                                    let (x, y) = crate::panels::optics::model::cell_of(c.pos);
-                                    json!({"block": format!("{} at cell ({x}, {y})", c.kind.name()), "power": round(*power)})
-                                })
-                                .collect::<Vec<_>>());
-                        }
+            }
+            let displays: Vec<Value> = layout
+                .instances
+                .iter()
+                .filter_map(|inst| match inst.block {
+                    BlockRef::Builtin(Builtin::Display { bits }) => {
+                        let values: Vec<f64> =
+                            (0..bits as usize).map(|k| sim.input(layout, Terminal { item: Item::Box(inst.id), port: k })).collect();
+                        Some(json!({"cell": [inst.cell.0, inst.cell.1], "value": bits_to_number(&values)}))
                     }
-                }
+                    _ => None,
+                })
+                .collect();
+            let signal_outputs: Vec<Value> = layout
+                .components
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.kind == OpticComponentKind::SignalOut)
+                .map(|(i, _)| {
+                    let value = sim.input(layout, Terminal { item: Item::Part(i), port: 0 });
+                    json!({"name": layout.label(i).unwrap_or("out"), "value": round(value)})
+                })
+                .collect();
+            out["wavelengths_nm"] = json!(sim.wavelengths);
+            out["readings"] = json!(readings);
+            if !displays.is_empty() {
+                out["displays"] = json!(displays);
+            }
+            if !signal_outputs.is_empty() {
+                out["signal_outputs"] = json!(signal_outputs);
             }
             out
         })
@@ -509,7 +534,7 @@ fn save_project(args: &Map<String, Value>) -> Result<Value, String> {
         .and_then(Value::as_str)
         .unwrap_or("Circuit from AI");
     let mut project = Project::new();
-    project.add_schematic(name, built.schematic);
+    project.add_layout(name, v1::schematic_to_layout(built.schematic), 10.0);
     std::fs::write(path, project.to_bytes())
         .map_err(|e| format!("can't write {}: {e}", path.display()))?;
     Ok(
@@ -785,21 +810,23 @@ mod tests {
         assert_eq!(readings.len(), 2);
         assert!((readings.iter().sum::<f64>() - 1.0).abs() < 1e-9);
 
-        // Projects made in the editor, including reusable components and layouts.
+        // Projects made in the editor: components, layouts and electronics.
         let mut project = Project::new();
-        crate::panels::schematic::examples::reusable_free_space_mzi(&mut project);
+        crate::panels::optics::examples::import_component(&mut project, 0);
         project.add_layout("Fan-out", crate::panels::optics::examples::fan_out(), 10.0);
-        let mut broken = crate::panels::schematic::model::Schematic::default();
-        broken.add(BlockRef::Component(DocId(999)), egui::Pos2::ZERO);
-        project.add_schematic("Broken", broken);
+        crate::panels::optics::examples::eight_bit_adder(&mut project);
+        let mut broken = crate::panels::optics::model::Layout::default();
+        broken.add_instance(BlockRef::Component(DocId(999)), (0, 0));
+        project.add_layout("Broken", broken, 10.0);
         let editor = dir.join("editor.shine");
         std::fs::write(&editor, project.to_bytes()).unwrap();
         let out = simulate_project(&args(json!({"path": editor}))).unwrap();
         let docs = out["documents"].as_array().unwrap();
         assert_eq!(docs.len(), 4);
-        assert_eq!(docs[0]["component"]["initials"], "FSM");
-        assert!(docs[1]["readings"].as_array().unwrap().len() == 3);
-        assert_eq!(docs[2]["readings"].as_array().unwrap().len(), 4);
+        assert_eq!(docs[0]["component"]["initials"], "FA");
+        assert_eq!(docs[0]["component"]["signal_inputs"], json!(["a", "b", "cin"]));
+        assert_eq!(docs[1]["readings"].as_array().unwrap().len(), 4);
+        assert_eq!(docs[2]["displays"][0]["value"], 155, "100 + 55");
         assert!(docs[3]["error"].as_str().unwrap().contains("deleted"));
 
         std::fs::write(

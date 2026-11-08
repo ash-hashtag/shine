@@ -2,7 +2,10 @@
 
 use egui::Vec2;
 
-use super::model::{Layout, OpticComponentKind, PlacedComponent, cell_center};
+use super::model::{
+    BlockRef, Builtin, Item, Layout, OpticComponentKind, PlacedComponent, PortRef, Terminal, cell_center,
+};
+use crate::panels::project::{DocId, Project};
 
 pub struct LayoutExample {
     pub name: &'static str,
@@ -46,13 +49,10 @@ fn shifter(phase: f32) -> OpticComponentKind {
     OpticComponentKind::PhaseShifter { phase }
 }
 
-const DETECTOR: OpticComponentKind = OpticComponentKind::Detector;
+const DETECTOR: OpticComponentKind = OpticComponentKind::Detector { threshold: 0.0 };
 
 fn layout(components: Vec<PlacedComponent>) -> Layout {
-    Layout {
-        components,
-        lines: Vec::new(),
-    }
+    Layout::with_components(components)
 }
 
 pub fn mach_zehnder() -> Layout {
@@ -148,6 +148,242 @@ pub fn layout_examples() -> Vec<LayoutExample> {
             description: "Three 50:50 splitters distribute one laser equally over four detectors, like the fan-out that feeds many weights in an optical neural network.",
             cell_um: 10.0,
             build: fan_out,
+        },
+    ]
+}
+
+// ---- components -----------------------------------------------------------------
+
+/// The same layout with its laser replaced by an input port and its
+/// detectors by output ports, so it can be used as a component.
+fn as_component(mut layout: Layout) -> Layout {
+    for part in &mut layout.components {
+        part.kind = match part.kind {
+            OpticComponentKind::Laser { dir, .. } => OpticComponentKind::InputPort { dir },
+            OpticComponentKind::Detector { .. } => OpticComponentKind::OutputPort,
+            other => other,
+        };
+    }
+    layout
+}
+
+/// Index of the part at cell `(i, j)`.
+fn part_at(layout: &Layout, i: i32, j: i32) -> usize {
+    layout
+        .components
+        .iter()
+        .position(|p| p.pos == cell_center(i, j))
+        .unwrap_or_else(|| panic!("no part at ({i}, {j})"))
+}
+
+fn wire(layout: &mut Layout, from: (usize, usize), to: (usize, usize)) {
+    layout.connect_signal(
+        Terminal { item: Item::Part(from.0), port: from.1 },
+        Terminal { item: Item::Part(to.0), port: to.1 },
+    );
+}
+
+/// A one-bit full adder made of optics.
+///
+/// - Sum: a Mach–Zehnder with three phase shifters in one arm, each adding π
+///   when its bit is 1. Light leaves the lower output when the total phase
+///   is an odd multiple of π, so `sum = a XOR b XOR cin`.
+/// - Carry: three lasers, switched by the bits, shine into one detector that
+///   outputs 1 when it receives 2 or more units of power, so
+///   `cout = majority(a, b, cin)`.
+pub fn full_adder() -> Layout {
+    let signal_in = OpticComponentKind::SignalIn;
+    let signal_out = OpticComponentKind::SignalOut;
+    let modulated = |dx: f32, dy: f32| OpticComponentKind::Laser {
+        amplitude: 1.0,
+        phase: 0.0,
+        wavelength: 1550.0,
+        dir: Vec2::new(dx, dy),
+    };
+    let mut l = layout(vec![
+        at(0, -3, signal_in),
+        at(1, -3, signal_in),
+        at(2, -3, signal_in),
+        // XOR: a balanced interferometer with the bits as phase shifts.
+        at(0, 0, modulated(1.0, 0.0)),
+        at(2, 0, splitter(-1.0, 1.0, 0.5)),
+        at(3, 0, shifter(0.0)),
+        at(4, 0, shifter(0.0)),
+        at(5, 0, shifter(0.0)),
+        at(6, 0, mirror(-1.0, 1.0)),
+        at(2, 2, mirror(1.0, -1.0)),
+        at(6, 2, splitter(-1.0, 1.0, 0.5)),
+        at(6, 4, OpticComponentKind::Detector { threshold: 0.5 }),
+        // Majority: three switched lasers into one thresholded detector.
+        at(9, 5, modulated(1.0, 0.0)),
+        at(11, 3, modulated(0.0, 1.0)),
+        at(11, 7, modulated(0.0, -1.0)),
+        at(11, 5, OpticComponentKind::Detector { threshold: 1.5 }),
+        at(0, 9, signal_out),
+        at(1, 9, signal_out),
+    ]);
+    let (a, b, c) = (part_at(&l, 0, -3), part_at(&l, 1, -3), part_at(&l, 2, -3));
+    let (pa, pb, pc) = (part_at(&l, 3, 0), part_at(&l, 4, 0), part_at(&l, 5, 0));
+    let (la, lb, lc) = (part_at(&l, 9, 5), part_at(&l, 11, 3), part_at(&l, 11, 7));
+    let (sum_det, carry_det) = (part_at(&l, 6, 4), part_at(&l, 11, 5));
+    let (sum, carry) = (part_at(&l, 0, 9), part_at(&l, 1, 9));
+    for (bit, shift, source) in [(a, pa, la), (b, pb, lb), (c, pc, lc)] {
+        wire(&mut l, (bit, 0), (shift, 0));
+        wire(&mut l, (bit, 0), (source, 0));
+    }
+    wire(&mut l, (sum_det, 0), (sum, 0));
+    wire(&mut l, (carry_det, 0), (carry, 0));
+    for (part, label) in [(a, "a"), (b, "b"), (c, "cin"), (sum, "sum"), (carry, "cout")] {
+        l.set_label(part, label);
+    }
+    l
+}
+
+pub struct ComponentExample {
+    pub name: &'static str,
+    pub initials: &'static str,
+    pub description: &'static str,
+    pub cell_um: f64,
+    pub build: fn() -> Layout,
+}
+
+/// Components that ship with Shine, built from primitives. Placing one adds
+/// its layout to the project, so it can be opened (Tab) and changed.
+pub fn component_examples() -> Vec<ComponentExample> {
+    vec![
+        ComponentExample {
+            name: "Full adder",
+            initials: "FA",
+            description: "Adds three bits with light: an interferometer computes the sum (XOR) and a thresholded detector the carry (majority). Chain eight for an 8-bit adder.",
+            cell_um: 10.0,
+            build: full_adder,
+        },
+        ComponentExample {
+            name: "Mach–Zehnder interferometer",
+            initials: "MZI",
+            description: "One input, two outputs. The phase shifter inside chooses which output gets the light: a switch or modulator.",
+            cell_um: 10.0,
+            build: || as_component(mach_zehnder()),
+        },
+        ComponentExample {
+            name: "Fabry–Pérot filter",
+            initials: "FP",
+            description: "A resonant cavity: passes light only near its resonant wavelengths.",
+            cell_um: FABRY_PEROT_CELL_UM,
+            build: || as_component(fabry_perot()),
+        },
+        ComponentExample {
+            name: "1→4 splitter",
+            initials: "1:4",
+            description: "Divides one beam equally over four outputs.",
+            cell_um: 10.0,
+            build: || as_component(fan_out()),
+        },
+    ]
+}
+
+/// The project's copy of an example component, adding it on first use.
+pub fn import_component(project: &mut Project, example: usize) -> Option<DocId> {
+    let ex = component_examples().into_iter().nth(example)?;
+    if let Some(id) = project.find(ex.name).filter(|&id| project.doc(id).is_some_and(|d| d.component.is_some())) {
+        return Some(id);
+    }
+    Some(project.add_component(ex.name, ex.initials, ex.description, (ex.build)(), ex.cell_um))
+}
+
+// ---- demos -------------------------------------------------------------------------
+
+fn signal(layout: &mut Layout, from: (Item, usize), to: (Item, usize)) {
+    layout.connect_signal(Terminal { item: from.0, port: from.1 }, Terminal { item: to.0, port: to.1 });
+}
+
+/// Eight full adders in a row (most significant on the left), carries
+/// rippling from right to left. Returns the adder boxes, bit 0 first.
+fn adder_row(layout: &mut Layout, full_adder: DocId, row: i32) -> Vec<Item> {
+    let adders: Vec<Item> = (0..8)
+        .map(|k| Item::Box(layout.add_instance(BlockRef::Component(full_adder), ((7 - k) * 4, row))))
+        .collect();
+    for k in 0..7 {
+        signal(layout, (adders[k as usize], 1), (adders[k as usize + 1], 2));
+    }
+    adders
+}
+
+/// Two 8-bit numbers added by eight optical full adders.
+pub fn eight_bit_adder(project: &mut Project) -> DocId {
+    let fa = import_component(project, 0).expect("full adder exists");
+    let mut l = Layout::default();
+    let a = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 8, value: 100 }), (0, 0)));
+    let b = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 8, value: 55 }), (12, 0)));
+    let adders = adder_row(&mut l, fa, 4);
+    let display = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::Display { bits: 9 }), (9, 8)));
+    for (k, &adder) in adders.iter().enumerate() {
+        // Number ports are most significant first: bit k is port 7 - k.
+        signal(&mut l, (a, 7 - k), (adder, 0));
+        signal(&mut l, (b, 7 - k), (adder, 1));
+        signal(&mut l, (adder, 0), (display, 8 - k));
+    }
+    signal(&mut l, (adders[7], 1), (display, 0));
+    project.add_layout("8-bit photonic adder", l, 10.0)
+}
+
+/// A register feeding an adder that feeds the register back: every clock
+/// tick adds the step to the running total.
+pub fn accumulator(project: &mut Project) -> DocId {
+    let fa = import_component(project, 0).expect("full adder exists");
+    let mut l = Layout::default();
+    let register = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::Register { bits: 8 }), (0, 0)));
+    let step = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 8, value: 3 }), (12, 0)));
+    let adders = adder_row(&mut l, fa, 4);
+    // The register shows the running total itself.
+    for (k, &adder) in adders.iter().enumerate() {
+        signal(&mut l, (register, 7 - k), (adder, 0));
+        signal(&mut l, (step, 7 - k), (adder, 1));
+        signal(&mut l, (adder, 0), (register, 7 - k));
+    }
+    project.add_layout("Photonic accumulator", l, 10.0)
+}
+
+/// A free-space Mach–Zehnder used as a component twice, in cascade.
+pub fn cascaded_interferometers(project: &mut Project) -> DocId {
+    let mzi = import_component(project, 1).expect("MZI exists");
+    let mut l = layout(vec![
+        at(0, 0, laser(1.0, 0.0, 0.0)),
+        at(14, 1, DETECTOR),
+        at(14, 6, DETECTOR),
+        at(14, 7, DETECTOR),
+    ]);
+    // A beam enters the first box; a waveguide carries its upper output to the
+    // second box, and its lower output leaves as a beam.
+    let first = l.add_instance(BlockRef::Component(mzi), (2, 0));
+    let second = l.add_instance(BlockRef::Component(mzi), (8, 6));
+    l.connect_optical(PortRef { instance: first, port: 0 }, PortRef { instance: second, port: 0 });
+    project.add_layout("Cascaded interferometers", l, 10.0)
+}
+
+pub struct Demo {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub build: fn(&mut Project) -> DocId,
+}
+
+/// Examples that combine components, electronics and optics.
+pub fn demos() -> Vec<Demo> {
+    vec![
+        Demo {
+            name: "8-bit photonic adder",
+            description: "Adds two 8-bit numbers with light. Each full adder is an interferometer (sum) and a thresholded detector (carry); carries ripple from right to left. Click the input bits and watch the result change. Open a full adder with Tab to see its optics.",
+            build: eight_bit_adder,
+        },
+        Demo {
+            name: "Photonic accumulator",
+            description: "A register holds a running total; the photonic adder adds the step to it and the register stores the result on each clock tick. Press Step (or Run) to count: the core of an arithmetic unit.",
+            build: accumulator,
+        },
+        Demo {
+            name: "Cascaded interferometers",
+            description: "The free-space Mach–Zehnder saved as a component and used twice: a beam feeds the first box directly and a waveguide carries one output to the second.",
+            build: cascaded_interferometers,
         },
     ]
 }
