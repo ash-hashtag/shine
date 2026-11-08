@@ -25,7 +25,8 @@ scripts/build-web.sh --screenshots  # also refresh the screenshots (headless Chr
 cd web && npm run dev               # live-reload the site
 ```
 
-The script installs the `wasm-bindgen` CLI matching `Cargo.lock` into `target/tools`.
+Needs the `wasm32-unknown-unknown` target and a `wasm-bindgen` CLI matching the version in
+`Cargo.lock` (`cargo install wasm-bindgen-cli --version <version>`); the script checks this.
 
 ## Using Shine from an AI assistant
 

@@ -8,18 +8,23 @@ cd "$(dirname "$0")/.."
 
 target_dir=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
 
-# wasm-bindgen's CLI must match the crate version exactly; keep one locally.
+# wasm-bindgen's CLI must match the crate version in Cargo.lock exactly.
 version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print }' Cargo.lock)
-bindgen="$PWD/target/tools/bin/wasm-bindgen"
-if ! "$bindgen" --version 2>/dev/null | grep -qx "wasm-bindgen $version"; then
-  echo "Installing wasm-bindgen-cli $version into target/tools"
-  cargo install wasm-bindgen-cli --version "$version" --root target/tools --locked
+if ! command -v wasm-bindgen >/dev/null; then
+  echo "wasm-bindgen not found; install it with: cargo install wasm-bindgen-cli --version $version" >&2
+  exit 1
+fi
+installed=$(wasm-bindgen --version | awk '{ print $2 }')
+if [[ "$installed" != "$version" ]]; then
+  echo "wasm-bindgen $installed is installed but Cargo.lock uses $version." >&2
+  echo "Run: cargo install wasm-bindgen-cli --version $version   (or: cargo update -p wasm-bindgen --precise $installed)" >&2
+  exit 1
 fi
 
 echo "Building the WebAssembly app"
 cargo build --profile web --lib --target wasm32-unknown-unknown
 rm -rf web/public/pkg
-"$bindgen" --target web --no-typescript --out-dir web/public/pkg "$target_dir/wasm32-unknown-unknown/web/shine.wasm"
+wasm-bindgen --target web --no-typescript --out-dir web/public/pkg "$target_dir/wasm32-unknown-unknown/web/shine.wasm"
 if command -v wasm-opt >/dev/null; then
   wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
     web/public/pkg/shine_bg.wasm -o web/public/pkg/shine_bg.wasm
