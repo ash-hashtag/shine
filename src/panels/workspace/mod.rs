@@ -230,6 +230,58 @@ impl Workspace {
         false
     }
 
+    /// Apply a page URL query, as used by links into the web app:
+    /// `example=<slug>` opens an example, `tab=<slug>` activates a document by
+    /// name, `examples=layouts|schematics|chips` opens the examples window and
+    /// `chip=<slug>` picks a chip-circuit example.
+    pub fn apply_url_query(&mut self, query: &str) {
+        let slugify = |name: &str| {
+            name.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| !w.is_empty())
+                .collect::<Vec<_>>()
+                .join("-")
+        };
+        for pair in query.trim_start_matches('?').split('&') {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            match key {
+                "example" if !self.open_example(value) => tracing::warn!("Unknown example {value}"),
+                "tab" => {
+                    let id = self
+                        .project
+                        .documents
+                        .iter()
+                        .find(|d| slugify(&d.name) == value)
+                        .map(|d| d.id);
+                    match id {
+                        Some(id) => self.open_tab(id),
+                        None => tracing::warn!("No document named {value}"),
+                    }
+                }
+                "examples" => {
+                    self.show_examples = true;
+                    self.examples_tab = match value {
+                        "schematics" => ExamplesTab::Schematics,
+                        "chips" => ExamplesTab::Chips,
+                        _ => ExamplesTab::Layouts,
+                    };
+                }
+                "chip" => {
+                    match self
+                        .chips
+                        .examples
+                        .iter()
+                        .position(|e| slugify(e.name()) == value)
+                    {
+                        Some(i) => self.chips.select(i),
+                        None => tracing::warn!("Unknown chip example {value}"),
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Files picked in the browser arrive asynchronously; open them here.
     fn receive_files(&mut self) {
         let files: Vec<(String, Vec<u8>)> =

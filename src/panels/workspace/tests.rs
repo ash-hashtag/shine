@@ -472,3 +472,32 @@ fn simulate_toggle_is_on_by_default_and_flips() {
         "clicking “Stop simulation” turned it off"
     );
 }
+
+#[test]
+fn url_queries_open_examples_tabs_and_windows() {
+    let mut ws = Workspace::default();
+    ws.apply_url_query("?example=reusable-free-space-component&tab=free-space-mzi");
+    let active = ws.project.doc(ws.active.unwrap()).unwrap();
+    assert_eq!(
+        active.name, "Free-space MZI",
+        "the component's definition tab is active"
+    );
+    assert_eq!(ws.tabs.len(), 3);
+
+    ws.apply_url_query("examples=chips&chip=wdm-demultiplexer");
+    assert!(ws.show_examples);
+    assert_eq!(ws.examples_tab, ExamplesTab::Chips);
+    assert_eq!(
+        ws.chips.examples[ws.chips.selected].name(),
+        "WDM demultiplexer"
+    );
+    ws.apply_url_query("examples=schematics");
+    assert_eq!(ws.examples_tab, ExamplesTab::Schematics);
+    ws.apply_url_query("examples");
+    assert_eq!(ws.examples_tab, ExamplesTab::Layouts);
+
+    // Unknown values are ignored.
+    let before = ws.tabs.len();
+    ws.apply_url_query("example=nope&tab=nope&chip=nope&other=1&");
+    assert_eq!(ws.tabs.len(), before);
+}

@@ -24,10 +24,10 @@ fn init_logging() {
         .try_init();
 }
 
-/// Start Shine on the canvas with id `canvas_id`, optionally opening the
-/// example whose name slug is `example` (e.g. `optical-dft`).
+/// Start Shine on the canvas with id `canvas_id`. `query` is the page's URL
+/// query (see `Workspace::apply_url_query`), e.g. `?example=optical-dft`.
 #[wasm_bindgen]
-pub async fn start(canvas_id: String, example: Option<String>) -> Result<(), JsValue> {
+pub async fn start(canvas_id: String, query: Option<String>) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
     init_logging();
     let canvas = web_sys::window()
@@ -42,10 +42,8 @@ pub async fn start(canvas_id: String, example: Option<String>) -> Result<(), JsV
             eframe::WebOptions::default(),
             Box::new(move |_cc| {
                 let mut app = ShineApp::default();
-                if let Some(slug) = example.as_deref().filter(|s| !s.is_empty())
-                    && !app.workspace.open_example(slug)
-                {
-                    tracing::warn!("Unknown example {slug}");
+                if let Some(query) = query.as_deref() {
+                    app.workspace.apply_url_query(query);
                 }
                 Ok(Box::new(app))
             }),
