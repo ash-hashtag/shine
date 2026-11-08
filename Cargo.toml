@@ -3,12 +3,28 @@ name = "shine"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["gui"]
+# The editor. Disable with `default-features = false` to use only the `photonics` library.
+gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd"]
+# Stderr + optional file logging setup for binaries.
+logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
+
+[[bin]]
+name = "shine"
+required-features = ["gui"]
+
 [dependencies]
-egui = { version = "0.33.3", features = ["serde"] }
-eframe = { version = "0.33.3", features = ["serde"] }
+egui = { version = "0.37.0", features = ["serde"], optional = true }
+eframe = { version = "0.37.0", features = ["serde"], optional = true }
 rayon = "1.12.0"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-rfd = "0.17.2"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+rfd = { version = "0.18.0", optional = true }
+num-complex = "0.4.6"
+faer = "0.24.4"
+pulp = "0.22.3"
+egui_plot = { version = "0.38.0", optional = true }
+tracing-appender = { version = "0.2.5", optional = true }

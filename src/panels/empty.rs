@@ -8,3 +8,16 @@ impl EmptyPanel {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renders() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(Default::default(), |ui| EmptyPanel.ui(ui))
+            .textures_delta
+            .clear();
+    }
+}

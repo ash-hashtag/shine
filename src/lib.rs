@@ -1,30 +1,51 @@
+pub mod photonics;
+
+#[cfg(feature = "logging")]
+pub mod logging;
+
+#[cfg(feature = "gui")]
 pub mod panels;
 
-use panels::empty::EmptyPanel;
-use panels::optics::OpticsPanel;
+#[cfg(feature = "gui")]
+pub use app::ShineApp;
 
-pub struct ShineApp {
-    pub name: String,
-    pub empty_panel: EmptyPanel,
-    pub optics_panel: OpticsPanel,
-}
+#[cfg(feature = "gui")]
+mod app {
+    use crate::panels::workspace::Workspace;
 
-impl Default for ShineApp {
-    fn default() -> Self {
-        Self {
-            name: "Shine".to_owned(),
-            empty_panel: EmptyPanel,
-            optics_panel: OpticsPanel::default(),
+    #[derive(Default)]
+    pub struct ShineApp {
+        pub workspace: Workspace,
+    }
+
+    impl eframe::App for ShineApp {
+        fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| self.workspace.ui(ui));
         }
     }
-}
 
-impl eframe::App for ShineApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading(&self.name);
-            ui.separator();
-            self.optics_panel.ui(ui);
-        });
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn starts_with_an_empty_layout() {
+            let app = ShineApp::default();
+            assert_eq!(app.workspace.tabs.len(), 1);
+            assert!(app.workspace.project.documents[0].is_layout());
+        }
+
+        #[test]
+        fn renders_a_frame() {
+            use eframe::App;
+            let mut app = ShineApp::default();
+            let mut frame = eframe::Frame::_new_kittest();
+            let ctx = egui::Context::default();
+            ctx.run_ui(Default::default(), |ui| app.ui(ui, &mut frame))
+                .textures_delta
+                .clear();
+        }
     }
 }
