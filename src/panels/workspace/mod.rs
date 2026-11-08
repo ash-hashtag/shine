@@ -45,6 +45,9 @@ pub struct Workspace {
     pub chips: ChipBrowser,
     pub dialog: Option<DocumentDialog>,
     pub status: Option<(String, f64)>,
+    /// Files read asynchronously (browser file picker), opened next frame.
+    pub incoming: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    ctx: Option<egui::Context>,
     time: f64,
 }
 
@@ -62,6 +65,8 @@ impl Default for Workspace {
             chips: ChipBrowser::default(),
             dialog: None,
             status: None,
+            incoming: Default::default(),
+            ctx: None,
             time: 0.0,
         };
         ws.new_layout();
@@ -164,29 +169,75 @@ impl Workspace {
     /// Open a project, or import a single saved layout as a new document.
     pub fn open_path(&mut self, path: &Path) -> Result<(), String> {
         let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Layout".into());
+        self.open_json(&name, &json)?;
         if Project::is_project_json(&json) {
-            let mut project = Project::from_json(&json)?;
-            project.path = Some(path.to_owned());
-            self.project = project;
+            self.project.path = Some(path.to_owned());
+        }
+        Ok(())
+    }
+
+    /// Open a project from its JSON, or import a single saved layout named `name`.
+    pub fn open_json(&mut self, name: &str, json: &str) -> Result<(), String> {
+        if Project::is_project_json(json) {
+            self.project = Project::from_json(json)?;
             self.tabs.clear();
             self.active = None;
             if let Some(first) = self.project.documents.first().map(|d| d.id) {
                 self.open_tab(first);
             }
         } else {
-            let (layout, cell_um) = model::from_json(&json)?;
-            let name = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Layout".into());
+            let (layout, cell_um) = model::from_json(json)?;
             let id = self
                 .project
-                .add_layout(&name, layout, cell_um.unwrap_or(10.0));
+                .add_layout(name, layout, cell_um.unwrap_or(10.0));
             self.open_tab(id);
         }
         Ok(())
     }
 
+    /// Open an example by the slug of its name, e.g. `optical-dft`.
+    pub fn open_example(&mut self, slug: &str) -> bool {
+        let slugify = |name: &str| {
+            name.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| !w.is_empty())
+                .collect::<Vec<_>>()
+                .join("-")
+        };
+        if let Some(i) = schematic_examples()
+            .iter()
+            .position(|e| slugify(e.name) == slug)
+        {
+            self.load_schematic_example(i);
+            return true;
+        }
+        if let Some(i) = layout_examples()
+            .iter()
+            .position(|e| slugify(e.name) == slug)
+        {
+            self.load_layout_example(i);
+            return true;
+        }
+        false
+    }
+
+    /// Files picked in the browser arrive asynchronously; open them here.
+    fn receive_files(&mut self) {
+        let files: Vec<(String, String)> =
+            std::mem::take(&mut *self.incoming.lock().expect("not poisoned"));
+        for (name, json) in files {
+            match self.open_json(&name, &json) {
+                Ok(()) => self.notify(format!("Opened {name}")),
+                Err(e) => self.notify(format!("Open failed: {e}")),
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn save(&mut self, choose_path: bool) {
         let path = match (&self.project.path, choose_path) {
             (Some(p), false) => p.clone(),
@@ -208,6 +259,16 @@ impl Workspace {
         }
     }
 
+    /// In the browser, saving downloads the project file.
+    #[cfg(target_arch = "wasm32")]
+    fn save(&mut self, _choose_path: bool) {
+        match crate::web::download("project.json", &self.project.to_json()) {
+            Ok(()) => self.notify("Downloaded project.json"),
+            Err(e) => self.notify(format!("Download failed: {e}")),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Shine project or layout", &["json"])
@@ -222,6 +283,27 @@ impl Workspace {
                 self.notify(format!("Open failed: {e}"));
             }
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_dialog(&mut self) {
+        let incoming = self.incoming.clone();
+        let ctx = self.ctx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .add_filter("Shine project or layout", &["json"])
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let name = file.file_name().trim_end_matches(".json").to_owned();
+            let json = String::from_utf8_lossy(&file.read().await).into_owned();
+            incoming.lock().expect("not poisoned").push((name, json));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        });
     }
 
     // ---- components -------------------------------------------------------
@@ -341,7 +423,7 @@ impl Workspace {
         {
             return;
         }
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let sim = self.project.simulate_schematic(id);
         tracing::debug!("Simulated schematic {} in {:?}", id.0, start.elapsed());
         if let Some(Content::Schematic(p)) = self.project.doc_mut(id).map(|d| &mut d.content) {
@@ -354,6 +436,8 @@ impl Workspace {
 
     pub fn ui(&mut self, ui: &mut Ui) {
         self.time = ui.input(|i| i.time);
+        self.ctx = Some(ui.ctx().clone());
+        self.receive_files();
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
         }

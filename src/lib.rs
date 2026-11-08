@@ -1,7 +1,10 @@
 pub mod photonics;
 
-#[cfg(feature = "logging")]
+#[cfg(all(feature = "logging", not(target_arch = "wasm32")))]
 pub mod logging;
+
+#[cfg(all(feature = "gui", target_arch = "wasm32"))]
+pub mod web;
 
 #[cfg(feature = "gui")]
 pub mod mcp;

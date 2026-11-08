@@ -27,7 +27,6 @@ use std::sync::Arc;
 use faer::linalg::solvers::{PartialPivLu, Solve};
 use faer::{Mat, MatRef};
 use pulp::{Arch, Simd, WithSimd};
-use rayon::prelude::*;
 
 use super::circuit::{Circuit, CircuitError, InPort, NodeId, OutPort};
 use super::simd::{accumulate_power, caxpy};
@@ -367,31 +366,27 @@ impl Program {
             .collect::<Result<Vec<_>, _>>()?;
         let lanes = fields.ncols().max(1);
 
-        let chunks = (0..lanes)
-            .step_by(CHUNK_LANES)
-            .collect::<Vec<_>>()
-            .into_par_iter()
-            .map(|start| {
-                let width = CHUNK_LANES.min(lanes - start);
-                let mut state = State::zeros(self.layout.num_slots, width);
-                if fields.ncols() > 0 {
-                    for (i, &slot) in slots.iter().enumerate() {
-                        let (re, im) = state.slot_mut(slot);
-                        for l in 0..width {
-                            let v = fields[(i, start + l)];
-                            re[l] += v.re;
-                            im[l] += v.im;
-                        }
+        let starts: Vec<usize> = (0..lanes).step_by(CHUNK_LANES).collect();
+        let chunks = super::par::map(&starts, |&start| {
+            let width = CHUNK_LANES.min(lanes - start);
+            let mut state = State::zeros(self.layout.num_slots, width);
+            if fields.ncols() > 0 {
+                for (i, &slot) in slots.iter().enumerate() {
+                    let (re, im) = state.slot_mut(slot);
+                    for l in 0..width {
+                        let v = fields[(i, start + l)];
+                        re[l] += v.re;
+                        im[l] += v.im;
                     }
                 }
-                Arch::new().dispatch(Execute {
-                    program: self,
-                    state: &mut state,
-                    with_sources,
-                });
-                state
-            })
-            .collect();
+            }
+            Arch::new().dispatch(Execute {
+                program: self,
+                state: &mut state,
+                with_sources,
+            });
+            state
+        });
 
         Ok(Solution {
             layout: self.layout.clone(),

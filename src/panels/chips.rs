@@ -560,7 +560,7 @@ impl ChipBrowser {
     pub fn result(&mut self) -> &Result<ChipResult, String> {
         let example = &self.examples[self.selected];
         self.result.get_or_insert_with(|| {
-            let start = std::time::Instant::now();
+            let start = web_time::Instant::now();
             let r = example.compute();
             tracing::debug!("Computed '{}' in {:?}", example.name(), start.elapsed());
             if let Err(e) = &r {

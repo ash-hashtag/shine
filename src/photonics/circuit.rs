@@ -6,8 +6,6 @@
 
 use std::fmt;
 
-use rayon::prelude::*;
-
 use super::program::Program;
 use super::{C64, Component, Matrix};
 
@@ -283,10 +281,7 @@ impl Circuit {
         wavelengths_nm: &[f64],
         drives: &[(InPort, C64)],
     ) -> Result<Vec<Solution>, CircuitError> {
-        wavelengths_nm
-            .par_iter()
-            .map(|&wl| self.simulate(wl, drives))
-            .collect()
+        super::par::try_map(wavelengths_nm, |&wl| self.simulate(wl, drives))
     }
 
     /// Linear response from `inputs` to `outputs` (sources excluded):

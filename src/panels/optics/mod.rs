@@ -170,7 +170,7 @@ impl OpticsPanel {
         if !stale {
             return;
         }
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let result =
             beam_sim::simulate_layout(&self.layout.components, GRID, self.cell_um, GRID * 500.0);
         match &result.error {
@@ -226,6 +226,7 @@ impl OpticsPanel {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn save_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Shine Layout", &["json"])
@@ -242,6 +243,7 @@ impl OpticsPanel {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Shine Layout", &["json"])
@@ -256,6 +258,18 @@ impl OpticsPanel {
                 self.notify(format!("Open failed: {e}"));
             }
         }
+    }
+
+    /// The standalone editor has no file dialogs in the browser; the
+    /// workspace handles files there.
+    #[cfg(target_arch = "wasm32")]
+    fn save_dialog(&mut self) {
+        self.notify("Use File → Save in the workspace");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_dialog(&mut self) {
+        self.notify("Use File → Open in the workspace");
     }
 
     pub fn load_example(&mut self, index: usize) {
