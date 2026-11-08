@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Static site on Workers static assets: the home page and /app, the
   // WebAssembly editor. Build first with ../scripts/build-web.sh, then
-  // run `npm run deploy` here.
+  // run `pnpm run deploy` here.
   "name": "shine",
   "compatibility_date": "2026-11-08",
   "assets": {

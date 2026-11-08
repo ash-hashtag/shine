@@ -32,10 +32,10 @@ fi
 ls -lh web/public/pkg/shine_bg.wasm
 
 echo "Building the site"
-(cd web && npm ci --no-audit --no-fund && npm run build)
+(cd web && pnpm install --frozen-lockfile && pnpm run build)
 
 if [[ "${1:-}" == "--screenshots" ]]; then
   scripts/screenshots.sh web/dist web/public/screenshots
-  (cd web && npm run build)
+  (cd web && pnpm run build)
 fi
 echo "Site ready in web/dist"

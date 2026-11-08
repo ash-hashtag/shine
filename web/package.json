@@ -14,5 +14,6 @@
   },
   "devDependencies": {
     "wrangler": "4.158.0"
-  }
+  },
+  "packageManager": "pnpm@12.16.1"
 }

@@ -22,7 +22,7 @@ compiled to WebAssembly. Links like `/app?example=optical-dft` open an example.
 ```sh
 scripts/build-web.sh                # WASM build + site into web/dist
 scripts/build-web.sh --screenshots  # also refresh the screenshots (headless Chromium)
-cd web && npm run dev               # live-reload the site
+cd web && pnpm dev                 # live-reload the site
 ```
 
 ### Deploying to Cloudflare Workers
@@ -31,9 +31,9 @@ The site deploys as Workers static assets (`web/wrangler.jsonc`, no Worker scrip
 
 ```sh
 scripts/build-web.sh                # build web/dist
-cd web && npx wrangler login        # once
-npm run cf:dev                      # optional: serve dist on the local Workers runtime
-npm run deploy                      # wrangler deploy
+cd web && pnpm exec wrangler login  # once
+pnpm cf:dev                         # optional: serve dist on the local Workers runtime
+pnpm run deploy                     # wrangler deploy (not `pnpm deploy`, a pnpm built-in)
 ```
 
 `web/public/_headers` sets caching: hashed `/_astro/*` files are immutable, while the
