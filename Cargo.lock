@@ -3767,6 +3767,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "web-time",
 ]
 
 [[package]]

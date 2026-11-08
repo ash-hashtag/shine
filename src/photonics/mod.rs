@@ -49,6 +49,7 @@ pub mod blocks;
 pub mod circuit;
 pub mod components;
 pub mod mesh;
+pub mod par;
 pub mod program;
 mod simd;
 

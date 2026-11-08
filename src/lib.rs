@@ -4,6 +4,9 @@ pub mod photonics;
 pub mod logging;
 
 #[cfg(feature = "gui")]
+pub mod mcp;
+
+#[cfg(feature = "gui")]
 pub mod panels;
 
 #[cfg(feature = "gui")]
