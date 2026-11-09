@@ -27,9 +27,7 @@ of its right edge as a beam. Light hitting a box anywhere else is absorbed.
 
 To feed a box from a free-space laser, drag the laser's pin (or the laser itself) onto the
 box's light input: Shine turns the laser to face the input and, unless it already has a
-clear line along that row, moves it into the cell just left of the input. The **Laser**
-waveguide block (under *Waveguide blocks*) is the alternative: it has a light output you
-wire with a waveguide like any box.
+clear line along that row, moves it into the cell just left of the input.
 
 ## Waveguides
 
