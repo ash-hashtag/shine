@@ -8,9 +8,10 @@
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
-# The WebAssembly app keeps fixed names, so always revalidate.
+# The app's files are loaded with a hash of their contents in the URL
+# (?v=…, see src/pages/app.astro), so each version can be kept for good.
 /pkg/*
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /screenshots/*
   Cache-Control: public, max-age=86400

@@ -52,6 +52,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- The browser app's files are loaded under a hash of their contents, so a new version is
+  never mixed with a cached old one (and an unchanged one stays cached).
+- The example Mach–Zehnder component is labelled MZ, so it isn't mistaken for the MZI
+  switch block (which has a θ setting).
 
 ## 0.1.0 (2026-11-09)
 

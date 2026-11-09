@@ -272,8 +272,9 @@ pub fn component_examples() -> Vec<ComponentExample> {
         },
         ComponentExample {
             name: "Mach–Zehnder interferometer",
-            initials: "MZI",
-            description: "One input, two outputs. The phase shifter inside chooses which output gets the light: a switch or modulator.",
+            // "MZI" is the waveguide switch block, which has a θ to set.
+            initials: "MZ",
+            description: "One input, two outputs, built from free-space parts. The phase shifter inside chooses which output gets the light (at 0, all of it leaves one output): open it with Tab to change the phase. For a block with a θ setting, use Waveguide blocks → MZI switch.",
             cell_um: 10.0,
             build: || as_component(mach_zehnder()),
         },

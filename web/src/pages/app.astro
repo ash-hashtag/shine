@@ -1,8 +1,23 @@
 ---
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import Base from "../layouts/Base.astro";
 
 const base = import.meta.env.BASE_URL;
-const module = `${base}pkg/shine.js`;
+// The app's files keep fixed names; a hash of their contents in the URL
+// means a new build is never served from a stale cache, and an unchanged one
+// is fetched once and kept.
+const version = (() => {
+  try {
+    const hash = createHash("sha256");
+    for (const file of ["public/pkg/shine.js", "public/pkg/shine_bg.wasm"]) hash.update(readFileSync(file));
+    return hash.digest("hex").slice(0, 16);
+  } catch {
+    return "dev"; // not built yet (pnpm dev without scripts/build-web.sh)
+  }
+})();
+const module = `${base}pkg/shine.js?v=${version}`;
+const wasm = `${base}pkg/shine_bg.wasm?v=${version}`;
 ---
 
 <Base
@@ -18,7 +33,7 @@ const module = `${base}pkg/shine.js`;
   <noscript>
     <div id="noscript">Shine runs as a WebAssembly app and needs JavaScript enabled.</div>
   </noscript>
-  <script type="module" define:vars={{ module, home: base }}>
+  <script type="module" define:vars={{ module, wasm, home: base }}>
     const status = document.getElementById("status");
     const canvas = document.getElementById("shine");
     let failed = false;
@@ -56,7 +71,7 @@ const module = `${base}pkg/shine.js`;
 
     try {
       const { default: init, start } = await import(module);
-      await init();
+      await init({ module_or_path: wasm });
       await start("shine", location.search);
       if (!failed) status.classList.add("hidden");
       const example = new URLSearchParams(location.search).get("example");
