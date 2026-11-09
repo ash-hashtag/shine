@@ -1,5 +1,5 @@
 {
-  "name": "Shine — photonic circuit simulator",
+  "name": "Shine - Photonic Circuit Simulator",
   "short_name": "Shine",
   "description": "Design and simulate photonic circuits in the browser.",
   "start_url": "/app/",

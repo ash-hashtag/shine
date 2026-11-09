@@ -6,7 +6,7 @@ const module = `${base}pkg/shine.js`;
 ---
 
 <Base
-  title="Shine · editor"
+  title="Shine - Photonic Circuit Simulator"
   description="The Shine photonic circuit editor, running in your browser. Lay out free-space optics or wire waveguide schematics and simulate them live."
   noindex
 >
@@ -60,7 +60,7 @@ const module = `${base}pkg/shine.js`;
       await start("shine", location.search);
       if (!failed) status.classList.add("hidden");
       const example = new URLSearchParams(location.search).get("example");
-      document.title = example ? `Shine · ${example.replaceAll("-", " ")}` : "Shine";
+      document.title = example ? `${example.replaceAll("-", " ")} · Shine - Photonic Circuit Simulator` : "Shine - Photonic Circuit Simulator";
     } catch (error) {
       const webgl2 = !!document.createElement("canvas").getContext("webgl2");
       fatal(

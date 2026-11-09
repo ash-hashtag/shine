@@ -1,0 +1,59 @@
+---
+// Desktop downloads: one button per platform, the visitor's own first.
+// Links point at the latest GitHub release, whose archives have stable
+// names (see .github/workflows/release.yml).
+const latest = "https://github.com/ash-hashtag/shine/releases/latest/download";
+const platforms = [
+  { id: "windows-x86_64", os: "windows", label: "Windows", detail: "x86-64 · .zip", file: "shine-windows-x86_64.zip" },
+  { id: "macos-arm64", os: "mac", label: "macOS", detail: "Apple silicon · .tar.gz", file: "shine-macos-arm64.tar.gz" },
+  { id: "macos-x86_64", os: "mac-intel", label: "macOS", detail: "Intel · .tar.gz", file: "shine-macos-x86_64.tar.gz" },
+  { id: "linux-x86_64", os: "linux", label: "Linux", detail: "x86-64 · .tar.gz", file: "shine-linux-x86_64.tar.gz" },
+  { id: "linux-arm64", os: "linux-arm", label: "Linux", detail: "ARM64 · .tar.gz", file: "shine-linux-arm64.tar.gz" },
+];
+---
+
+<section id="download" class="downloads">
+  <div class="wrap">
+    <h2>Download the desktop app</h2>
+    <p class="section-intro">
+      The same editor, faster: the desktop app runs natively, using every CPU core and your
+      processor's vector instructions, where the browser version runs on one core. It opens and
+      saves files directly and works offline. Each download also includes
+      <code>shine-mcp</code>, the server for <a href="/ai/">AI assistants</a>.
+    </p>
+    <div class="download-grid">
+      {platforms.map((p) => (
+        <a class="download-card" href={`${latest}/${p.file}`} data-os={p.os} rel="nofollow">
+          <span class="download-os">{p.label}</span>
+          <span class="download-detail">{p.detail}</span>
+          <span class="download-hint">Recommended for this computer</span>
+        </a>
+      ))}
+    </div>
+    <p class="download-note">
+      Unpack it and run <code>shine</code> (<code>shine.exe</code> on Windows).
+      <a href="https://github.com/ash-hashtag/shine/releases">All releases and checksums →</a>
+    </p>
+  </div>
+</section>
+
+<script is:inline>
+  // Put the visitor's platform first and mark it.
+  (() => {
+    const ua = navigator.userAgent;
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+    const arm = /arm|aarch64/i.test(ua) || /arm/i.test(platform);
+    const os = /Win/i.test(platform) || /Windows/.test(ua)
+      ? "windows"
+      : /Mac/i.test(platform) || /Mac OS X/.test(ua)
+        ? "mac" // Apple silicon is the norm now; Intel Macs are listed next to it.
+        : /Linux/i.test(platform) || /Linux/.test(ua)
+          ? (arm ? "linux-arm" : "linux")
+          : null;
+    const card = os && document.querySelector(`.download-card[data-os="${os}"]`);
+    if (card) {
+      card.classList.add("recommended");
+      card.parentElement.prepend(card);
+    }
+  })();
+</script>

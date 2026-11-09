@@ -405,3 +405,61 @@ section.first {
   color: var(--muted);
   font-size: 0.9rem;
 }
+
+/* ---- downloads --------------------------------------------------------- */
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 24px 0 16px;
+}
+
+.download-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.download-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.download-os {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.download-detail {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.download-hint {
+  display: none;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.download-card.recommended {
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.download-card.recommended .download-hint {
+  display: block;
+}
+
+.download-note {
+  color: var(--muted);
+}

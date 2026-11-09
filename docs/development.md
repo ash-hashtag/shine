@@ -65,7 +65,9 @@ are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`, and th
   clippy, the WebAssembly check, and the website build.
 - **Releases** (`.github/workflows/release.yml`) run only when a version tag is pushed.
   They build `shine` and `shine-mcp` for Linux (x86-64, ARM64), Windows (x86-64) and
-  macOS (Apple silicon, Intel), and publish them with checksums on a GitHub release.
+  macOS (Apple silicon, Intel), and publish them with checksums on a GitHub release. The
+  archives keep the same names in every release (`shine-linux-x86_64.tar.gz`,
+  `shine-windows-x86_64.zip`…), so the website's download buttons always fetch the latest.
 
 To release, once a version is final:
 

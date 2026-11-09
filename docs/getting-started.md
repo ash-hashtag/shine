@@ -10,11 +10,14 @@ order: 1
 
 - **Browser:** open [shine.lupyd.com/app](https://shine.lupyd.com/app). Nothing to install;
   your work stays in the page until you download it (File → Save).
-- **Desktop:** download the archive for your system from the
+- **Desktop (faster):** download for your system from
+  [shine.lupyd.com](https://shine.lupyd.com/#download) or the
   [GitHub releases](https://github.com/ash-hashtag/shine/releases): Linux (x86-64, ARM64),
   Windows (x86-64) or macOS (Apple silicon, Intel). Unpack it and run `shine`
-  (`shine.exe` on Windows). The archive also contains `shine-mcp`, the server for AI
-  assistants (see [AI assistants](ai.md)).
+  (`shine.exe` on Windows). The desktop app uses every CPU core and your processor's
+  vector instructions, where the browser runs on one core, and it saves files directly.
+  The archive also contains `shine-mcp`, the server for AI assistants (see
+  [AI assistants](ai.md)).
 - **From source:** `cargo run --release` (Rust 1.88 or newer).
 
 ## The window

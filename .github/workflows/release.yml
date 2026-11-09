@@ -56,21 +56,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
       - name: Build
         run: cargo build --release --locked --bins --target ${{ matrix.target }}
+      # Archives have stable names (shine-linux-x86_64.tar.gz…) so the website
+      # can link to releases/latest/download/<name>; the folder inside has
+      # the version.
       - name: Package
         run: |
           dir="shine-$GITHUB_REF_NAME-${{ matrix.name }}"
+          archive="shine-${{ matrix.name }}"
           exe=$([[ "${{ runner.os }}" == Windows ]] && echo .exe || true)
           mkdir "$dir"
           cp "target/${{ matrix.target }}/release/shine$exe" "target/${{ matrix.target }}/release/shine-mcp$exe" README.md LICENSE "$dir/"
           if [[ "${{ runner.os }}" == Windows ]]; then
-            7z a "$dir.zip" "$dir" >/dev/null
+            7z a "$archive.zip" "$dir" >/dev/null
           else
-            tar czf "$dir.tar.gz" "$dir"
+            tar czf "$archive.tar.gz" "$dir"
           fi
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ matrix.name }}
-          path: shine-*.*
+          path: shine-${{ matrix.name }}.*
           if-no-files-found: error
 
   publish:

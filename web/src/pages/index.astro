@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import Downloads from "../components/Downloads.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import { version } from "../git";
@@ -9,7 +10,7 @@ const app = `${base}app/`;
 const shot = (name: string) => `${base}screenshots/${name}.webp`;
 
 
-const title = "Shine — photonic circuit simulator";
+const title = "Shine - Photonic Circuit Simulator";
 const description =
   "Design optical circuits from beam splitters to wavelength-multiplexed data links, reuse them as components, and simulate light and electronics together — in the browser, from Rust, or through an AI assistant.";
 
@@ -70,7 +71,7 @@ const explore = [
   { href: `${base}docs/`, title: "Documentation", text: "Guides with screenshots, a reference of every part, and how the simulation works." },
   { href: `${base}library/`, title: "Rust library", text: "Use the simulator on its own: compiled circuits, SIMD batches, MZI mesh programming." },
   { href: `${base}ai/`, title: "AI assistants", text: "An MCP server so Claude and other assistants can build, simulate and save circuits." },
-  { href: "https://github.com/ash-hashtag/shine", title: "GitHub", text: "Source code, downloads for Linux, Windows and macOS, and issues." },
+  { href: "https://github.com/ash-hashtag/shine", title: "GitHub", text: "Source code, release notes and issues." },
 ];
 ---
 
@@ -88,6 +89,7 @@ const explore = [
       </p>
       <div class="actions">
         <a class="button primary" href={app}>Open the app</a>
+        <a class="button" href="#download">Download for desktop</a>
         <a class="button" href={`${app}?example=4-channel-wdm-optical-link`}>Try a WDM link</a>
       </div>
       <img
@@ -104,8 +106,30 @@ const explore = [
     <section>
       <div class="wrap">
         <h2>What photonic chips do today</h2>
+        <div class="feature">
+          <div class="text">
+            <h3>A 4-channel WDM link</h3>
+            <p>
+              Data centres move data between servers on light. A silicon-photonic transceiver
+              puts several wavelengths on one waveguide, each carrying its own bit stream. In
+              Shine's version, four bits switch lasers at 1530–1560&nbsp;nm, ring resonators add
+              each colour to a shared waveguide, and matching rings at the receiver drop each one
+              onto a detector that turns it back into a bit.
+            </p>
+            <ul>
+              <li>Click the input bits and watch them arrive.</li>
+              <li>Detune a receiver ring and its channel disappears.</li>
+            </ul>
+            <a href={`${app}?example=4-channel-wdm-optical-link`}>Open the WDM link →</a>
+          </div>
+          <img class="shot" src={shot("link")} width="1400" height="900" loading="lazy" decoding="async"
+            alt="A four-channel WDM link: four lasers switched by the bits of 11 are added to one waveguide by ring resonators, and four receiver rings drop them onto detectors; the display shows 11." />
+        </div>
+
       </div>
     </section>
+
+    <Downloads />
 
     <section>
       <div class="wrap">
