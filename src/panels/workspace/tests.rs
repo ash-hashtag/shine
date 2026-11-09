@@ -662,3 +662,27 @@ fn preferences_reach_the_editor_and_render() {
     ws.show_preferences = false;
     h.frame(&mut ws, Vec::new());
 }
+
+#[test]
+fn sweeps_run_through_the_workspace_with_components() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = demo(&mut ws, "4-channel WDM optical link");
+    h.frame(&mut ws, Vec::new());
+    let laser = panel(&mut ws, id).layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Laser { .. })).unwrap();
+    panel(&mut ws, id).open_sweep(Some(Item::Part(laser)));
+    panel(&mut ws, id).sweep.points = 21;
+    panel(&mut ws, id).run_sweep();
+    h.frame(&mut ws, Vec::new());
+    let r = panel(&mut ws, id).sweep.result.clone().expect("the workspace ran it");
+    // A link can do the same: ?example=…&sweep
+    let mut linked = Workspace::default();
+    linked.apply_url_query("example=4-channel-wdm-optical-link&sweep");
+    Harness::new().frame(&mut linked, Vec::new());
+    let doc = linked.active.unwrap();
+    assert!(panel(&mut linked, doc).sweep.open && panel(&mut linked, doc).sweep.result.is_some());
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(r.xs.len(), 21);
+    assert!(r.series.iter().any(|s| s.name.contains("Add–drop ring")), "boxes are named in the legend: {:?}", r.series.iter().map(|s| &s.name).collect::<Vec<_>>());
+    h.frame(&mut ws, Vec::new());
+}

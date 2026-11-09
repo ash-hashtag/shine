@@ -29,4 +29,6 @@ pub enum Request {
     PlaceExample { example: usize, cell: (i32, i32) },
     /// Advance the clock one tick.
     Tick,
+    /// Run the sweep set up in the editor's sweep window.
+    RunSweep,
 }

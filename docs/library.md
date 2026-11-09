@@ -1,7 +1,7 @@
 ---
 title: Rust library
 description: Use Shine's photonics crate without the editor to build, compile and run optical circuits from Rust.
-order: 11
+order: 12
 ---
 
 # Rust library

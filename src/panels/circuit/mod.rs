@@ -2,3 +2,4 @@
 
 pub mod expr;
 pub mod sim;
+pub mod sweep;

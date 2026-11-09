@@ -1,7 +1,7 @@
 ---
 title: Roadmap
 description: Where Shine is going, what's being built for 0.2, and what comes after.
-order: 13
+order: 14
 ---
 
 # Roadmap
@@ -25,14 +25,14 @@ as [GitHub issues](https://github.com/ash-hashtag/shine/issues).
 
 ## 0.2: useful to engineers (next)
 
-- [ ] **Wavelength sweeps in the editor**: transmission versus wavelength, in dB, for any
+- [x] **Wavelength sweeps in the editor**: transmission versus wavelength, in dB, for any
       design, from a chosen source or input to chosen outputs
-- [ ] **Parameter sweeps**: sweep a part's parameter and plot the outputs
+- [x] **Parameter sweeps**: sweep a part's parameter and plot the outputs
 - [ ] **Real units**: laser power in mW or dBm, readings in mW and dBm, losses in dB,
       insertion loss and extinction ratio readouts
 - [ ] **Waveguide physics**: group index and dispersion, propagation loss in dB/cm,
       wavelength-dependent coupling, so ring spacing and delays match real devices
-- [ ] **Export**: sweep and readout data as CSV, plots and the canvas as images
+- [ ] **Export**: sweep data as CSV (done), readouts as CSV, plots and the canvas as images
 - [ ] **Validation page**: simulated results plotted against textbook formulas (rings,
       MZI, Fabry–Pérot, couplers, the DFT mesh)
 - [ ] **Release basics**: an About box with the version, release notes, and instructions

@@ -34,6 +34,7 @@ shots=(
   "free-space|example=mach-zehnder-interferometer|site docs"
   "dft|examples=chips&chip=optical-fourier-transform|site"
   "chips|examples=chips&chip=optical-fourier-transform|docs"
+  "sweep|example=4-channel-wdm-optical-link&sweep|docs"
   "wdm|examples=chips&chip=wdm-demultiplexer|site"
 )
 for entry in "${shots[@]}"; do

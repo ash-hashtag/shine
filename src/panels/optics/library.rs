@@ -423,6 +423,11 @@ impl OpticsPanel {
                                 if ui.button("⧉  Duplicate          ⇧D").clicked() {
                                     choice = Some(MenuChoice::Duplicate);
                                 }
+                                if !crate::panels::circuit::sweep::params(&self.layout, Item::Part(i)).is_empty()
+                                    && ui.button("〰  Sweep…").clicked()
+                                {
+                                    choice = Some(MenuChoice::Sweep);
+                                }
                                 if ui.button("🗑  Delete                 X").clicked() {
                                     choice = Some(MenuChoice::Delete);
                                 }
@@ -436,6 +441,12 @@ impl OpticsPanel {
                                 }
                                 if ui.button("⧉  Duplicate          ⇧D").clicked() {
                                     choice = Some(MenuChoice::Duplicate);
+                                }
+                                let id = self.layout.instances[b].id;
+                                if !crate::panels::circuit::sweep::params(&self.layout, Item::Box(id)).is_empty()
+                                    && ui.button("〰  Sweep…").clicked()
+                                {
+                                    choice = Some(MenuChoice::Sweep);
                                 }
                                 if ui.button("🗑  Delete                 X").clicked() {
                                     choice = Some(MenuChoice::Delete);
@@ -898,6 +909,19 @@ impl OpticsPanel {
                 self.reset_clock();
             }
         });
+        if ui
+            .button("〰  Sweep…")
+            .on_hover_text("Plot every output over a range of wavelengths or of one parameter")
+            .clicked()
+        {
+            let selected = self
+                .editor
+                .boxes
+                .active()
+                .and_then(|b| self.layout.instances.get(b).map(|i| Item::Box(i.id)))
+                .or(self.editor.selection.active().map(Item::Part));
+            self.open_sweep(selected);
+        }
         let Some(o) = self.outcome().cloned() else { return };
         if let Some(e) = &o.error {
             ui.colored_label(ui.visuals().error_fg_color, e);

@@ -249,7 +249,8 @@ impl Workspace {
     /// Apply a page URL query, as used by links into the web app:
     /// `example=<slug>` opens an example, `tab=<slug>` activates a document by
     /// name, `examples=demos|layouts|chips` opens the examples window and
-    /// `chip=<slug>` picks a chip-circuit example.
+    /// `chip=<slug>` picks a chip-circuit example, and `sweep` opens and runs
+    /// the sweep window.
     pub fn apply_url_query(&mut self, query: &str) {
         let slugify = |name: &str| {
             name.to_lowercase()
@@ -281,6 +282,13 @@ impl Workspace {
                         "chips" => ExamplesTab::Chips,
                         _ => ExamplesTab::Demos,
                     };
+                }
+                // Open the sweep window on the active document and run it.
+                "sweep" => {
+                    if let Some(p) = self.active_panel() {
+                        p.open_sweep(None);
+                        p.run_sweep();
+                    }
                 }
                 "chip" => {
                     match self
@@ -488,6 +496,7 @@ impl Workspace {
                 }
                 Request::PlaceExample { example, cell } => self.place_example(example, cell),
                 Request::Tick => self.tick(),
+                Request::RunSweep => self.run_sweep(),
             }
         }
     }
@@ -506,6 +515,22 @@ impl Workspace {
         if let Some(p) = self.active_panel() {
             p.catalog = catalog;
             p.place(Placeable::Block(BlockRef::Component(component)), cell_center(cell.0, cell.1));
+        }
+    }
+
+    /// Run the active editor's sweep with the project, so components work.
+    pub fn run_sweep(&mut self) {
+        let Some(id) = self.active else { return };
+        let Some(panel) = self.project.doc(id).map(|d| d.panel()) else { return };
+        let Some(spec) = panel.sweep_spec() else { return };
+        let catalog = self.project.catalog();
+        let layout = &panel.layout;
+        let names = |inst| layout.instance(inst).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+        let start = web_time::Instant::now();
+        let result = super::circuit::sweep::run(layout, panel.cell_um, &self.project, &panel.machine, Some(id), &spec, &names);
+        tracing::debug!("Swept {} points in {:?}", result.xs.len(), start.elapsed());
+        if let Some(p) = self.active_panel() {
+            p.sweep.result = Some(result);
         }
     }
 
@@ -946,6 +971,22 @@ impl Workspace {
             ui.separator();
             if ui.button("Keyboard & mouse").clicked() {
                 self.show_shortcuts = true;
+            }
+        });
+        ui.menu_button("Analysis", |ui| {
+            if ui
+                .add_enabled(active.is_some(), egui::Button::new("Sweep…"))
+                .on_hover_text("Plot every output over wavelengths or one parameter")
+                .clicked()
+                && let Some(p) = self.active_panel()
+            {
+                let selected = p
+                    .editor
+                    .boxes
+                    .active()
+                    .and_then(|b| p.layout.instances.get(b).map(|i| super::optics::model::Item::Box(i.id)))
+                    .or(p.editor.selection.active().map(super::optics::model::Item::Part));
+                p.open_sweep(selected);
             }
         });
         ui.menu_button("Component", |ui| {

@@ -18,6 +18,7 @@ pub mod input;
 pub mod library;
 pub mod model;
 pub mod render;
+pub mod sweep_ui;
 pub mod view;
 
 use std::hash::{Hash, Hasher};
@@ -71,6 +72,7 @@ pub enum MenuChoice {
     Duplicate,
     Delete,
     Inspect,
+    Sweep,
     Add(Placeable),
     DeleteLines,
     DeleteWire(WireRef),
@@ -125,6 +127,7 @@ pub struct OpticsPanel {
     pub search: String,
     /// How things look; set by the host each frame.
     pub prefs: Preferences,
+    pub sweep: sweep_ui::SweepState,
     /// The categorised browser of every part and component.
     pub show_browser: bool,
     /// Folder shown in the browser, an index into [`library::SECTIONS`].
@@ -174,6 +177,7 @@ impl Default for OpticsPanel {
             doc_id: None,
             search: String::new(),
             prefs: Preferences::default(),
+            sweep: sweep_ui::SweepState::default(),
             show_browser: false,
             browser_section: 0,
             browser_search: String::new(),
@@ -634,6 +638,14 @@ impl OpticsPanel {
             MenuChoice::Duplicate => self.apply(Action::Duplicate),
             MenuChoice::Delete => self.apply(Action::Delete),
             MenuChoice::Inspect => self.apply(Action::Inspect),
+            MenuChoice::Sweep => {
+                let item = match self.menu.as_ref().and_then(|m| m.target) {
+                    Some(Hit::Part(i)) => Some(Item::Part(i)),
+                    Some(Hit::Box(b)) => self.layout.instances.get(b).map(|i| Item::Box(i.id)),
+                    _ => None,
+                };
+                self.open_sweep(item);
+            }
             MenuChoice::Add(item) => self.place(item, world),
             MenuChoice::DeleteLines => {
                 let cell = model::cell_of(world);
@@ -741,6 +753,7 @@ impl OpticsPanel {
         self.menu_ui(ctx);
         self.bridge_ui(ctx);
         self.browser_ui(ctx);
+        self.sweep_ui(ctx);
     }
 
     /// One line for the status bar: transient message, or mode and hints.

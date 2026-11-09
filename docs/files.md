@@ -1,7 +1,7 @@
 ---
 title: Projects and files
 description: Saving and opening projects, the .shine binary format, desktop and browser builds, and logging.
-order: 9
+order: 10
 ---
 
 # Projects and files
@@ -49,6 +49,7 @@ directly:
 | `?tab=<name>` | switch to the document with that name, e.g. `&tab=full-adder` |
 | `?examples=demos\|layouts\|chips` | open the examples window on that tab |
 | `?chip=<name>` | pick a chip-circuit example, e.g. `?examples=chips&chip=wdm-demultiplexer` |
+| `?sweep` | open the sweep window and run it, e.g. `?example=4-channel-wdm-optical-link&sweep` |
 | `?renderer=webgpu` | use WebGPU instead of WebGL2 |
 
 Names are written in lower case with dashes. If the page fails to start, it shows the

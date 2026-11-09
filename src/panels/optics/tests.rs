@@ -1216,3 +1216,53 @@ fn library_folders_collapse_and_search_flattens() {
     panel.search.clear();
     h.frame(&mut panel, Vec::new());
 }
+
+#[test]
+fn sweep_window_sets_up_runs_and_plots() {
+    let mut panel = OpticsPanel::default();
+    panel.set_layout(examples::mach_zehnder(), 10.0);
+    let mut h = Harness::new(&mut panel);
+    let laser = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Laser { .. })).unwrap();
+    let shifter = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::PhaseShifter { .. })).unwrap();
+
+    // From a laser: a wavelength sweep around its wavelength.
+    panel.open_sweep(Some(Item::Part(laser)));
+    assert_eq!(panel.sweep.mode, sweep_ui::SweepMode::Wavelength);
+    assert_eq!(panel.sweep.laser, Some(laser));
+    assert!((panel.sweep.start - 640.0).abs() < 1e-3 && (panel.sweep.stop - 660.0).abs() < 1e-3);
+
+    // From a phase shifter: a parameter sweep over its phase.
+    panel.open_sweep(Some(Item::Part(shifter)));
+    assert_eq!(panel.sweep.mode, sweep_ui::SweepMode::Parameter);
+    assert_eq!((panel.sweep.target, panel.sweep.param), (Some(Item::Part(shifter)), "phase"));
+    h.frame(&mut panel, Vec::new());
+    panel.run_sweep();
+    let r = panel.sweep.result.clone().expect("ran");
+    assert!(r.error.is_none() && r.series.len() == 2 && r.xs.len() == 101);
+    // The window renders the plot, in linear and dB.
+    h.frame(&mut panel, Vec::new());
+    panel.sweep.db = true;
+    h.frame(&mut panel, Vec::new());
+    assert!(panel.sweep.open);
+
+    // Nothing to sweep on a mirror: the window opens without a target.
+    let mirror = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Mirror { .. })).unwrap();
+    let before = panel.sweep.target;
+    panel.open_sweep(Some(Item::Part(mirror)));
+    assert_eq!(panel.sweep.target, before);
+
+    // The context menu offers it for sweepable parts (with the window
+    // closed: an open window would take the click).
+    panel.menu = None;
+    panel.sweep.open = false;
+    h.frame(&mut panel, Vec::new());
+    h.click(scr(&panel, panel.layout.components[shifter].pos), &mut panel, PointerButton::Secondary);
+    assert!(panel.menu.is_some());
+    panel.apply_menu_choice(MenuChoice::Sweep, panel.layout.components[shifter].pos);
+    assert_eq!(panel.sweep.target, Some(Item::Part(shifter)));
+
+    // Embedded panels hand the run to their host.
+    panel.embedded = true;
+    panel.run_sweep();
+    assert_eq!(panel.requests, vec![Request::RunSweep]);
+}

@@ -1,7 +1,7 @@
 ---
 title: AI assistants (MCP)
 description: Use Shine from Claude and other Model Context Protocol clients, and how language models should approach Shine.
-order: 10
+order: 11
 ---
 
 # AI assistants (MCP)

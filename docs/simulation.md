@@ -1,7 +1,7 @@
 ---
 title: How the simulation works
 description: What Shine solves exactly, what it models simply, and the limits to keep in mind when reading results.
-order: 8
+order: 9
 ---
 
 # How the simulation works

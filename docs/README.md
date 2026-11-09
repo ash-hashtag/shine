@@ -23,6 +23,7 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [Wiring light and signals](wiring.md) | Waveguides, beams, signal wires, and converting between light and signals |
 | [Components](components.md) | Turning a layout into a reusable box, ports and pins, trying a component on its own |
 | [Electronics and the clock](electronics.md) | Number inputs, displays, registers, the clock, and function-cell expressions |
+| [Sweeps](sweeps.md) | Spectra and parameter sweeps of any design, plotted and exported as CSV |
 | [Examples](examples.md) | The ready-made circuits and what each one teaches |
 | [How the simulation works](simulation.md) | What is solved exactly, what is modelled simply, and the limits |
 | [Projects and files](files.md) | The `.shine` format, the browser and desktop builds, logging |

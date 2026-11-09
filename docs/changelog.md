@@ -1,7 +1,7 @@
 ---
 title: Changelog
 description: What changed in each version of Shine.
-order: 14
+order: 15
 ---
 
 # Changelog
@@ -9,6 +9,15 @@ order: 14
 Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
+
+## Unreleased
+
+### Added
+
+- Sweeps: plot every output of a design over a range of wavelengths (tune a laser) or of
+  one parameter of a part or block, in power or dB, and copy or save the data as CSV.
+  Open from the inspector, a part's right-click menu, Analysis → Sweep…, or `?sweep` in a
+  link. Each point is a full simulation, components and electronics included.
 
 ## 0.1.0 (2026-11-09)
 
