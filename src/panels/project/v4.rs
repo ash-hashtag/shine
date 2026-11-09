@@ -2,7 +2,8 @@
 //! lines without loss). These are the saved types as they were, frozen, so
 //! older files keep decoding; they upgrade to blocks whose index doesn't
 //! change with wavelength (`n_g = n_eff`), simulating exactly as before.
-//! Formats 1–3 decode into these types too and upgrade through them.
+//! Formats 1–3 decode into these types too and upgrade through them (and on
+//! through format 5's).
 
 use egui::Pos2;
 use serde::{Deserialize, Serialize};
@@ -104,8 +105,8 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn upgrade(self) -> model::Instance {
-        model::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell }
+    pub fn upgrade(self) -> super::v5::Instance {
+        super::v5::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell }
     }
 }
 
@@ -123,7 +124,7 @@ pub struct Layout4 {
 
 impl Layout4 {
     pub fn upgrade(self) -> model::Layout {
-        model::Layout {
+        super::v5::Layout5 {
             components: self.components,
             lines: self.lines,
             instances: self.instances.into_iter().map(Instance::upgrade).collect(),
@@ -133,6 +134,7 @@ impl Layout4 {
             labels: self.labels,
             feeds: self.feeds,
         }
+        .upgrade()
     }
 }
 

@@ -166,6 +166,7 @@ pub(crate) struct DocumentFile {
 }
 
 pub(crate) mod v4;
+pub(crate) mod v5;
 
 /// Format 3: layouts had no laser feeds (waveguides from a laser into a box).
 pub(crate) mod v3 {
@@ -400,6 +401,7 @@ pub(crate) mod v1 {
                 id: inst.id,
                 block: inst.block.clone(),
                 cell: ((inst.pos.x / GRID).round() as i32, (inst.pos.y / GRID).round() as i32),
+                params: Vec::new(),
             })
             .collect();
         Layout {
@@ -718,6 +720,13 @@ impl Project {
                 ProjectFile {
                     next_id: old.next_id,
                     documents: old.documents.into_iter().map(v4::upgrade).collect(),
+                }
+            }
+            5 => {
+                let old: v5::Project = file_format::decode_body(bytes)?;
+                ProjectFile {
+                    next_id: old.next_id,
+                    documents: old.documents.into_iter().map(v5::upgrade).collect(),
                 }
             }
             _ => file_format::decode(bytes)?,

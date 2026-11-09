@@ -204,6 +204,33 @@ pub struct Instance {
     pub id: InstanceId,
     pub block: BlockRef,
     pub cell: (i32, i32),
+    /// Values for the component's exported parameters, by name (unset ones
+    /// keep the value inside the component).
+    pub params: Vec<(String, f64)>,
+}
+
+impl Instance {
+    /// This instance's value for an exported parameter, if it sets one.
+    pub fn param(&self, name: &str) -> Option<f64> {
+        self.params.iter().find(|(n, _)| n == name).map(|(_, v)| *v)
+    }
+
+    pub fn set_param(&mut self, name: &str, value: Option<f64>) {
+        self.params.retain(|(n, _)| n != name);
+        if let Some(v) = value {
+            self.params.push((name.to_owned(), v));
+        }
+    }
+}
+
+/// A parameter of a part or box inside a component, exported under a name so
+/// each use of the component can set it without opening the component.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Export {
+    pub name: String,
+    pub item: Item,
+    /// The parameter's name, as in sweeps (`phase`, `coupling`, `power`…).
+    pub param: String,
 }
 
 /// Ports of a box: light on the left (in) and right (out) edges, one per
@@ -289,6 +316,8 @@ pub struct Layout {
     pub labels: Vec<(usize, String)>,
     /// Waveguides from lasers into box inputs.
     pub feeds: Vec<Feed>,
+    /// Parameters this layout exports when used as a component.
+    pub exports: Vec<Export>,
 }
 
 impl Layout {
@@ -313,7 +342,7 @@ impl Layout {
     pub fn add_instance(&mut self, block: BlockRef, cell: (i32, i32)) -> InstanceId {
         let id = InstanceId(self.next_instance);
         self.next_instance += 1;
-        self.instances.push(Instance { id, block, cell });
+        self.instances.push(Instance { id, block, cell, params: Vec::new() });
         id
     }
 
@@ -410,6 +439,10 @@ impl Layout {
                 Item::Box(_) => None,
             })
             .collect();
+        self.exports = std::mem::take(&mut self.exports)
+            .into_iter()
+            .filter_map(|e| Some(Export { item: remap(e.item)?, ..e }))
+            .collect();
     }
 
     /// Remove instances, with every waveguide and signal wire touching them.
@@ -417,6 +450,7 @@ impl Layout {
         self.instances.retain(|i| !ids.contains(&i.id));
         self.wires.retain(|w| !ids.contains(&w.from.instance) && !ids.contains(&w.to.instance));
         self.feeds.retain(|f| !ids.contains(&f.to.instance));
+        self.exports.retain(|e| !matches!(e.item, Item::Box(id) if ids.contains(&id)));
         let touches = |t: &Terminal| matches!(t.item, Item::Box(id) if ids.contains(&id));
         self.signals.retain(|w| !touches(&w.from) && !touches(&w.to));
     }

@@ -4,7 +4,7 @@ use egui::Vec2;
 
 use super::*;
 use crate::panels::optics::examples;
-use crate::panels::optics::model::{DETECTOR, PlacedComponent, PortRef, cell_center};
+use crate::panels::optics::model::{DETECTOR, Export, PlacedComponent, PortRef, cell_center};
 use crate::panels::project::Project;
 
 fn part(i: i32, j: i32, kind: OpticComponentKind) -> PlacedComponent {
@@ -431,4 +431,61 @@ fn laser_colours_reach_the_beams() {
     let o = run(&l);
     assert_eq!(o.channel_colors, vec![Some([10, 200, 30])]);
     assert!(o.beams.iter().all(|b| b.color == Some([10, 200, 30])));
+}
+
+#[test]
+fn exported_parameters_are_set_per_instance() {
+    // The example Mach–Zehnder component exports its phase shifter's phase.
+    // Two boxes of it, fed by lasers, get different phases: at 0 the light
+    // leaves one output, at π the other.
+    let mut p = Project::new();
+    let mz = examples::import_component(&mut p, 1).unwrap();
+    let inner = p.doc(mz).unwrap().layout().clone();
+    let shifter = inner.components.iter().position(|c| matches!(c.kind, OpticComponentKind::PhaseShifter { .. })).unwrap();
+    {
+        let l = p.doc_mut(mz).unwrap().panel_mut();
+        l.layout.exports = vec![Export { name: "phase".into(), item: Item::Part(shifter), param: "phase".into() }];
+    }
+    let mut top = Layout::default();
+    let mut boxes = Vec::new();
+    for (k, phase) in [None, Some(std::f64::consts::PI)].into_iter().enumerate() {
+        let row = 6 * k as i32;
+        top.components.push(part(0, row, laser(1.0, 0.0)));
+        let id = top.add_instance(BlockRef::Component(mz), (3, row));
+        top.connect_feed(k, PortRef { instance: id, port: 0 });
+        let inst = top.instances.iter_mut().find(|i| i.id == id).unwrap();
+        inst.set_param("phase", phase);
+        boxes.push(id);
+    }
+    let o = run_with(&top, &p, &Machine::default(), None);
+    assert!(o.error.is_none(), "{:?}", o.error);
+    let out = |id, k| o.port_power.get(&(id, k)).copied().unwrap_or(0.0);
+    let (a, b) = ((out(boxes[0], 0), out(boxes[0], 1)), (out(boxes[1], 0), out(boxes[1], 1)));
+    assert!((a.0 + a.1 - 1.0).abs() < 1e-9 && (b.0 + b.1 - 1.0).abs() < 1e-9, "{a:?} {b:?}");
+    assert!((a.0 - b.1).abs() < 1e-9 && (a.1 - b.0).abs() < 1e-9, "π swaps the outputs: {a:?} {b:?}");
+    assert!(a.0.max(a.1) > 0.99, "a switch, not a splitter: {a:?}");
+
+    // Values for names the component doesn't export are ignored; no values
+    // means the component is used as it is.
+    assert!(configure(&inner, &[]).is_none());
+    let mut odd = top.clone();
+    odd.instances[0].set_param("nonsense", Some(5.0));
+    assert_eq!(run_with(&odd, &p, &Machine::default(), None).port_power, o.port_power);
+    assert_eq!(top.instances[1].param("phase"), Some(std::f64::consts::PI));
+    assert_eq!(top.instances[0].param("phase"), None);
+}
+
+#[test]
+fn exports_follow_their_part_and_go_with_it() {
+    let mut l = Layout::with_components(vec![part(0, 0, DETECTOR), part(2, 0, OpticComponentKind::PhaseShifter { phase: 0.0 })]);
+    let ring = l.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (5, 0));
+    l.exports = vec![
+        Export { name: "phase".into(), item: Item::Part(1), param: "phase".into() },
+        Export { name: "split".into(), item: Item::Box(ring), param: "coupling".into() },
+    ];
+    l.remove_parts(&[0]);
+    assert_eq!(l.exports[0].item, Item::Part(0), "indices shift with removals");
+    l.remove_parts(&[0]);
+    l.remove_instances(&[ring]);
+    assert!(l.exports.is_empty(), "deleting what's exported removes the export");
 }

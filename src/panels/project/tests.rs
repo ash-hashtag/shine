@@ -275,3 +275,43 @@ fn version_4_waveguides_keep_their_spectra() {
         assert!((o.port_power[&(InstanceId(0), k)] - want).abs() < 1e-9, "port {k}");
     }
 }
+
+#[test]
+fn exports_and_instance_values_are_saved_and_format_5_files_open() {
+    let mut p = Project::new();
+    let mut inner = Layout::with_components(vec![part(0, 0, OpticComponentKind::PhaseShifter { phase: 0.0 })]);
+    inner.exports.push(crate::panels::optics::model::Export { name: "phase".into(), item: Item::Part(0), param: "phase".into() });
+    let comp = p.add_component("Shifter", "S", "", inner, 10.0);
+    let mut top = Layout::default();
+    let id = top.add_instance(BlockRef::Component(comp), (0, 0));
+    top.instances[0].set_param("phase", Some(1.25));
+    let top = p.add_layout("Top", top, 10.0);
+    let q = Project::from_bytes(&p.to_bytes()).unwrap();
+    assert_eq!(q.doc(comp).unwrap().layout().exports.len(), 1);
+    assert_eq!(q.doc(top).unwrap().layout().instance(id).unwrap().param("phase"), Some(1.25));
+
+    // A format-5 file has neither.
+    let old = v5::Project {
+        next_id: 2,
+        documents: vec![v5::Document {
+            id: DocId(1),
+            name: "Format 5".into(),
+            component: None,
+            cell_um: 10.0,
+            layout: v5::Layout5 {
+                components: Vec::new(),
+                lines: Vec::new(),
+                instances: vec![v5::Instance { id: InstanceId(0), block: BlockRef::Builtin(Builtin::Detector), cell: (1, 1) }],
+                wires: Vec::new(),
+                signals: Vec::new(),
+                next_instance: 1,
+                labels: Vec::new(),
+                feeds: Vec::new(),
+            },
+        }],
+    };
+    let mut bytes = file_format::encode(&old);
+    bytes[4..6].copy_from_slice(&5u16.to_le_bytes());
+    let l = Project::from_bytes(&bytes).unwrap().doc(DocId(1)).unwrap().layout().clone();
+    assert!(l.exports.is_empty() && l.instances[0].params.is_empty() && l.instances[0].cell == (1, 1));
+}

@@ -520,6 +520,9 @@ impl Optics<'_> {
                         return Err(format!("“{}” contains itself", self.docs.name(*doc)));
                     }
                     let (child, child_cell) = self.docs.layout(*doc).ok_or("A component used here was deleted")?;
+                    // This box's values for the component's exported parameters.
+                    let configured = configure(child, &inst.params);
+                    let child = configured.as_ref().unwrap_or(child);
                     let mut inner = path.to_vec();
                     inner.push(inst.id);
                     self.stack.push(*doc);
@@ -687,6 +690,21 @@ impl Optics<'_> {
 }
 
 // ---- top level -------------------------------------------------------------------
+
+/// A component's layout with an instance's values for its exported
+/// parameters applied, or `None` when the instance sets none (use it as is).
+pub fn configure(component: &Layout, values: &[(String, f64)]) -> Option<Layout> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut copy = component.clone();
+    for (name, value) in values {
+        if let Some(export) = component.exports.iter().find(|e| &e.name == name) {
+            super::sweep::set(&mut copy, export.item, &export.param, *value);
+        }
+    }
+    Some(copy)
+}
 
 fn same(a: &HashMap<Key, f64>, b: &HashMap<Key, f64>, tolerance: f64) -> bool {
     a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|w| (v - w).abs() <= tolerance))
