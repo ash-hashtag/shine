@@ -686,3 +686,32 @@ fn sweeps_run_through_the_workspace_with_components() {
     assert!(r.series.iter().any(|s| s.name.contains("Add–drop ring")), "boxes are named in the legend: {:?}", r.series.iter().map(|s| &s.name).collect::<Vec<_>>());
     h.frame(&mut ws, Vec::new());
 }
+
+#[test]
+fn slow_designs_resimulate_less_often_while_dragging() {
+    let mut ws = Workspace::default();
+    let id = ws.active.unwrap();
+    let laser = OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None };
+    panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: laser, pos: Pos2::new(20.0, 20.0) });
+    assert!(ws.refresh_simulation(), "first run");
+    let nudge = |ws: &mut Workspace, k: f32| panel(ws, id).layout.components[0].pos.y = 20.0 + 40.0 * k;
+
+    // A fast design follows every move, dragging or not.
+    panel(&mut ws, id).dragging_new = Some(Placeable::Part(OpticComponentKind::Lens));
+    nudge(&mut ws, 1.0);
+    assert!(ws.refresh_simulation());
+
+    // A slow one, while dragging, waits a tenth of a second between runs…
+    ws.stats.last_simulation_ms = 50.0;
+    nudge(&mut ws, 2.0);
+    assert!(!ws.refresh_simulation(), "deferred");
+    ws.time += 0.2;
+    assert!(ws.refresh_simulation(), "caught up");
+    ws.stats.last_simulation_ms = 50.0;
+    nudge(&mut ws, 3.0);
+    assert!(!ws.refresh_simulation(), "deferred again");
+    // …and runs at once when the drag ends.
+    panel(&mut ws, id).dragging_new = None;
+    assert!(ws.refresh_simulation(), "released");
+    assert!(!ws.refresh_simulation(), "and then up to date");
+}

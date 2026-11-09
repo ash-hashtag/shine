@@ -38,6 +38,50 @@ pub struct DocumentDialog {
     pub component: bool,
 }
 
+/// Above this, a simulation is too slow to repeat on every mouse move.
+const SMOOTH_DRAG_BUDGET_MS: f64 = 8.0;
+/// How often a slow design re-simulates while something is being dragged.
+const DRAG_SIMULATIONS_PER_SECOND: f64 = 10.0;
+
+/// Frame timings, smoothed over recent frames.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameStats {
+    /// CPU time of the last frame, drawing included (from eframe; `None` in tests).
+    pub frame_cpu_ms: Option<f64>,
+    /// Time in the editor's own code per frame (smoothed).
+    pub ui_ms: f64,
+    /// Time simulating per frame (smoothed).
+    pub simulate_ms: f64,
+    /// Simulation time so far this frame.
+    simulating: f64,
+    /// How long the last simulation took, and when it ran (seconds).
+    pub last_simulation_ms: f64,
+    last_simulation_at: f64,
+    /// When a slow frame was last logged.
+    logged_at: f64,
+}
+
+impl FrameStats {
+    /// Fold one frame's timings in.
+    fn record(&mut self, ui_ms: f64, now: f64) {
+        let smooth = |old: f64, new: f64| if old == 0.0 { new } else { old * 0.8 + new * 0.2 };
+        self.ui_ms = smooth(self.ui_ms, ui_ms);
+        self.simulate_ms = smooth(self.simulate_ms, self.simulating);
+        let total = self.frame_cpu_ms.unwrap_or(ui_ms).max(ui_ms);
+        if total > 50.0 && now - self.logged_at > 1.0 {
+            self.logged_at = now;
+            tracing::info!("Slow frame: {total:.1} ms, {:.1} ms of it simulating", self.simulating);
+        }
+        self.simulating = 0.0;
+    }
+
+    /// "frame 2.1 ms · simulation 0.4 ms".
+    pub fn summary(&self) -> String {
+        let frame = self.frame_cpu_ms.unwrap_or(self.ui_ms);
+        format!("frame {frame:.1} ms · simulation {:.1} ms", self.simulate_ms)
+    }
+}
+
 pub struct Workspace {
     pub project: Project,
     pub tabs: Vec<DocId>,
@@ -55,6 +99,8 @@ pub struct Workspace {
     /// How things look and behave; saved between sessions by the app.
     pub prefs: Preferences,
     pub show_preferences: bool,
+    /// How long frames take, for the status bar.
+    pub stats: FrameStats,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -78,6 +124,7 @@ impl Default for Workspace {
             incoming: Default::default(),
             prefs: Preferences::default(),
             show_preferences: false,
+            stats: FrameStats::default(),
             applied_theme: None,
             ctx: None,
             time: 0.0,
@@ -560,9 +607,24 @@ impl Workspace {
         if !panel.is_stale(key) {
             return false;
         }
+        // While something is being dragged, a slow design re-simulates a few
+        // times a second rather than on every move, so dragging stays smooth.
+        if panel.interacting()
+            && self.stats.last_simulation_ms > SMOOTH_DRAG_BUDGET_MS
+            && self.time - self.stats.last_simulation_at < 1.0 / DRAG_SIMULATIONS_PER_SECOND
+        {
+            if let Some(ctx) = &self.ctx {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(1.0 / DRAG_SIMULATIONS_PER_SECOND));
+            }
+            return false;
+        }
         let start = web_time::Instant::now();
         let outcome = self.project.simulate(id, &panel.machine);
         tracing::debug!("Simulated {} in {:?} ({} rounds)", id.0, start.elapsed(), outcome.iterations);
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        self.stats.simulating += ms;
+        self.stats.last_simulation_ms = ms;
+        self.stats.last_simulation_at = self.time;
         if let Some(p) = self.active_panel() {
             p.set_outcome(key, outcome);
         }
@@ -572,6 +634,7 @@ impl Workspace {
     // ---- UI ---------------------------------------------------------------
 
     pub fn ui(&mut self, ui: &mut Ui) {
+        let started = web_time::Instant::now();
         self.time = ui.input(|i| i.time);
         if self.ctx.is_none() {
             ui_kit::install_fonts(ui.ctx());
@@ -603,6 +666,11 @@ impl Workspace {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(status).small());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.prefs.show_frame_time {
+                        ui.label(egui::RichText::new(self.stats.summary()).small().monospace().weak())
+                            .on_hover_text("CPU time of the last frame, drawing included, and the share spent simulating (smoothed)");
+                        ui.separator();
+                    }
                     let file = self
                         .project
                         .path
@@ -628,6 +696,7 @@ impl Workspace {
 
         let ctx = ui.ctx().clone();
         self.windows(&ctx);
+        self.stats.record(started.elapsed().as_secs_f64() * 1e3, self.time);
     }
 
     /// Give the active editor the project's components, and tell it which
@@ -1188,6 +1257,9 @@ impl Workspace {
                     ui.end_row();
                     ui.label("Boxes");
                     ui.checkbox(&mut p.show_port_names, "Show port names");
+                    ui.end_row();
+                    ui.label("Status bar");
+                    ui.checkbox(&mut p.show_frame_time, "Show frame time");
                     ui.end_row();
                 });
                 ui_kit::section(ui, "Light");

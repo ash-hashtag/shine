@@ -81,6 +81,7 @@ sessions (a settings file on desktop, the browser's storage on the web):
 |---|---|
 | Theme | System, light or dark |
 | Grid, port names | Show or hide the grid and the names on component boxes |
+| Status bar | Show frame time: how long each frame takes (drawing included) and how much of it is simulation |
 | Light colours | Real colours where visible (infrared and ultraviolet in distinct false colours), a distinct colour per wavelength, or one colour; use lasers' own colours |
 | Channels | Draw each wavelength on a waveguide or beam as its own strand |
 | Beams, readings | Direction arrows; detector powers on the canvas |

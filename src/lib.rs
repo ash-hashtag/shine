@@ -40,7 +40,9 @@ mod app {
             eframe::set_value(storage, crate::panels::prefs::STORAGE_KEY, &self.workspace.prefs);
         }
 
-        fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+            // CPU time of the previous frame, drawing included.
+            self.workspace.stats.frame_cpu_ms = frame.info().cpu_usage.map(|s| s as f64 * 1e3);
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| self.workspace.ui(ui));

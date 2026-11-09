@@ -24,6 +24,14 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
   sources at one wavelength are solved together in one SIMD pass, so this stays fast.
   Built-in laser blocks and function-cell light share one source.
 
+## Live simulation and speed
+
+With live simulation on, the design is simulated again whenever it changes. Small designs
+take well under a millisecond. While you drag something in a design whose simulation
+takes longer than about 8 ms, it re-simulates ten times a second instead of on every
+move, so dragging stays smooth, and once more when you let go. **Edit → Preferences… →
+Show frame time** puts the timings in the status bar.
+
 ## Units
 
 Powers are in milliwatts: a field of amplitude *a* carries *a*² mW, so a laser of amplitude

@@ -40,7 +40,9 @@ is measured with `cargo llvm-cov --lib`.
 
 `cargo run --release --example sweep_bench` times editor sweeps on a few designs (the WDM
 link, a ring's parameter, a 16-mode optical DFT); `--example matmul` times the engine on a
-large MZI mesh. Run them before and after a change that could affect speed.
+large MZI mesh. `--example frame_bench [n]` times editor frames while dragging a box,
+with one, three and six copies of example component n (0 full adder, 1 Mach–Zehnder…).
+Run them before and after a change that could affect speed.
 
 ## The website and browser build
 

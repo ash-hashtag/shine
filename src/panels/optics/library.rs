@@ -1104,6 +1104,11 @@ impl OpticsPanel {
     }
 
     /// Whether a connection is being drawn (for tests and the status line).
+    /// Whether the mouse is moving something: a grab, a drag, a new part.
+    pub fn interacting(&self) -> bool {
+        self.editor.grab.is_some() || self.drag != Drag::None || self.dragging_new.is_some()
+    }
+
     pub fn connecting(&self) -> bool {
         matches!(self.drag, Drag::Connect(_))
     }

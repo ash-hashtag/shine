@@ -47,6 +47,8 @@ pub struct Preferences {
     pub power_unit: PowerUnit,
     pub show_port_names: bool,
     pub show_grid: bool,
+    /// Frame and simulation time in the status bar.
+    pub show_frame_time: bool,
     /// Wavelength of newly placed lasers.
     pub default_wavelength_nm: f32,
     /// Seconds between clock ticks while running.
@@ -68,6 +70,7 @@ impl Default for Preferences {
             power_unit: PowerUnit::MilliWatt,
             show_port_names: true,
             show_grid: true,
+            show_frame_time: false,
             default_wavelength_nm: 650.0,
             tick_seconds: 0.5,
             live_simulation: true,

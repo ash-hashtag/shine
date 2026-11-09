@@ -39,8 +39,14 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   component. The example Mach–Zehnder component exports its phase. Projects are now
   format 6.
 
+- Frame time in the status bar (Preferences → Show frame time): how long frames take and
+  how much is simulation. Slow frames are also logged.
+
 ### Changed
 
+- Dragging stays smooth in big designs: when a simulation takes more than about 8 ms, it
+  re-runs ten times a second during a drag instead of on every move, and again on
+  release.
 - Sweeps simulate their points in parallel on desktop: about 5× faster on a 12-core
   machine (the WDM link's 1001-point spectrum takes 80 ms instead of 470 ms). In the
   browser they run in order, as before.
