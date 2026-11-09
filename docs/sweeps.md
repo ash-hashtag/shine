@@ -50,7 +50,7 @@ Every detector and output port is a curve, named by its label or its position. T
 outputs** to also plot the light leaving every block and component (`Add–drop ring 24,4
 out2`); they're shown anyway when a design has no detectors. Click a name in the legend to
 hide or show it.
-The scale menu plots **Power (mW)**, **Power (dBm)**, or **Relative to input (dB)**: each
+The **Plot** menu shows **Power (mW)**, **Power (dBm)**, or **Relative to input (dB)**: each
 output over the input power, which is the tuned laser's for a wavelength sweep and all
 lasers' for a parameter sweep. That's the transmission spectrum engineers quote. Scroll to
 zoom and drag to pan the plot; double-click resets it.

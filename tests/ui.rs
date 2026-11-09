@@ -276,3 +276,75 @@ fn windows_open_below_the_menus() {
         h.run_steps(2);
     }
 }
+
+#[test]
+fn the_sweep_window_is_driven_by_its_controls() {
+    // Select a coupler, open the sweep, switch to a parameter sweep of the
+    // selection, run it, and change the plot's scale: all with clicks.
+    let mut h = app();
+    let p = active_mut(&mut h);
+    p.layout.components.push(shine::panels::optics::model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    let coupler = p.layout.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (4, 0));
+    p.layout.connect_feed(0, PortRef { instance: coupler, port: 0 });
+    p.editor.boxes.select_only(0);
+    h.run_steps(2);
+    click_menu(&mut h, "Analysis", "Sweep…");
+    h.run_steps(3);
+    // Opened on the selected coupler, it's already a parameter sweep; switch
+    // to wavelength and back with the tabs (the first "Parameter" is the tab).
+    assert_eq!(active(&h).sweep.mode, shine::panels::optics::sweep_ui::SweepMode::Parameter);
+    h.get_by_label("Wavelength").click();
+    h.run_steps(2);
+    assert_eq!(active(&h).sweep.mode, shine::panels::optics::sweep_ui::SweepMode::Wavelength);
+    h.get_all_by_label("Parameter").next().unwrap().click();
+    h.run_steps(2);
+    h.get_by_label("Use selection").click();
+    h.run_steps(2);
+    assert_eq!(active(&h).sweep.target, Some(Item::Box(coupler)));
+    assert_eq!(active(&h).sweep.param, "coupling");
+    h.get_by_label("▶  Run sweep").click();
+    h.run_steps(3);
+    let r = active(&h).sweep.result.clone().expect("ran");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    // Coupling 0 → all in the bar port; 1 → all crossed; total stays 1 mW.
+    let (bar, cross) = (&r.series[0].power, &r.series[1].power);
+    assert!((bar[0] - 1.0).abs() < 1e-9 && cross[0].abs() < 1e-9, "{:?}", (bar[0], cross[0]));
+    for k in 0..r.xs.len() {
+        assert!((bar[k] + cross[k] - 1.0).abs() < 1e-9);
+    }
+    assert!(h.query_by_label_contains("Insertion loss").is_some(), "readouts shown");
+    h.get_by_label("Plot").click();
+    h.run_steps(2);
+    h.get_by_label("Relative to input (dB)").click();
+    h.run_steps(2);
+    assert_eq!(active(&h).sweep.scale, shine::panels::optics::sweep_ui::Scale::Relative);
+}
+
+#[test]
+fn function_cells_are_edited_in_their_inspector() {
+    let mut h = app();
+    active_mut(&mut h).layout.add_instance(BlockRef::Builtin(Builtin::electronic_palette().pop().unwrap()), (2, 2));
+    active_mut(&mut h).editor.boxes.select_only(0);
+    h.run_steps(2);
+    let outputs = |h: &Harness<'_, Workspace>| match &active(h).layout.instances[0].block {
+        BlockRef::Builtin(Builtin::FunctionCell { outputs, light_outputs, .. }) => (outputs.len(), light_outputs.len()),
+        _ => unreachable!(),
+    };
+    let before = outputs(&h);
+    h.get_by_label("+ signal output").click();
+    h.run_steps(2);
+    h.get_by_label("+ light output").click();
+    h.run_steps(2);
+    assert_eq!(outputs(&h), (before.0 + 1, before.1 + 1));
+    assert!(h.query_by_label("Wavelength").is_some(), "light outputs have a wavelength");
+    // Remove the light output again with its ×.
+    let remove = h.get_all_by_label("×").last().unwrap().rect().center();
+    h.hover_at(remove);
+    h.event(egui::Event::PointerButton { pos: remove, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: remove, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    assert_eq!(outputs(&h), (before.0 + 1, before.1));
+}

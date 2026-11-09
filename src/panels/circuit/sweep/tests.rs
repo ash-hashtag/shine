@@ -151,3 +151,24 @@ fn parameters_get_set_and_csv() {
     let bad = SweepSpec { kind: SweepKind::Wavelength { laser: 7 }, start: 1.0, stop: 2.0, points: 2 };
     assert!(run(&l, 10.0, &NoDocuments, &Machine::default(), None, &bad, &no_names).error.is_some());
 }
+
+#[test]
+fn every_parameter_of_every_block_sets_and_reads_back() {
+    // Each sweepable parameter of each built-in block (and part) takes a
+    // value in its range and reports it back.
+    let mut l = Layout::default();
+    let ids: Vec<InstanceId> = Builtin::palette().into_iter().map(|b| l.add_instance(BlockRef::Builtin(b), (0, 0))).collect();
+    l.components = OpticComponentKind::palette().iter().map(|&kind| PlacedComponent { kind, pos: cell_center(0, 0) }).collect();
+    let items: Vec<Item> = ids.into_iter().map(Item::Box).chain((0..l.components.len()).map(Item::Part)).collect();
+    let mut checked = 0;
+    for item in items {
+        for p in params(&l, item) {
+            let v = p.min + (p.max - p.min) * 0.3;
+            assert!(set(&mut l, item, p.name, v), "{item:?} {}", p.name);
+            let back = get(&l, item, p.name).unwrap();
+            assert!((back - v).abs() < 1e-4 * v.abs().max(1.0), "{item:?} {}: set {v}, got {back}", p.name);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 20, "only {checked} parameters");
+}

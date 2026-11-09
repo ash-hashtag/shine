@@ -272,7 +272,7 @@ impl OpticsPanel {
             if ui.add_enabled(ready, egui::Button::new(RichText::new("▶  Run sweep").strong())).clicked() {
                 run = true;
             }
-            egui::ComboBox::from_id_salt("sweep_scale").selected_text(s.scale.label()).show_ui(ui, |ui| {
+            egui::ComboBox::from_label("Plot").selected_text(s.scale.label()).show_ui(ui, |ui| {
                 ui.selectable_value(&mut s.scale, Scale::Linear, Scale::Linear.label());
                 ui.selectable_value(&mut s.scale, Scale::Dbm, Scale::Dbm.label());
                 ui.selectable_value(&mut s.scale, Scale::Relative, Scale::Relative.label()).on_hover_text(
