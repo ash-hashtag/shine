@@ -55,3 +55,6 @@ mod app {
         }
     }
 }
+
+#[cfg(all(test, feature = "gui"))]
+mod docs_coverage;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the WebAssembly editor and the Astro site into web/dist.
+# Build the WebAssembly editor and the Astro site (with the docs) into web/dist.
 #
 #   scripts/build-web.sh                 build everything
 #   scripts/build-web.sh --screenshots   also refresh web/public/screenshots
@@ -35,7 +35,7 @@ echo "Building the site"
 (cd web && pnpm install --frozen-lockfile && pnpm run build)
 
 if [[ "${1:-}" == "--screenshots" ]]; then
-  scripts/screenshots.sh web/dist web/public/screenshots
+  scripts/screenshots.sh web/dist
   (cd web && pnpm run build)
 fi
 echo "Site ready in web/dist"

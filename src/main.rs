@@ -1,3 +1,7 @@
+// Release builds on Windows open no console window; logs still go to
+// --log-file.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use shine::ShineApp;
 use shine::logging::{self, LogConfig};
 

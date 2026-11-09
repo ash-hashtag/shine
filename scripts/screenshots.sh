@@ -1,49 +1,69 @@
 #!/usr/bin/env bash
-# Screenshot examples in the built web app with headless Chromium.
-#   scripts/screenshots.sh <built site dir> <output dir>
+# Screenshots for the website and the docs, taken from the built web app in
+# headless Chromium.
+#   scripts/screenshots.sh <built site dir>
+# Writes web/public/screenshots/*.webp (site), docs/img/*.webp (docs) and the
+# Open Graph card.
 set -euo pipefail
 site=$1
-out=$2
-mkdir -p "$out"
+root=$(cd "$(dirname "$0")/.." && pwd)
+site_out="$root/web/public/screenshots"
+docs_out="$root/docs/img"
+mkdir -p "$site_out" "$docs_out"
 port=$((20000 + RANDOM % 20000))
+devtools=$((port + 1))
 python3 -m http.server "$port" --directory "$site" >/dev/null 2>&1 &
 server=$!
-sleep 1
-
-# name|query (see Workspace::apply_url_query)
-shots=(
-  "link|example=4-channel-wdm-optical-link"
-  "adder|example=8-bit-photonic-adder"
-  "full-adder|example=8-bit-photonic-adder&tab=full-adder"
-  "accumulator|example=photonic-accumulator"
-  "components|example=cascaded-interferometers"
-  "free-space|example=mach-zehnder-interferometer"
-  "dft|examples=chips&chip=optical-fourier-transform"
-  "wdm|examples=chips&chip=wdm-demultiplexer"
-)
 tmp=$(mktemp -d)
-trap 'kill $server; rm -rf "$tmp"' EXIT
+trap 'kill $server 2>/dev/null; [[ -n ${chrome:-} ]] && kill $chrome 2>/dev/null; rm -rf "$tmp"' EXIT
+sleep 1
 
 # Lossless WebP: pixel-exact UI text, roughly half the size of PNG.
 webp() {
   magick "$1" -define webp:lossless=true -define webp:method=6 "$2"
 }
 
+# name|query (see Workspace::apply_url_query)|where: site, docs or both
+shots=(
+  "link|example=4-channel-wdm-optical-link|site"
+  "wdm-link|example=4-channel-wdm-optical-link|docs"
+  "adder|example=8-bit-photonic-adder|site docs"
+  "full-adder|example=8-bit-photonic-adder&tab=full-adder|site docs"
+  "accumulator|example=photonic-accumulator|site docs"
+  "components|example=cascaded-interferometers|site docs"
+  "free-space|example=mach-zehnder-interferometer|site docs"
+  "dft|examples=chips&chip=optical-fourier-transform|site"
+  "chips|examples=chips&chip=optical-fourier-transform|docs"
+  "wdm|examples=chips&chip=wdm-demultiplexer|site"
+)
 for entry in "${shots[@]}"; do
-  name=${entry%%|*}
-  query=${entry#*|}
+  IFS='|' read -r name query dests <<<"$entry"
   chromium --headless=new --no-sandbox --hide-scrollbars \
     --use-angle=swiftshader --enable-unsafe-swiftshader \
     --force-color-profile=srgb --window-size=1400,900 --virtual-time-budget=10000 \
     --screenshot="$tmp/$name.png" "http://localhost:$port/app/?$query" 2>/dev/null
-  webp "$tmp/$name.png" "$out/$name.webp"
-  echo "  $out/$name.webp"
+  for dest in $dests; do
+    out=$([[ $dest == site ]] && echo "$site_out" || echo "$docs_out")
+    webp "$tmp/$name.png" "$out/$name.webp"
+    echo "  $out/$name.webp"
+  done
+done
+
+# Interactive shots (menus, the parts browser) for the docs.
+chromium --headless=new --no-sandbox --hide-scrollbars \
+  --use-angle=swiftshader --enable-unsafe-swiftshader --force-color-profile=srgb \
+  --remote-debugging-port="$devtools" --user-data-dir="$tmp/profile" about:blank >/dev/null 2>&1 &
+chrome=$!
+mkdir -p "$tmp/ui"
+node "$root/scripts/ui-screenshots.mjs" "$devtools" "http://localhost:$port/app/?example=4-channel-wdm-optical-link" "$tmp/ui"
+for png in "$tmp"/ui/*.png; do
+  webp "$png" "$docs_out/$(basename "$png" .png).webp"
 done
 
 # Social preview card for Open Graph / Twitter.
-sed "s|SCREENSHOT|file://$(realpath "$out/link.webp")|" "$(dirname "$0")/og-card.html" > "$tmp/og-card.html"
+sed "s|SCREENSHOT|file://$site_out/link.webp|" "$root/scripts/og-card.html" > "$tmp/og-card.html"
 chromium --headless=new --no-sandbox --hide-scrollbars --force-color-profile=srgb \
   --allow-file-access-from-files --window-size=1200,630 \
   --screenshot="$tmp/og.png" "file://$tmp/og-card.html" 2>/dev/null
-webp "$tmp/og.png" "$out/og.webp"
-echo "  $out/og.webp"
+webp "$tmp/og.png" "$site_out/og.webp"
+echo "  $site_out/og.webp"

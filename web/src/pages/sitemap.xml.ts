@@ -1,10 +1,12 @@
 import type { APIRoute } from "astro";
+import { docs, docPath } from "../docs";
 
 // Pages worth indexing. /app is an interactive canvas and the 404 page has
 // no content, so both are marked noindex and left out.
-const pages = [{ path: "", priority: "1.0" }];
+const fixed = [{ path: "", priority: "1.0" }];
 
-export const GET: APIRoute = ({ site }) => {
+export const GET: APIRoute = async ({ site }) => {
+  const pages = [...fixed, ...(await docs()).map((d) => ({ path: docPath(d), priority: "0.7" }))];
   const base = import.meta.env.BASE_URL;
   const urls = site
     ? pages

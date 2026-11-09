@@ -1,0 +1,10 @@
+---
+import { render } from "astro:content";
+import Docs from "../../layouts/Docs.astro";
+import { docs } from "../../docs";
+
+const doc = (await docs()).find((d) => d.id === "readme")!;
+const { Content } = await render(doc);
+---
+
+<Docs doc={doc}><Content /></Docs>

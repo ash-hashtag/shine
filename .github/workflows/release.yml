@@ -1,0 +1,93 @@
+# Builds and publishes a release when a version tag (v0.1.0, v1.2.3-rc.1…) is
+# pushed. Tag only a finished version: see docs/development.md.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the version in Cargo.toml ($version)"
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, target: x86_64-unknown-linux-gnu, os: ubuntu-24.04 }
+          - { name: linux-arm64, target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          - { name: windows-x86_64, target: x86_64-pc-windows-msvc, os: windows-2025 }
+          - { name: macos-arm64, target: aarch64-apple-darwin, os: macos-15 }
+          - { name: macos-x86_64, target: x86_64-apple-darwin, os: macos-15 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: ${{ matrix.target }}
+      - name: Linux windowing libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+      - name: Build
+        run: cargo build --release --locked --bins --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          dir="shine-$GITHUB_REF_NAME-${{ matrix.name }}"
+          exe=$([[ "${{ runner.os }}" == Windows ]] && echo .exe || true)
+          mkdir "$dir"
+          cp "target/${{ matrix.target }}/release/shine$exe" "target/${{ matrix.target }}/release/shine-mcp$exe" README.md LICENSE "$dir/"
+          if [[ "${{ runner.os }}" == Windows ]]; then
+            7z a "$dir.zip" "$dir" >/dev/null
+          else
+            tar czf "$dir.tar.gz" "$dir"
+          fi
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.name }}
+          path: shine-*.*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum shine-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v3.0.4
+        with:
+          files: dist/*
+          generate_release_notes: true
+          # v1.0.0-rc.1 and the like are marked as pre-releases.
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -10,6 +10,7 @@
     "cf:dev": "wrangler dev --ip 127.0.0.1"
   },
   "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.5",
     "astro": "7.4.2"
   },
   "devDependencies": {
