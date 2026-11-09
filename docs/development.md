@@ -74,14 +74,15 @@ To release, once a version is final:
 ```sh
 # 1. Cargo.toml's `version` is already the next one (e.g. 0.1.2) while it's built,
 #    and docs/changelog.md has its section ("## 0.1.2 (unreleased)"): date it
-#    ("## 0.1.2 (2026-11-20)") and tick it off on the roadmap
+#    ("## 0.1.2 (2026-11-20)")
 # 2. commit, push, then tag that commit and push the tag
 git tag v0.1.2
 git push origin v0.1.2
 ```
 
-Versions grow slowly: patch releases (0.1.1, 0.1.2…) carry each step, and the minor
-version changes only when the roadmap's line for it is complete.
+Versions grow slowly: patch releases (0.1.1, 0.1.2…) carry whatever has landed, and the
+minor version changes only for a larger step. The roadmap has goals and milestones, not
+versions or dates.
 
 The workflow stops if the tag doesn't match the version in `Cargo.toml` or the changelog
 has no section for it, and uses that section as the release notes.
