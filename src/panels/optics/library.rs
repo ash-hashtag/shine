@@ -635,7 +635,9 @@ impl OpticsPanel {
         let mut changed = false;
         match &mut self.layout.instances[b].block {
             BlockRef::Builtin(block) => changed = builtin_params_ui(ui, block, self.prefs.power_unit),
-            BlockRef::Component(_) => {
+            BlockRef::Component(doc) => {
+                let doc = *doc;
+                self.component_params_ui(ui, b, doc);
                 if ui.button("Open definition").on_hover_text("Tab, or double-click the box").clicked() {
                     self.apply(super::input::Action::Inspect);
                 }
@@ -643,6 +645,9 @@ impl OpticsPanel {
         }
         if changed {
             self.prune_connections();
+        }
+        if matches!(self.layout.instances[b].block, BlockRef::Builtin(_)) {
+            self.exports_ui(ui, Item::Box(id));
         }
         let outcome = self.outcome().cloned();
         if let Some(o) = &outcome {
@@ -890,6 +895,7 @@ impl OpticsPanel {
         if label_changed {
             self.layout.set_label(i, &label);
         }
+        self.exports_ui(ui, Item::Part(i));
         ui.horizontal(|ui| {
             if ui.small_button("Rotate").on_hover_text("R").clicked() {
                 self.apply(super::input::Action::RotateCw);
@@ -898,6 +904,75 @@ impl OpticsPanel {
                 self.apply(super::input::Action::Delete);
             }
         });
+    }
+
+    /// The values a component box sets for its component's exported
+    /// parameters; unset ones show (and use) the value inside.
+    fn component_params_ui(&mut self, ui: &mut Ui, b: usize, doc: crate::panels::project::DocId) {
+        let params = self.catalog.get(doc).map(|e| e.parameters.clone()).unwrap_or_default();
+        if params.is_empty() {
+            return;
+        }
+        let inst = &mut self.layout.instances[b];
+        egui::Grid::new("component_params").num_columns(3).spacing([10.0, 6.0]).show(ui, |ui| {
+            for p in &params {
+                let label = ui.label(&p.name);
+                let set = inst.param(&p.name);
+                let mut v = set.unwrap_or(p.default);
+                let speed = ((p.max - p.min) / 300.0).max(1e-4);
+                let unit = if p.unit.is_empty() { String::new() } else { format!(" {}", p.unit) };
+                let range = p.min.min(v)..=p.max.max(v);
+                let r = ui.add(egui::DragValue::new(&mut v).range(range).speed(speed).max_decimals(4).suffix(unit)).labelled_by(label.id);
+                if r.changed() {
+                    inst.set_param(&p.name, Some(v));
+                }
+                if set.is_some() {
+                    if ui.small_button("↺").on_hover_text(format!("Back to the component's value ({})", fmt_value(p.default))).clicked() {
+                        inst.set_param(&p.name, None);
+                    }
+                } else {
+                    ui.label(RichText::new("default").small().weak());
+                }
+                ui.end_row();
+            }
+        });
+    }
+
+    /// Inside a component: export a part's or block's parameters, so each
+    /// box using the component can set them from its inspector.
+    fn exports_ui(&mut self, ui: &mut Ui, item: Item) {
+        let is_component = self.doc_id.and_then(|id| self.catalog.get(id)).is_some_and(|e| e.is_component);
+        let params = crate::panels::circuit::sweep::params(&self.layout, item);
+        if !is_component || params.is_empty() {
+            return;
+        }
+        ui.add_space(4.0);
+        ui.label(RichText::new("Export to boxes using this component").small().weak())
+            .on_hover_text("An exported parameter can be set on each box from its inspector, without opening the component");
+        ui.horizontal_wrapped(|ui| {
+            for p in &params {
+                let at = self.layout.exports.iter().position(|e| e.item == item && e.param == p.name);
+                if ui.selectable_label(at.is_some(), p.name).clicked() {
+                    match at {
+                        Some(k) => {
+                            self.layout.exports.remove(k);
+                        }
+                        None => {
+                            let taken = |n: &str| self.layout.exports.iter().any(|e| e.name == n);
+                            let name = (1..).map(|k| if k == 1 { p.name.to_owned() } else { format!("{} {k}", p.name) }).find(|n| !taken(n)).unwrap();
+                            self.layout.exports.push(super::model::Export { name, item, param: p.name.to_owned() });
+                        }
+                    }
+                }
+            }
+        });
+        for e in self.layout.exports.iter_mut().filter(|e| e.item == item) {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("{} as", e.param)).small());
+                ui.add(egui::TextEdit::singleline(&mut e.name).desired_width(110.0))
+                    .on_hover_text("The name boxes show for it");
+            });
+        }
     }
 
     fn simulation_ui(&mut self, ui: &mut Ui) {

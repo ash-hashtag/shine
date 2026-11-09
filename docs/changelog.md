@@ -34,6 +34,11 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   resonance spacing and a delay line's delay. Projects are now format 5; older rings keep
   their constant index and simulate as before.
 
+- Component parameters: a component exports parameters of the parts and blocks inside it,
+  and each box using it sets its own values from the inspector, without opening the
+  component. The example Mach–Zehnder component exports its phase. Projects are now
+  format 6.
+
 ### Changed
 
 - Sweeps simulate their points in parallel on desktop: about 5× faster on a 12-core
@@ -52,6 +57,7 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Powers just under a unit boundary read "1.00 mW", not "1000 µW".
 - The browser app's files are loaded under a hash of their contents, so a new version is
   never mixed with a cached old one (and an unchanged one stays cached).
 - The example Mach–Zehnder component is labelled MZ, so it isn't mistaken for the MZI

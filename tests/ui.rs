@@ -360,3 +360,57 @@ fn an_mzi_at_pi_says_it_sends_everything_to_out1() {
     h.run_steps(2);
     assert!(h.query_by_label("in1 → out1 100%, out2 0%").is_some());
 }
+
+#[test]
+fn a_components_exported_phase_is_set_on_its_box() {
+    // The MZ example component exports its phase shifter's phase: toggle the
+    // export inside it, go back, and set the phase on the box from its
+    // inspector. The light moves to the other output.
+    let mut h = app();
+    let top = h.state().active.unwrap();
+    h.state_mut().place_example(1, (4, 0));
+    let mz = active(&h).layout.instances[0].id;
+    let BlockRef::Component(mz_doc) = active(&h).layout.instances[0].block else { panic!("a component box") };
+    active_mut(&mut h).layout.components.push(shine::panels::optics::model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    active_mut(&mut h).layout.connect_feed(0, PortRef { instance: mz, port: 0 });
+    h.run_steps(3);
+    let before = active(&h).outcome().unwrap().port_power.clone();
+
+    // Inside the component: select the phase shifter and export its phase.
+    h.state_mut().open_tab(mz_doc);
+    h.run_steps(3);
+    let shifter = active(&h).layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::PhaseShifter { .. })).unwrap();
+    active_mut(&mut h).editor.selection.select_only(shifter);
+    h.run_steps(3);
+    // The example exports it already; the toggle removes and restores it.
+    assert_eq!(active(&h).layout.exports.len(), 1, "exported by the example");
+    h.get_by_label("phase").click();
+    h.run_steps(3);
+    assert!(active(&h).layout.exports.is_empty(), "un-exported");
+    h.get_by_label("phase").click();
+    h.run_steps(3);
+    assert_eq!(active(&h).layout.exports.len(), 1, "exported again");
+    assert_eq!(active(&h).layout.exports[0].name, "phase");
+
+    // Back on the top layout, the box offers the phase.
+    h.state_mut().open_tab(top);
+    active_mut(&mut h).editor.boxes.select_only(0);
+    h.run_steps(3);
+    assert!(h.query_by_label("phase").is_some(), "the box's inspector lists the exported phase");
+    assert!(h.query_by_label("default").is_some(), "unset: the component's own value");
+    h.get_by_value("0.00 rad").set_value_accesskit(std::f64::consts::PI);
+    h.run_steps(3);
+    assert_eq!(active(&h).layout.instances[0].param("phase"), Some(std::f64::consts::PI));
+    let after = active(&h).outcome().unwrap().port_power.clone();
+    let (b0, b1) = (before[&(mz, 0)], before[&(mz, 1)]);
+    let (a0, a1) = (after[&(mz, 0)], after[&(mz, 1)]);
+    assert!((b0 - a1).abs() < 1e-9 && (b1 - a0).abs() < 1e-9 && (b0 - b1).abs() > 0.9, "before {b0},{b1} after {a0},{a1}");
+
+    // ↺ goes back to the component's value.
+    h.get_by_label("↺").click();
+    h.run_steps(3);
+    assert_eq!(active(&h).layout.instances[0].param("phase"), None);
+}

@@ -274,9 +274,9 @@ pub fn component_examples() -> Vec<ComponentExample> {
             name: "Mach–Zehnder interferometer",
             // "MZI" is the waveguide switch block, which has a θ to set.
             initials: "MZ",
-            description: "One input, two outputs, built from free-space parts. The phase shifter inside chooses which output gets the light (at 0, all of it leaves one output): open it with Tab to change the phase. For a block with a θ setting, use Waveguide blocks → MZI switch.",
+            description: "One input, two outputs, built from free-space parts. Its phase (0 to 2π, set on each box) chooses which output gets the light: at 0 all of it leaves one output, at π the other. A switch or modulator.",
             cell_um: 10.0,
-            build: || as_component(mach_zehnder()),
+            build: || exporting(as_component(mach_zehnder()), "phase", |k| matches!(k, OpticComponentKind::PhaseShifter { .. }), "phase"),
         },
         ComponentExample {
             name: "Fabry–Pérot filter",
@@ -293,6 +293,14 @@ pub fn component_examples() -> Vec<ComponentExample> {
             build: || as_component(fan_out()),
         },
     ]
+}
+
+/// `layout` exporting `param` of its first part matching `which` as `name`.
+fn exporting(mut layout: Layout, name: &str, which: fn(&OpticComponentKind) -> bool, param: &str) -> Layout {
+    if let Some(i) = layout.components.iter().position(|c| which(&c.kind)) {
+        layout.exports.push(super::model::Export { name: name.to_owned(), item: Item::Part(i), param: param.to_owned() });
+    }
+    layout
 }
 
 /// The project's copy of an example component, adding it on first use.

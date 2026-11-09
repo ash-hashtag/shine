@@ -44,6 +44,20 @@ Select a box and press **Tab**, or double-click it, to open its layout in a tab.
 inspector shows where it's used. You can't place a component inside itself, directly or
 through other components.
 
+## Parameters
+
+A component can **export** parameters of the parts and blocks inside it, so each box using
+it can set its own value without opening the component. Open the component, select a part
+(a phase shifter, a laser, a ring…), and under **Export to boxes using this component**
+click the parameter to export; give it a name there if you like. Click it again to stop
+exporting.
+
+Select a box using the component, and its inspector lists the exported parameters with
+their values. A parameter you haven't set shows *default* and uses the value inside the
+component; drag or type to set it for this box only, and **↺** to go back to the default.
+The example **Mach–Zehnder interferometer** (MZ) exports its phase: set it to π on a box
+to switch its light to the other output.
+
 ## Trying a component on its own
 
 In a component's own tab nothing drives its Signal in pins, so they read 0. **Click a

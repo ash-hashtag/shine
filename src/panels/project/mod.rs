@@ -445,6 +445,39 @@ pub struct CatalogEntry {
     pub is_component: bool,
     /// Every document this one uses, directly or not.
     pub depends_on: BTreeSet<DocId>,
+    /// Parameters it exports, which each of its boxes can set.
+    pub parameters: Vec<ComponentParam>,
+}
+
+/// An exported parameter, as the boxes using a component see it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComponentParam {
+    pub name: String,
+    pub unit: &'static str,
+    pub min: f64,
+    pub max: f64,
+    /// Its value inside the component, used by boxes that don't set one.
+    pub default: f64,
+}
+
+/// A layout's exported parameters, skipping any whose part or parameter is
+/// gone.
+pub fn component_parameters(layout: &Layout) -> Vec<ComponentParam> {
+    use crate::panels::circuit::sweep;
+    layout
+        .exports
+        .iter()
+        .filter_map(|e| {
+            let p = sweep::params(layout, e.item).into_iter().find(|p| p.name == e.param)?;
+            Some(ComponentParam {
+                name: e.name.clone(),
+                unit: p.unit,
+                min: p.min,
+                max: p.max,
+                default: sweep::get(layout, e.item, &e.param)?,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -662,6 +695,7 @@ impl Project {
                     interface: d.interface(),
                     is_component: d.component.is_some(),
                     depends_on: self.dependencies(d.id),
+                    parameters: component_parameters(d.layout()),
                 })
                 .collect(),
         }

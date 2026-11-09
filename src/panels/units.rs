@@ -34,8 +34,19 @@ fn sig3(v: f64) -> String {
     }
 }
 
+/// `v` rounded to three significant figures.
+fn round3(v: f64) -> f64 {
+    if v == 0.0 || !v.is_finite() {
+        return v;
+    }
+    let scale = 10f64.powi(2 - v.abs().log10().floor() as i32);
+    (v * scale).round() / scale
+}
+
 /// A power in mW with a fitting prefix: "1.00 mW", "250 µW", "1.20 W".
+/// The prefix is chosen after rounding, so 0.99999 mW reads "1.00 mW".
 pub fn format_mw(mw: f64) -> String {
+    let mw = round3(mw);
     match mw.abs() {
         a if a < 1e-9 => "0 mW".into(),
         a if a >= 1e3 => format!("{} W", sig3(mw / 1e3)),
@@ -126,6 +137,11 @@ mod tests {
         assert_eq!(format_mw(0.0123), "12.3 µW");
         assert_eq!(format_mw(2e-6), "2.00 nW");
         assert_eq!(format_mw(0.0), "0 mW");
+        // Rounding decides the prefix: no "1000 µW" or "1000 mW".
+        assert_eq!(format_mw(0.999_999), "1.00 mW");
+        assert_eq!(format_mw(999.9), "1.00 W");
+        assert_eq!(format_mw(0.000_999_96), "1.00 µW");
+        assert_eq!(format_mw(0.5), "500 µW");
         assert_eq!(format_dbm(1.0), "0.00 dBm");
         assert_eq!(format_dbm(0.5), "-3.01 dBm");
         assert_eq!(format_dbm(0.0), "-∞ dBm");
