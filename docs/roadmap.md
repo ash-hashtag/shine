@@ -40,7 +40,7 @@ What a tool people rely on every day needs, before more features.
 - [x] **Command-line simulation**: `shine simulate project.shine --sweep … --csv`, for
       scripts and CI
 - [ ] **Export**: sweep data as CSV (done), readouts as CSV, plots and the canvas as images
-- [ ] **Sweep a component's exported parameters**
+- [x] **Sweep a component's exported parameters**
 - [ ] **Speed on big designs**: simulation time that grows gently with the number of
       components (measured with `examples/frame_bench`)
 - [ ] **Accessibility**: every control named for screen readers; keyboard use throughout

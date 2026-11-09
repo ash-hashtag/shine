@@ -211,16 +211,16 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
         Some(SweepSpec { kind: SweepKind::Wavelength { laser }, start: from, stop: to, points })
     } else if let Some((item, param, from, to, points)) = &args.sweep {
         let item = find_item(layout, &project, item).map_err(Failure::Usage)?;
-        let available = sweep::params(layout, item);
-        let Some(p) = available.iter().find(|p| p.name == param) else {
-            let names: Vec<&str> = available.iter().map(|p| p.name).collect();
+        let available = sweep::params_in(layout, item, &project);
+        let Some(p) = available.iter().find(|p| &p.name == param) else {
+            let names: Vec<&str> = available.iter().map(|p| p.name.as_str()).collect();
             return Err(Failure::Usage(if names.is_empty() {
                 "that has no parameters to sweep".into()
             } else {
                 format!("no parameter “{param}”; it has: {}", names.join(", "))
             }));
         };
-        Some(SweepSpec { kind: SweepKind::Parameter { item, param: p.name }, start: *from, stop: *to, points: *points })
+        Some(SweepSpec { kind: SweepKind::Parameter { item, param: p.name.clone() }, start: *from, stop: *to, points: *points })
     } else {
         None
     };

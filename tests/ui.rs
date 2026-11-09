@@ -458,3 +458,30 @@ fn about_shows_the_version_and_whats_new() {
     assert!(h.query_by_label("Check for updates").is_some());
     assert!(h.query_by_label("Report a problem").is_some());
 }
+
+#[test]
+fn a_component_box_offers_its_exported_parameters_for_sweeping() {
+    let mut h = app();
+    h.state_mut().place_example(1, (4, 0));
+    let id = active(&h).layout.instances[0].id;
+    let params = active(&h).sweep_params(Item::Box(id));
+    assert_eq!(params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["phase"]);
+    // Right-click → Sweep… sets it up on the box's phase.
+    let at = screen(&h, cell_center(5, 1));
+    h.hover_at(at);
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    let entry = h
+        .get_all_by_label_contains("Sweep…")
+        .min_by(|a, b| a.rect().center().distance(at).total_cmp(&b.rect().center().distance(at)))
+        .expect("offered")
+        .rect()
+        .center();
+    h.hover_at(entry);
+    h.event(egui::Event::PointerButton { pos: entry, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: entry, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    let s = &active(&h).sweep;
+    assert_eq!((s.target, s.param.as_str()), (Some(Item::Box(id)), "phase"));
+}

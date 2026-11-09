@@ -1235,7 +1235,7 @@ fn sweep_window_sets_up_runs_and_plots() {
     // From a phase shifter: a parameter sweep over its phase.
     panel.open_sweep(Some(Item::Part(shifter)));
     assert_eq!(panel.sweep.mode, sweep_ui::SweepMode::Parameter);
-    assert_eq!((panel.sweep.target, panel.sweep.param), (Some(Item::Part(shifter)), "phase"));
+    assert_eq!((panel.sweep.target, panel.sweep.param.as_str()), (Some(Item::Part(shifter)), "phase"));
     h.frame(&mut panel, Vec::new());
     panel.run_sweep();
     let r = panel.sweep.result.clone().expect("ran");

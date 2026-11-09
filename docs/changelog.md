@@ -34,6 +34,7 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   resonance spacing and a delay line's delay. Projects are now format 5; older rings keep
   their constant index and simulate as before.
 
+- Sweeps of a component box's exported parameters (in the editor and the command line).
 - Component parameters: a component exports parameters of the parts and blocks inside it,
   and each box using it sets its own values from the inspector, without opening the
   component. The example Mach–Zehnder component exports its phase. Projects are now

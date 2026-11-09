@@ -46,7 +46,7 @@ pub struct SweepState {
     pub laser: Option<usize>,
     /// Part or box, and parameter, varied by a parameter sweep.
     pub target: Option<Item>,
-    pub param: &'static str,
+    pub param: String,
     pub start: f64,
     pub stop: f64,
     pub points: usize,
@@ -65,7 +65,7 @@ impl Default for SweepState {
             mode: SweepMode::Wavelength,
             laser: None,
             target: None,
-            param: "",
+            param: String::new(),
             start: 1540.0,
             stop: 1560.0,
             points: 201,
@@ -103,6 +103,8 @@ impl OpticsPanel {
     /// Open the sweep window, set up for `item` if given (a laser sweeps its
     /// wavelength; anything else its first parameter).
     pub fn open_sweep(&mut self, item: Option<Item>) {
+        // The first parameter of a non-laser item, worked out before borrowing the state.
+        let first = item.and_then(|item| self.sweep_params(item).into_iter().next().map(|p| (item, p)));
         let s = &mut self.sweep;
         s.open = true;
         let laser_wavelength = |i: usize| match self.layout.components.get(i).map(|c| c.kind) {
@@ -114,8 +116,8 @@ impl OpticsPanel {
                 s.mode = SweepMode::Wavelength;
                 s.laser = Some(i);
             }
-            Some(item) if !sweep::params(&self.layout, item).is_empty() => {
-                let first = sweep::params(&self.layout, item)[0];
+            Some(_) if first.is_some() => {
+                let (item, first) = first.expect("checked");
                 s.mode = SweepMode::Parameter;
                 s.target = Some(item);
                 s.param = first.name;
@@ -137,12 +139,37 @@ impl OpticsPanel {
         }
     }
 
+    /// Parameters a sweep can vary on `item`: a part's or block's own, or
+    /// the parameters a component box's component exports.
+    pub fn sweep_params(&self, item: Item) -> Vec<sweep::Param> {
+        let component = match item {
+            Item::Box(id) => match self.layout.instance(id).map(|i| &i.block) {
+                Some(super::model::BlockRef::Component(doc)) => Some(*doc),
+                _ => None,
+            },
+            Item::Part(_) => None,
+        };
+        match component {
+            Some(doc) => self
+                .catalog
+                .get(doc)
+                .map(|e| {
+                    e.parameters
+                        .iter()
+                        .map(|p| sweep::Param { name: p.name.clone(), unit: p.unit, min: p.min, max: p.max })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => sweep::params(&self.layout, item),
+        }
+    }
+
     /// What the window would run, if it is complete.
     pub fn sweep_spec(&self) -> Option<SweepSpec> {
         let s = &self.sweep;
         let kind = match s.mode {
             SweepMode::Wavelength => SweepKind::Wavelength { laser: s.laser? },
-            SweepMode::Parameter => SweepKind::Parameter { item: s.target?, param: s.param },
+            SweepMode::Parameter => SweepKind::Parameter { item: s.target?, param: s.param.clone() },
         };
         Some(SweepSpec { kind, start: s.start, stop: s.stop, points: s.points.clamp(2, 5001) })
     }
@@ -190,7 +217,9 @@ impl OpticsPanel {
             .active()
             .and_then(|b| self.layout.instances.get(b).map(|i| Item::Box(i.id)))
             .or(self.editor.selection.active().map(Item::Part));
-        let params = self.sweep.target.map(|t| sweep::params(&self.layout, t)).unwrap_or_default();
+        let params = self.sweep.target.map(|t| self.sweep_params(t)).unwrap_or_default();
+        let usable = selection.filter(|&item| !self.sweep_params(item).is_empty());
+        let first_of_usable = usable.map(|item| self.sweep_params(item).swap_remove(0));
         let mut run = false;
         let s = &mut self.sweep;
         ui.horizontal(|ui| {
@@ -224,14 +253,13 @@ impl OpticsPanel {
                     ui.label("Part");
                     ui.horizontal(|ui| {
                         ui.label(target_name.as_deref().unwrap_or("none"));
-                        let usable = selection.filter(|&item| !sweep::params(&self.layout, item).is_empty());
                         if ui
                             .add_enabled(usable.is_some(), egui::Button::new("Use selection"))
                             .on_disabled_hover_text("Select a part or block with numeric parameters")
                             .clicked()
                             && let Some(item) = usable
                         {
-                            let first = sweep::params(&self.layout, item)[0];
+                            let first = first_of_usable.clone().expect("usable");
                             s.target = Some(item);
                             s.param = first.name;
                             s.start = first.min;
@@ -240,10 +268,10 @@ impl OpticsPanel {
                     });
                     ui.end_row();
                     ui.label("Parameter");
-                    egui::ComboBox::from_id_salt("sweep_param").selected_text(s.param).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt("sweep_param").selected_text(s.param.as_str()).show_ui(ui, |ui| {
                         for p in &params {
-                            if ui.selectable_label(s.param == p.name, p.name).clicked() {
-                                s.param = p.name;
+                            if ui.selectable_label(s.param == p.name, &p.name).clicked() {
+                                s.param = p.name.clone();
                                 s.start = p.min;
                                 s.stop = p.max;
                             }

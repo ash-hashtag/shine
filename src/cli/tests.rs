@@ -118,3 +118,26 @@ fn mistakes_are_explained_with_exit_codes() {
     assert!(std::fs::read_to_string(&out).unwrap().starts_with("\"reading\""));
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn a_components_exported_parameter_sweeps_from_the_command_line() {
+    fn mz_on_a_laser(p: &mut Project) -> DocId {
+        use crate::panels::optics::model::{PlacedComponent, PortRef, cell_center};
+        let mz = examples::import_component(p, 1).unwrap();
+        let mut l = Layout::with_components(vec![PlacedComponent {
+            kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: egui::Vec2::new(1.0, 0.0), source: 0, color: None },
+            pos: cell_center(0, 0),
+        }]);
+        let id = l.add_instance(BlockRef::Component(mz), (3, 0));
+        l.connect_feed(0, PortRef { instance: id, port: 0 });
+        // Put the top layout first, so it's the one simulated.
+        let top = p.add_layout("Switch", l, 10.0);
+        p.documents.rotate_right(1);
+        top
+    }
+    let (dir, path) = saved("mz", mz_on_a_laser);
+    let csv = simulate(&parse(&args(&[&path, "--sweep", "Mach–Zehnder interferometer.phase=0:3.14159265:3", "--box-outputs"])).unwrap()).unwrap();
+    assert!(csv.starts_with("\"phase (rad)\""), "{csv}");
+    assert_eq!(csv.lines().count(), 4);
+    std::fs::remove_dir_all(dir).ok();
+}

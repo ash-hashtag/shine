@@ -17,7 +17,7 @@ fn parameter_sweep_steers_an_interferometer() {
     let l = examples::mach_zehnder();
     let shifter = l.components.iter().position(|c| matches!(c.kind, OpticComponentKind::PhaseShifter { .. })).unwrap();
     let spec = SweepSpec {
-        kind: SweepKind::Parameter { item: Item::Part(shifter), param: "phase" },
+        kind: SweepKind::Parameter { item: Item::Part(shifter), param: "phase".into() },
         start: 0.0,
         stop: std::f64::consts::TAU,
         points: 9,
@@ -111,7 +111,7 @@ fn parameters_get_set_and_csv() {
     }]);
     let mzi = l.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: 1.0, phi: 0.0 }), (3, 0));
     assert_eq!(params(&l, Item::Part(0)).len(), 1);
-    assert_eq!(params(&l, Item::Box(mzi)).iter().map(|p| p.name).collect::<Vec<_>>(), vec!["θ", "φ"]);
+    assert_eq!(params(&l, Item::Box(mzi)).iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["θ", "φ"]);
     assert!(set(&mut l, Item::Part(0), "reflectivity", 0.3));
     assert!(matches!(l.components[0].kind, OpticComponentKind::BeamSplitter { transparency, .. } if (transparency - 0.7).abs() < 1e-6));
     assert_eq!(get(&l, Item::Box(mzi), "θ"), Some(1.0));
@@ -164,8 +164,8 @@ fn every_parameter_of_every_block_sets_and_reads_back() {
     for item in items {
         for p in params(&l, item) {
             let v = p.min + (p.max - p.min) * 0.3;
-            assert!(set(&mut l, item, p.name, v), "{item:?} {}", p.name);
-            let back = get(&l, item, p.name).unwrap();
+            assert!(set(&mut l, item, &p.name, v), "{item:?} {}", p.name);
+            let back = get(&l, item, &p.name).unwrap();
             assert!((back - v).abs() < 1e-4 * v.abs().max(1.0), "{item:?} {}: set {v}, got {back}", p.name);
             checked += 1;
         }
@@ -225,4 +225,36 @@ fn parallel_points_match_one_by_one_simulations() {
         let (_, detector) = o.detector_power[0];
         assert_eq!(r.series[0].power[k], detector, "point {k} at {x} nm");
     }
+}
+
+#[test]
+fn a_components_exported_parameter_is_swept_on_its_box() {
+    // A laser into an MZ component box; sweeping the box's exported phase
+    // over a turn moves the light from one output to the other and back.
+    let mut p = Project::new();
+    let mz = examples::import_component(&mut p, 1).unwrap();
+    let mut l = Layout::with_components(vec![PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    }]);
+    let id = l.add_instance(BlockRef::Component(mz), (3, 0));
+    l.connect_feed(0, crate::panels::optics::model::PortRef { instance: id, port: 0 });
+    let item = Item::Box(id);
+    assert!(params(&l, item).is_empty(), "without the project, a component box has none");
+    let found = params_in(&l, item, &p);
+    assert_eq!(found.iter().map(|p| (p.name.as_str(), p.unit)).collect::<Vec<_>>(), vec![("phase", "rad")]);
+    assert_eq!(get_in(&l, item, "phase", &p), Some(0.0), "the component's own value");
+    let spec = SweepSpec { kind: SweepKind::Parameter { item, param: "phase".into() }, start: 0.0, stop: std::f64::consts::TAU, points: 5 };
+    let r = run(&l, 10.0, &p, &Machine::default(), None, &spec, &no_names);
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(r.x_label, "phase (rad)");
+    let (a, b) = (&r.series[0].power, &r.series[1].power);
+    assert!((a[0] - b[2]).abs() < 1e-9 && (a[2] - b[0]).abs() < 1e-9, "π swaps the outputs: {a:?} {b:?}");
+    assert!((a[0] - a[4]).abs() < 1e-9, "and 2π brings it back");
+    // The design itself is untouched by the sweep.
+    assert_eq!(l.instance(id).unwrap().param("phase"), None);
+    // Setting it on the box is what get reads back.
+    let mut set_one = l.clone();
+    assert!(set(&mut set_one, item, "phase", 1.0));
+    assert_eq!(get_in(&set_one, item, "phase", &p), Some(1.0));
 }

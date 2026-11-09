@@ -14,7 +14,7 @@ pub enum SweepKind {
     /// Tune one laser (by part index) across wavelengths in nm.
     Wavelength { laser: usize },
     /// Step one parameter of a part or a built-in block.
-    Parameter { item: Item, param: &'static str },
+    Parameter { item: Item, param: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,16 +65,16 @@ pub struct Readout {
 }
 
 /// A sweepable parameter: name, unit, sensible range.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
-    pub name: &'static str,
+    pub name: String,
     pub unit: &'static str,
     pub min: f64,
     pub max: f64,
 }
 
-const fn p(name: &'static str, unit: &'static str, min: f64, max: f64) -> Param {
-    Param { name, unit, min, max }
+fn p(name: &str, unit: &'static str, min: f64, max: f64) -> Param {
+    Param { name: name.to_owned(), unit, min, max }
 }
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -126,8 +126,58 @@ pub fn get(layout: &Layout, item: Item, param: &str) -> Option<f64> {
     value
 }
 
-/// Set a parameter; returns false if the item has no such parameter.
+/// The component a box uses, if it's a component box.
+fn component_of(layout: &Layout, item: Item) -> Option<DocId> {
+    match item {
+        Item::Box(id) => match layout.instance(id)?.block {
+            BlockRef::Component(doc) => Some(doc),
+            BlockRef::Builtin(_) => None,
+        },
+        Item::Part(_) => None,
+    }
+}
+
+/// The parameters a component layout exports, under their exported names.
+pub fn exported_params(component: &Layout) -> Vec<Param> {
+    component
+        .exports
+        .iter()
+        .filter_map(|e| {
+            let p = params(component, e.item).into_iter().find(|p| p.name == e.param)?;
+            Some(Param { name: e.name.clone(), ..p })
+        })
+        .collect()
+}
+
+/// [`params`], plus a component box's exported parameters.
+pub fn params_in(layout: &Layout, item: Item, docs: &dyn Documents) -> Vec<Param> {
+    match component_of(layout, item) {
+        Some(doc) => docs.layout(doc).map(|(inner, _)| exported_params(inner)).unwrap_or_default(),
+        None => params(layout, item),
+    }
+}
+
+/// [`get`], including a component box's exported parameters: the box's own
+/// value, or the one inside the component.
+pub fn get_in(layout: &Layout, item: Item, param: &str, docs: &dyn Documents) -> Option<f64> {
+    let Some(doc) = component_of(layout, item) else { return get(layout, item, param) };
+    let Item::Box(id) = item else { return None };
+    let (inner, _) = docs.layout(doc)?;
+    let export = inner.exports.iter().find(|e| e.name == param)?;
+    layout.instance(id)?.param(param).or_else(|| get(inner, export.item, &export.param))
+}
+
+/// Set a parameter; returns false if the item has no such parameter. On a
+/// component box it sets the box's value for an exported parameter.
 pub fn set(layout: &mut Layout, item: Item, param: &str, value: f64) -> bool {
+    if component_of(layout, item).is_some() {
+        let Item::Box(id) = item else { return false };
+        if let Some(inst) = layout.instances.iter_mut().find(|i| i.id == id) {
+            inst.set_param(param, Some(value));
+            return true;
+        }
+        return false;
+    }
     let mut found = false;
     visit(layout, item, param, &mut |v| {
         *v = value;
@@ -263,12 +313,12 @@ pub fn run(
     let (item, param, x_label) = match &spec.kind {
         SweepKind::Wavelength { laser } => (Item::Part(*laser), "wavelength", "Wavelength (nm)".to_owned()),
         SweepKind::Parameter { item, param } => {
-            let unit = params(layout, *item).iter().find(|p| p.name == *param).map_or("", |p| p.unit);
-            (*item, *param, if unit.is_empty() { param.to_string() } else { format!("{param} ({unit})") })
+            let unit = params_in(layout, *item, docs).iter().find(|p| p.name == *param).map_or("", |p| p.unit);
+            (*item, param.as_str(), if unit.is_empty() { param.to_string() } else { format!("{param} ({unit})") })
         }
     };
     let mut result = SweepResult { x_label, ..SweepResult::default() };
-    if get(layout, item, param).is_none() {
+    if get_in(layout, item, param, docs).is_none() {
         result.error = Some("Nothing to sweep: pick a laser or a part with that parameter".into());
         return result;
     }

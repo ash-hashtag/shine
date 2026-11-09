@@ -421,7 +421,7 @@ impl OpticsPanel {
                                 if ui.button("⎘  Duplicate          Shift+D").clicked() {
                                     choice = Some(MenuChoice::Duplicate);
                                 }
-                                if !crate::panels::circuit::sweep::params(&self.layout, Item::Part(i)).is_empty()
+                                if !self.sweep_params(Item::Part(i)).is_empty()
                                     && ui.button("〰  Sweep…").clicked()
                                 {
                                     choice = Some(MenuChoice::Sweep);
@@ -441,7 +441,7 @@ impl OpticsPanel {
                                     choice = Some(MenuChoice::Duplicate);
                                 }
                                 let id = self.layout.instances[b].id;
-                                if !crate::panels::circuit::sweep::params(&self.layout, Item::Box(id)).is_empty()
+                                if !self.sweep_params(Item::Box(id)).is_empty()
                                     && ui.button("〰  Sweep…").clicked()
                                 {
                                     choice = Some(MenuChoice::Sweep);
@@ -952,15 +952,15 @@ impl OpticsPanel {
         ui.horizontal_wrapped(|ui| {
             for p in &params {
                 let at = self.layout.exports.iter().position(|e| e.item == item && e.param == p.name);
-                if ui.selectable_label(at.is_some(), p.name).clicked() {
+                if ui.selectable_label(at.is_some(), &p.name).clicked() {
                     match at {
                         Some(k) => {
                             self.layout.exports.remove(k);
                         }
                         None => {
                             let taken = |n: &str| self.layout.exports.iter().any(|e| e.name == n);
-                            let name = (1..).map(|k| if k == 1 { p.name.to_owned() } else { format!("{} {k}", p.name) }).find(|n| !taken(n)).unwrap();
-                            self.layout.exports.push(super::model::Export { name, item, param: p.name.to_owned() });
+                            let name = (1..).map(|k| if k == 1 { p.name.clone() } else { format!("{} {k}", p.name) }).find(|n| !taken(n)).unwrap();
+                            self.layout.exports.push(super::model::Export { name, item, param: p.name.clone() });
                         }
                     }
                 }

@@ -37,7 +37,7 @@ fn main() {
 
     // A parameter sweep: the WDM link's first ring's coupling.
     let ring = wdm.instances.iter().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::AddDropRing { .. }))).unwrap().id;
-    let spec = SweepSpec { kind: SweepKind::Parameter { item: Item::Box(ring), param: "coupling" }, start: 0.01, stop: 0.3, points: 201 };
+    let spec = SweepSpec { kind: SweepKind::Parameter { item: Item::Box(ring), param: "coupling".into() }, start: 0.01, stop: 0.3, points: 201 };
     time("WDM link: a ring's coupling", 201, || sweep::run(&wdm, 10.0, &p, &Machine::default(), Some(id), &spec, &names));
 
     // A big optical block: a laser into a 16-mode optical DFT.

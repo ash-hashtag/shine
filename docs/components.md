@@ -56,7 +56,9 @@ Select a box using the component, and its inspector lists the exported parameter
 their values. A parameter you haven't set shows *default* and uses the value inside the
 component; drag or type to set it for this box only, and **↺** to go back to the default.
 The example **Mach–Zehnder interferometer** (MZ) exports its phase: set it to π on a box
-to switch its light to the other output.
+to switch its light to the other output. Exported parameters can also be
+[swept](sweeps.md) on a box, from its right-click menu or the sweep window, and from the
+[command line](command-line.md).
 
 ## Trying a component on its own
 
