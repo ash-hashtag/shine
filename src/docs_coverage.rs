@@ -20,7 +20,8 @@ fn pages() -> Vec<(String, String)> {
         .expect("docs/ exists")
         .map(|e| e.expect("readable").path())
         .filter(|p| p.extension().is_some_and(|e| e == "md"))
-        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap()))
+        // Windows checkouts may use CRLF line endings.
+        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap().replace("\r\n", "\n")))
         .collect();
     pages.sort();
     pages
@@ -57,12 +58,12 @@ fn docs_mention_every_example() {
 
 #[test]
 fn docs_list_every_shortcut_and_mcp_tool() {
-    let editor = std::fs::read_to_string(docs_dir().join("editor.md")).unwrap();
+    let editor = std::fs::read_to_string(docs_dir().join("editor.md")).unwrap().replace("\r\n", "\n");
     let rows: Vec<String> = SHORTCUTS.iter().map(|(keys, what)| format!("| {keys} | {what} |")).collect();
     let gaps: Vec<&str> = missing(&editor, rows.iter().map(String::as_str));
     assert_eq!(gaps, Vec::<&str>::new(), "shortcut rows missing from docs/editor.md (copy them from input::SHORTCUTS)");
 
-    let ai = std::fs::read_to_string(docs_dir().join("ai.md")).unwrap();
+    let ai = std::fs::read_to_string(docs_dir().join("ai.md")).unwrap().replace("\r\n", "\n");
     let tools = crate::mcp::tools::tools();
     let gaps: Vec<&str> = missing(&ai, tools.iter().map(|t| t.name));
     assert_eq!(gaps, Vec::<&str>::new(), "MCP tools missing from docs/ai.md");

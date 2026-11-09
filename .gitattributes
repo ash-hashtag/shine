@@ -1,0 +1,5 @@
+# Text files use LF everywhere (the docs tests and front matter expect it).
+* text=auto eol=lf
+*.webp binary
+*.png binary
+*.svg text eol=lf
