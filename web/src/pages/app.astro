@@ -16,6 +16,14 @@ const version = (() => {
     return "dev"; // not built yet (pnpm dev without scripts/build-web.sh)
   }
 })();
+const appVersion = (() => {
+  try {
+    return readFileSync("../Cargo.toml", "utf8").match(/^version = "([^"]+)"/m)?.[1] ?? "?";
+  } catch {
+    return "?";
+  }
+})();
+const build = `Shine ${appVersion} (build ${version})`;
 const module = `${base}pkg/shine.js?v=${version}`;
 const wasm = `${base}pkg/shine_bg.wasm?v=${version}`;
 ---
@@ -33,7 +41,7 @@ const wasm = `${base}pkg/shine_bg.wasm?v=${version}`;
   <noscript>
     <div id="noscript">Shine runs as a WebAssembly app and needs JavaScript enabled.</div>
   </noscript>
-  <script type="module" define:vars={{ module, wasm, home: base }}>
+  <script type="module" define:vars={{ module, wasm, home: base, build }}>
     const status = document.getElementById("status");
     const canvas = document.getElementById("shine");
     let failed = false;
@@ -47,9 +55,9 @@ const wasm = `${base}pkg/shine_bg.wasm?v=${version}`;
       const heading = document.createElement("strong");
       heading.textContent = title;
       const help = document.createElement("span");
-      help.textContent = "Reload to try again. If it keeps happening, the details below help us fix it.";
+      help.textContent = "Reload to try again: your work from a few seconds before comes back. If it keeps happening, reporting it helps fix it.";
       const pre = document.createElement("pre");
-      pre.textContent = `${detail}\n\n${navigator.userAgent}\nrenderer=${new URLSearchParams(location.search).get("renderer") ?? "webgl"}`;
+      pre.textContent = `${detail}\n\n${build}\n${navigator.userAgent}\nrenderer=${new URLSearchParams(location.search).get("renderer") ?? "webgl"}`;
       const actions = document.createElement("div");
       actions.className = "actions";
       const reload = document.createElement("button");
@@ -58,7 +66,14 @@ const wasm = `${base}pkg/shine_bg.wasm?v=${version}`;
       const back = document.createElement("a");
       back.href = home;
       back.textContent = "Home page";
-      actions.append(reload, back);
+      // A new GitHub issue with the details filled in (no project data).
+      const report = document.createElement("a");
+      const body = "```\n" + pre.textContent.slice(0, 4000) + "\n```";
+      report.href = `https://github.com/ash-hashtag/shine/issues/new?title=${encodeURIComponent(title + " (browser)")}&body=${encodeURIComponent(body)}`;
+      report.target = "_blank";
+      report.rel = "noopener";
+      report.textContent = "Report on GitHub";
+      actions.append(reload, report, back);
       status.append(heading, help, pre, actions);
       status.classList.remove("hidden");
     }

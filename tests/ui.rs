@@ -434,3 +434,16 @@ fn fps_and_the_performance_graph() {
     assert!(readout.contains("fps") || readout.starts_with("idle"), "{readout}");
     assert!(!h.state().stats.frames.is_empty(), "frames are recorded");
 }
+
+#[test]
+fn a_crash_in_the_last_run_is_shown_once() {
+    let mut h = app();
+    h.state_mut().crash_report = Some(shine::crash::report("boom", "src/x.rs:1", "0: main"));
+    h.run_steps(3);
+    assert!(h.query_all_by_label("Shine crashed last time").count() > 0);
+    assert!(h.query_by_label("Report on GitHub").is_some() && h.query_by_label("Copy details").is_some());
+    h.get_by_label("Close").click();
+    h.run_steps(3);
+    assert!(h.state().crash_report.is_none());
+    assert_eq!(h.query_all_by_label("Shine crashed last time").count(), 0);
+}

@@ -58,6 +58,12 @@ line options:
 
 Logs always go to stderr. The Windows release opens no console window, so use `--log-file` there.
 
+If the app crashes, it writes `crash-report.txt` (the message, where it happened, the
+version, the system and a backtrace; no project data) to its settings folder and to the
+log. The next start restores your work and shows the report, with **Report on GitHub**
+to open an issue with it filled in, and **Copy details**. In the browser, a crash shows
+the details on the page, with the same link and a reload that brings your work back.
+
 ## Browser app
 
 The browser build is the same editor compiled to WebAssembly. Links can open things

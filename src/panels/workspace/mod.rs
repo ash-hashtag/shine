@@ -72,6 +72,8 @@ pub struct Workspace {
     title: String,
     /// The window is closing (desktop): the session is saved as a clean exit.
     pub closing: bool,
+    /// The report of a crash in the last run (desktop), shown until dismissed.
+    pub crash_report: Option<String>,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -100,6 +102,7 @@ impl Default for Workspace {
             pending_open: None,
             title: String::new(),
             closing: false,
+            crash_report: None,
             applied_theme: None,
             ctx: None,
             time: 0.0,
@@ -1325,7 +1328,36 @@ impl Workspace {
         }
     }
 
+    /// After a crash: what happened, and a one-click report.
+    fn crash_window(&mut self, ctx: &egui::Context) {
+        let Some(report) = self.crash_report.clone() else { return };
+        let mut open = true;
+        let mut dismiss = false;
+        ui_kit::window(ctx, "Shine crashed last time").open(&mut open).default_width(560.0).show(ctx, |ui| {
+            ui.label("Sorry about that. Your work up to a few seconds before was restored. Reporting it helps fix it; the report has no project data.");
+            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(&report).monospace().small()).wrap());
+            });
+            ui.horizontal(|ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui.button("Report on GitHub").on_hover_text("Opens a new issue with this report").clicked() {
+                    ctx.open_url(egui::OpenUrl::new_tab(crate::crash::issue_url(&report)));
+                }
+                if ui.button("Copy details").clicked() {
+                    ctx.copy_text(report.clone());
+                }
+                if ui.button("Close").clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+        if !open || dismiss {
+            self.crash_report = None;
+        }
+    }
+
     fn windows(&mut self, ctx: &egui::Context) {
+        self.crash_window(ctx);
         self.unsaved_dialog(ctx);
         if !cfg!(target_arch = "wasm32") {
             self.update_title(ctx);

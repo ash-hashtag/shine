@@ -6,6 +6,9 @@ pub mod logging;
 #[cfg(all(feature = "gui", target_arch = "wasm32"))]
 pub mod web;
 
+#[cfg(all(feature = "gui", not(target_arch = "wasm32")))]
+pub mod crash;
+
 #[cfg(feature = "gui")]
 pub mod mcp;
 

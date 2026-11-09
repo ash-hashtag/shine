@@ -64,6 +64,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Crash reports: the desktop app writes a report (message, place, version, system,
+  backtrace) and shows it at the next start with a one-click GitHub issue; the browser's
+  error page links to one too.
 - The session (project, tabs, views, unsaved changes) is kept every few seconds and
   restored at the next start, so closing the window or tab, or a crash, loses at most a
   few seconds of work. File → New project starts over.
