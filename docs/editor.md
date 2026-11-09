@@ -48,7 +48,7 @@ menu scrolls the menu, not the grid. **Esc** or a click on the grid closes it.
 ![The Parts & components browser](img/browser.webp)
 
 The browser shows every part as a tile with its description, folder by folder. Click a
-tile and then click the grid, or drag the tile onto the grid. **＋ New component** starts
+tile and then click the grid, or drag the tile onto the grid. **+ New component** starts
 a [component](components.md).
 
 ## Selecting, moving, deleting

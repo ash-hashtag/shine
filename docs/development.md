@@ -18,6 +18,24 @@ cargo clippy --all-targets                  # lints (CI fails on warnings)
 On Linux the editor needs the usual windowing libraries (`libxkbcommon`, `libxcb`,
 Wayland or X11 at runtime).
 
+## Tests
+
+Three layers, all run by CI:
+
+- **Unit tests** next to the code (`cargo test --lib`): the photonics engine against
+  closed-form results, the simulator, file formats and upgrades, the MCP tools, and the
+  editor's UI driven headlessly with simulated mouse and keyboard input.
+- **Integration tests** in `tests/` (`cargo test --test ui`): the whole app through its
+  public API with [egui_kittest](https://docs.rs/egui_kittest), clicking menus and buttons
+  by their labels and dragging with the mouse; plus the MCP server over stdio.
+- **Browser tests** (`scripts/e2e.sh`, after `scripts/build-web.sh`): the WebAssembly
+  app in headless Chromium with real mouse events, checked by the pixels on screen.
+  Screenshots of failures go to `target/e2e-failures`.
+
+A test also checks that the bundled fonts can draw every character in the UI's text, so
+nothing shows as an empty box on machines without the right system fonts. Line coverage
+is measured with `cargo llvm-cov --lib`.
+
 ## The website and browser build
 
 `web/` is an Astro site: the home page, the section pages (`/features`, `/library`,
@@ -61,8 +79,9 @@ are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`, and th
 
 ## Continuous integration and releases
 
-- **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: tests,
-  clippy, the WebAssembly check, and the website build.
+- **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: the tests on
+  Linux, Windows and macOS, clippy, the WebAssembly and website build, and the browser
+  tests.
 - **Releases** (`.github/workflows/release.yml`) run only when a version tag is pushed.
   They build `shine` and `shine-mcp` for Linux (x86-64, ARM64), Windows (x86-64) and
   macOS (Apple silicon, Intel), and publish them with checksums on a GitHub release. The

@@ -112,22 +112,6 @@ impl OpticComponentKind {
         }
     }
 
-    pub fn icon(&self) -> &'static str {
-        match self {
-            Self::Laser { .. } => "🔦",
-            Self::BeamSplitter { .. } => "◩",
-            Self::Mirror { .. } => "🪞",
-            Self::Lens => "🔍",
-            Self::PhaseShifter { .. } => "φ",
-            Self::Attenuator { .. } => "▒",
-            Self::Detector { .. } => "◉",
-            Self::InputPort { .. } => "⇥",
-            Self::OutputPort => "⇤",
-            Self::SignalIn => "▾",
-            Self::SignalOut => "▴",
-        }
-    }
-
     /// Electrical inputs: a driven laser scales its amplitude, a phase
     /// shifter adds π per unit, an attenuator scales its transmission.
     pub fn signal_inputs(&self) -> &'static [&'static str] {
@@ -528,12 +512,10 @@ mod tests {
     }
 
     #[test]
-    fn palette_names_and_icons_are_unique() {
+    fn palette_names_are_unique() {
         let palette = OpticComponentKind::palette();
         let names: std::collections::HashSet<_> = palette.iter().map(|k| k.name()).collect();
-        let icons: std::collections::HashSet<_> = palette.iter().map(|k| k.icon()).collect();
         assert_eq!(names.len(), palette.len());
-        assert_eq!(icons.len(), palette.len());
     }
 
     #[test]

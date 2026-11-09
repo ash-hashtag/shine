@@ -168,7 +168,7 @@ impl OpticsPanel {
         }
         let mut open = true;
         let mut run = false;
-        egui::Window::new("Sweep")
+        crate::panels::ui_kit::window(ctx, "Sweep")
             .id(egui::Id::unique("optics_sweep"))
             .open(&mut open)
             .default_size([640.0, 520.0])

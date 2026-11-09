@@ -446,7 +446,7 @@ impl ChipExample for MatMul {
         Ok(ChipResult {
             chart: Chart::Bars {
                 x_label: "output i",
-                y_label: "(W·x)ᵢ",
+                y_label: "(W·x) per output",
                 groups: vec![
                     BarGroup {
                         name: "exact".into(),

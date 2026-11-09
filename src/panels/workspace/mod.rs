@@ -573,6 +573,9 @@ impl Workspace {
 
     pub fn ui(&mut self, ui: &mut Ui) {
         self.time = ui.input(|i| i.time);
+        if self.ctx.is_none() {
+            ui_kit::install_fonts(ui.ctx());
+        }
         self.ctx = Some(ui.ctx().clone());
         self.apply_theme(ui.ctx());
         self.receive_files();
@@ -1077,7 +1080,7 @@ impl Workspace {
 
     fn windows(&mut self, ctx: &egui::Context) {
         let mut open = self.show_shortcuts;
-        egui::Window::new("Keyboard & mouse")
+        ui_kit::window(ctx, "Keyboard & mouse")
             .open(&mut open)
             .resizable(false)
             .show(ctx, |ui| {
@@ -1094,7 +1097,7 @@ impl Workspace {
         let mut open = self.show_examples;
         let mut load_layout = None;
         let mut load_demo = None;
-        egui::Window::new("Examples")
+        ui_kit::window(ctx, "Examples")
             .open(&mut open)
             .default_size([760.0, 520.0])
             .show(ctx, |ui| {
@@ -1165,7 +1168,7 @@ impl Workspace {
     fn preferences_ui(&mut self, ctx: &egui::Context) {
         let mut open = self.show_preferences;
         let mut reset = false;
-        egui::Window::new("Preferences")
+        ui_kit::window(ctx, "Preferences")
             .open(&mut open)
             .resizable(false)
             .default_width(380.0)

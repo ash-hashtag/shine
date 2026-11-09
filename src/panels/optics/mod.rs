@@ -822,7 +822,7 @@ impl OpticsPanel {
 
     fn windows(&mut self, ctx: &egui::Context) {
         let mut open = self.show_shortcuts;
-        egui::Window::new("Keyboard & mouse")
+        crate::panels::ui_kit::window(ctx, "Keyboard & mouse")
             .open(&mut open)
             .resizable(false)
             .show(ctx, |ui| {
@@ -838,7 +838,7 @@ impl OpticsPanel {
 
         let mut open = self.show_examples;
         let mut load = None;
-        egui::Window::new("Examples library")
+        crate::panels::ui_kit::window(ctx, "Examples library")
             .id(Id::unique("optics_examples"))
             .open(&mut open)
             .default_size([760.0, 520.0])

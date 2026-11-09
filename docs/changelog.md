@@ -36,6 +36,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 - Dragging a laser's signal pin onto a box's light input warned about connecting a signal
   to light and offered to insert another laser; it now connects the laser's light.
+- Windows (Preferences, Sweep, Examples…) could open over the menu bar and block it; they
+  now open in the middle and stay below the menus.
+- Symbols in the UI (■, ▶, ⚠, arrows…) could show as empty boxes on systems without a
+  font that has them; the fonts they need are now bundled.
+- Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
+- Library rows are visible to screen readers.
 
 ## 0.1.0 (2026-11-09)
 

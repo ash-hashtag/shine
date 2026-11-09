@@ -1,0 +1,278 @@
+//! Integration tests of the whole editor UI: the app is driven like a user
+//! would, by clicking widgets found by their labels and dragging with the
+//! mouse, through the crate's public API only.
+
+use egui::{Pos2, Vec2};
+use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT, Queryable};
+use shine::panels::optics::OpticsPanel;
+use shine::panels::optics::model::{BlockRef, Builtin, Item, OpticComponentKind, PortRef, cell_center, cell_of};
+use shine::panels::workspace::Workspace;
+
+fn app() -> Harness<'static, Workspace> {
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 900.0))
+        .with_max_steps(8)
+        .build_ui_state(|ui, ws: &mut Workspace| ws.ui(ui), Workspace::default());
+    h.run_steps(3);
+    h
+}
+
+fn active<'a>(h: &'a Harness<'_, Workspace>) -> &'a OpticsPanel {
+    let ws = h.state();
+    ws.project.doc(ws.active.unwrap()).unwrap().panel()
+}
+
+fn active_mut<'a>(h: &'a mut Harness<'_, Workspace>) -> &'a mut OpticsPanel {
+    let ws = h.state_mut();
+    let id = ws.active.unwrap();
+    ws.project.doc_mut(id).unwrap().panel_mut()
+}
+
+/// Screen position of a world point on the active canvas.
+fn screen(h: &Harness<'_, Workspace>, world: Pos2) -> Pos2 {
+    let p = active(h);
+    p.view.to_screen(p.canvas_rect().expect("canvas drawn"), world)
+}
+
+/// Press, move in steps, release: a real mouse drag.
+fn drag(h: &mut Harness<'_, Workspace>, from: Pos2, to: Pos2) {
+    h.hover_at(from);
+    h.run_steps(1);
+    h.drag_at(from);
+    h.run_steps(1);
+    for k in 1..=10 {
+        h.hover_at(from + (to - from) * (k as f32 / 10.0));
+        h.run_steps(1);
+    }
+    h.drop_at(to);
+    h.run_steps(2);
+}
+
+fn click_menu(h: &mut Harness<'_, Workspace>, menu: &str, item: &str) {
+    h.get_by_label(menu).click();
+    h.run_steps(3);
+    if h.query_by_label(item).is_none() {
+        let labels: Vec<String> = h.root().children_recursive().filter_map(|n| n.accesskit_node().label()).collect();
+        panic!("{menu} → {item} not found; on screen: {labels:?}");
+    }
+    h.get_by_label(item).click();
+    h.run_steps(3);
+}
+
+#[test]
+fn every_menu_opens_and_lists_its_actions() {
+    let mut h = app();
+    let menus: [(&str, &[&str]); 6] = [
+        ("File", &["New layout", "New component", "Open…", "Save", "Save as…", "Examples…"]),
+        ("Edit", &["Undo", "Redo", "Duplicate", "Delete", "Preferences…"]),
+        ("View", &["Library", "Inspector", "Live simulation", "Frame all", "Frame selected", "Keyboard & mouse"]),
+        ("Analysis", &["Sweep…"]),
+        ("Component", &["Rename…", "Stop sharing as component"]),
+        ("Help", &["Keyboard & mouse", "Examples"]),
+    ];
+    for (menu, items) in menus {
+        h.get_by_label(menu).click();
+        h.run_steps(2);
+        for item in items {
+            assert!(h.query_all_by_label(item).count() > 0, "{menu} → {item} missing");
+        }
+        h.key_press(egui::Key::Escape);
+        h.run_steps(2);
+    }
+}
+
+#[test]
+fn menu_actions_do_what_they_say() {
+    let mut h = app();
+    click_menu(&mut h, "File", "New layout");
+    assert_eq!(h.state().tabs.len(), 2);
+    click_menu(&mut h, "File", "New component");
+    assert_eq!(h.state().tabs.len(), 3);
+    assert!(h.state().project.doc(h.state().active.unwrap()).unwrap().component.is_some());
+    // It asks for the component's details first; cancel keeps the defaults.
+    assert!(h.state().dialog.is_some());
+    // Wait out the modal's sizing pass: it moves after its first frame.
+    h.run_steps(3);
+    h.get_by_label("Cancel").click();
+    h.run_steps(2);
+    assert!(h.state().dialog.is_none());
+
+    click_menu(&mut h, "Edit", "Preferences…");
+    assert!(h.state().show_preferences);
+    assert!(h.query_by_label("Power in").is_some(), "the preferences window is drawn");
+
+    click_menu(&mut h, "Help", "Keyboard & mouse");
+    assert!(h.state().show_shortcuts);
+    click_menu(&mut h, "File", "Examples…");
+    assert!(h.state().show_examples);
+
+    // View toggles hide and show the side panels.
+    click_menu(&mut h, "View", "Library");
+    assert!(!h.state().show_library);
+    click_menu(&mut h, "View", "Inspector");
+    assert!(!h.state().show_inspector);
+
+    // Analysis → Sweep… opens the sweep window on the active document.
+    click_menu(&mut h, "Analysis", "Sweep…");
+    assert!(active(&h).sweep.open);
+}
+
+#[test]
+fn a_laser_dragged_from_the_library_and_wired_to_an_mzi_lights_both_outputs() {
+    // The whole flow with the mouse: a laser from the library onto the grid,
+    // an MZI from the waveguide blocks, then a waveguide from the laser's
+    // light output to the MZI's first input.
+    let mut h = app();
+    let laser_row = h.get_by_label("Laser").rect().center();
+    let laser_at = screen(&h, cell_center(4, 5));
+    drag(&mut h, laser_row, laser_at);
+    assert_eq!(active(&h).layout.components.len(), 1, "laser placed");
+    let laser = active(&h).layout.components[0];
+    assert!(matches!(laser.kind, OpticComponentKind::Laser { .. }));
+    assert!(active(&h).outcome().unwrap().beams.iter().any(|b| b.field.norm_sqr() > 0.99), "it shines");
+
+    h.get_by_label_contains("Waveguide blocks").click();
+    h.run_steps(2);
+    let mzi_row = h.get_by_label("MZI switch").rect().center();
+    let mzi_at = screen(&h, cell_center(10, 9));
+    drag(&mut h, mzi_row, mzi_at);
+    let mzi = active(&h).layout.instances.last().expect("MZI placed").id;
+    assert!(matches!(active(&h).layout.instances[0].block, BlockRef::Builtin(Builtin::Mzi { .. })));
+
+    let OpticComponentKind::Laser { dir, .. } = laser.kind else { unreachable!() };
+    let from = screen(&h, shine::panels::optics::model::laser_light_out(laser.pos, dir));
+    let input = PortRef { instance: mzi, port: 0 };
+    let to = screen(&h, active(&h).light_port_pos(input, false).unwrap());
+    drag(&mut h, from, to);
+
+    let p = active(&h);
+    assert_eq!(p.layout.feed_of(0), Some(input), "wired with a waveguide");
+    assert_eq!(cell_of(p.layout.components[0].pos), cell_of(laser.pos), "the laser didn't move");
+    let o = p.outcome().expect("simulated");
+    for k in 0..2 {
+        assert!((o.port_power[&(mzi, k)] - 0.5).abs() < 1e-9, "out{} gets half: {:?}", k + 1, o.port_power);
+    }
+    // The inspector shows the outputs with units.
+    assert!(h.query_all_by_label("500 µW").count() >= 2, "both outputs read 500 µW");
+}
+
+#[test]
+fn every_block_has_an_inspector() {
+    // Select one of each built-in block and draw its inspector.
+    let mut h = app();
+    let blocks: Vec<Builtin> = Builtin::palette().into_iter().chain(Builtin::electronic_palette()).collect();
+    for (k, b) in blocks.iter().enumerate() {
+        active_mut(&mut h).layout.add_instance(BlockRef::Builtin(b.clone()), (0, 6 * k as i32));
+    }
+    for k in 0..blocks.len() {
+        active_mut(&mut h).editor.boxes.select_only(k);
+        h.run_steps(2);
+        let name = active(&h).catalog.display(&active(&h).layout.instances[k].block).name;
+        assert!(h.query_all_by_label(&name).count() > 0, "inspector for {name}");
+    }
+}
+
+#[test]
+fn right_click_menus_on_boxes_and_wires() {
+    let mut h = app();
+    let p = active_mut(&mut h);
+    let a = p.layout.add_instance(BlockRef::Builtin(Builtin::YSplitter), (2, 2));
+    let b = p.layout.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (8, 2));
+    p.layout.connect_optical(PortRef { instance: a, port: 0 }, PortRef { instance: b, port: 0 });
+    h.run_steps(2);
+
+    // On a box: its actions, including a sweep of its parameter.
+    let at = screen(&h, cell_center(8, 2));
+    h.hover_at(at);
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    // The menu's entry is the one next to the click (the inspector has one too).
+    let entry = h
+        .get_all_by_label_contains("Sweep…")
+        .min_by(|a, b| a.rect().center().distance(at).total_cmp(&b.rect().center().distance(at)))
+        .expect("box menu offers a sweep")
+        .rect()
+        .center();
+    h.hover_at(entry);
+    h.event(egui::Event::PointerButton { pos: entry, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: entry, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    assert_eq!(active(&h).sweep.target, Some(Item::Box(b)));
+
+    // On a waveguide: delete it.
+    active_mut(&mut h).sweep.open = false;
+    h.run_steps(2);
+    let path = active(&h).waveguide_points(0).unwrap();
+    let mid = screen(&h, path[12]);
+    h.hover_at(mid);
+    h.event(egui::Event::PointerButton { pos: mid, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: mid, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    h.get_by_label_contains("Delete waveguide").click();
+    h.run_steps(2);
+    assert!(active(&h).layout.wires.is_empty());
+}
+
+#[test]
+fn projects_round_trip_through_files_with_laser_waveguides() {
+    // Save a project with a wired laser, open it in a fresh app, and get the
+    // same simulation.
+    let dir = std::env::temp_dir().join(format!("shine-ui-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("wired.shine");
+    let mut ws = Workspace::default();
+    let id = ws.active.unwrap();
+    let p = ws.project.doc_mut(id).unwrap().panel_mut();
+    p.layout.components.push(shine::panels::optics::model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 2.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    let mzi = p.layout.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }), (4, 3));
+    p.layout.connect_feed(0, PortRef { instance: mzi, port: 0 });
+    ws.save_project_to(&path).unwrap();
+
+    let mut opened = Workspace::default();
+    opened.open_path(&path).unwrap();
+    let doc = opened.project.documents.iter().find(|d| !d.layout().feeds.is_empty()).expect("the wired layout");
+    let o = opened.project.simulate(doc.id, &Default::default());
+    assert!(o.error.is_none(), "{:?}", o.error);
+    assert!((o.port_power[&(mzi, 0)] - 2.0).abs() < 1e-9, "4 mW split in two: {:?}", o.port_power);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn windows_open_below_the_menus() {
+    // Every floating window opens clear of the menu bar, so the menus keep
+    // working while it's open.
+    let mut h = app();
+    {
+        let ws = h.state_mut();
+        ws.show_preferences = true;
+        ws.show_shortcuts = true;
+        ws.show_examples = true;
+    }
+    active_mut(&mut h).open_sweep(None);
+    active_mut(&mut h).show_browser = true;
+    h.run_steps(4);
+    for title in ["Preferences", "Keyboard & mouse", "Examples", "Sweep", "Parts & components"] {
+        let top = h.get_all_by_label(title).map(|n| n.rect().top()).fold(f32::INFINITY, f32::min);
+        assert!(top >= shine::panels::ui_kit::TOP_BARS_HEIGHT, "{title} window at y = {top}, over the menus");
+    }
+    for menu in ["File", "Edit", "View", "Analysis", "Component", "Help"] {
+        h.get_by_label(menu).click();
+        h.run_steps(3);
+        let item = match menu {
+            "File" => "New layout",
+            "Edit" => "Preferences…",
+            "View" => "Frame all",
+            "Analysis" => "Sweep…",
+            "Component" => "Rename…",
+            _ => "Examples",
+        };
+        assert!(h.query_all_by_label(item).count() > 0, "{menu} didn't open with the windows up");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(2);
+    }
+}

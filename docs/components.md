@@ -13,7 +13,7 @@ times as you like. Edits to the component's layout update every place it's used.
 
 ## Making one
 
-- **＋ New component** (library → *My components*, the parts browser, or the **+** tab
+- **+ New component** (library → *My components*, the parts browser, or the **+** tab
   button) creates a component with one light input and output and one signal input and
   output, and asks for its name, initials and description.
 - Or turn any open layout into one: **Component → Save as component…**

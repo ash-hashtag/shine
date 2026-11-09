@@ -23,7 +23,7 @@ required-features = ["gui"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-egui = { version = "0.37.0", features = ["serde"], optional = true }
+egui = { version = "0.37.0", features = ["serde", "monochrome_emoji_fonts"], optional = true }
 eframe = { version = "0.37.0", features = ["serde", "persistence"], optional = true }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
@@ -49,6 +49,10 @@ console_error_panic_hook = "0.1.7"
 tracing-web = "0.1.4"
 web-sys = { version = "0.3", features = ["Blob", "BlobPropertyBag", "Document", "Element", "HtmlAnchorElement", "HtmlCanvasElement", "Location", "Url", "Window"] }
 js-sys = "0.3"
+
+[dev-dependencies]
+# Drives the UI by widget labels in tests (tests/ui.rs).
+egui_kittest = "0.37.0"
 
 # Used by scripts/build-web.sh for the browser build.
 [profile.web]

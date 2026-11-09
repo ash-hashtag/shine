@@ -120,6 +120,8 @@ pub fn item_row_sized(
         Vec2::new(ui.available_width(), height),
         Sense::click_and_drag(),
     );
+    // Painted by hand, so describe it for screen readers (and UI tests).
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label));
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact_selectable(&response, selected);
         if selected || response.hovered() {
@@ -137,6 +139,33 @@ pub fn item_row_sized(
         );
     }
     response
+}
+
+/// Fonts for every symbol the UI uses, on every platform: egui's bundled
+/// fonts (with its emoji fonts) plus its monospace font as a last resort for
+/// arrows and shapes the proportional font lacks, such as →.
+pub fn install_fonts(ctx: &egui::Context) {
+    if let Some(hack) = egui::FontDefinitions::default().font_data.get("Hack") {
+        ctx.add_font(egui::epaint::text::FontInsert::new(
+            "Hack (symbols)",
+            (**hack).clone(),
+            vec![egui::epaint::text::InsertFontFamily {
+                family: egui::FontFamily::Proportional,
+                priority: egui::epaint::text::FontPriority::Lowest,
+            }],
+        ));
+    }
+}
+
+/// Height of the menu bar and tab strip at the top of the window.
+pub const TOP_BARS_HEIGHT: f32 = 50.0;
+
+/// A floating window that opens in the middle of the screen and stays below
+/// the menu bar and tabs, so it never covers the menus.
+pub fn window<'open>(ctx: &egui::Context, title: &str) -> egui::Window<'open> {
+    let screen = ctx.content_rect();
+    let area = Rect::from_min_max(screen.min + Vec2::new(0.0, TOP_BARS_HEIGHT.min(screen.height() / 2.0)), screen.max);
+    egui::Window::new(title.to_owned()).pivot(Align2::CENTER_CENTER).default_pos(area.center()).constrain_to(area)
 }
 
 /// Rounded badge with initials, used for components in libraries and on canvases.
@@ -214,6 +243,65 @@ pub fn initials(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every character in the source's string literals (UI text, names,
+    /// descriptions), outside ASCII.
+    fn literal_chars() -> std::collections::BTreeMap<char, String> {
+        let mut found = std::collections::BTreeMap::new();
+        let mut dirs = vec![std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/src"))];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+                    if line.trim_start().starts_with("//") {
+                        continue;
+                    }
+                    let (mut inside, mut escaped) = (false, false);
+                    for c in line.chars() {
+                        match c {
+                            '\\' if inside && !escaped => escaped = true,
+                            '"' if !escaped => inside = !inside,
+                            c if inside && !c.is_ascii() => {
+                                found.entry(c).or_insert_with(|| format!("{}:{}", path.display(), n + 1));
+                            }
+                            _ => {}
+                        }
+                        if c != '\\' {
+                            escaped = false;
+                        }
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn the_fonts_draw_every_character_in_the_ui() {
+        // egui shows a missing glyph as an empty box on machines without a
+        // system font that has it; ours must all be bundled.
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+        let chars = literal_chars();
+        assert!(chars.contains_key(&'µ'), "the scan finds literals");
+        let missing: Vec<String> = ctx.fonts_mut(|f| {
+            chars
+                .iter()
+                .filter(|(c, _)| !f.has_glyph(&FontId::proportional(14.0), **c) || !f.has_glyph(&FontId::monospace(14.0), **c))
+                .map(|(c, at)| format!("{c} (U+{:04X}) at {at}", *c as u32))
+                .collect()
+        });
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+        assert!(missing.is_empty(), "no glyph for:\n{}", missing.join("\n"));
+    }
 
     #[test]
     fn initials_from_names() {

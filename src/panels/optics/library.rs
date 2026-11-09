@@ -261,7 +261,7 @@ impl OpticsPanel {
                         if my_components
                             && self.embedded
                             && ui
-                                .small_button("＋ New component")
+                                .small_button("+ New component")
                                 .on_hover_text("Start an empty component with ports, ready to fill and reuse")
                                 .clicked()
                         {
@@ -289,13 +289,11 @@ impl OpticsPanel {
         }
         let mut open = true;
         let mut picked: Option<(Placeable, bool)> = None;
-        egui::Window::new("Parts & components")
+        ui_kit::window(ctx, "Parts & components")
             .id(Id::unique("optics_browser"))
             .open(&mut open)
             .collapsible(false)
             .default_size([720.0, 440.0])
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.browser_search)
@@ -321,7 +319,7 @@ impl OpticsPanel {
                                 self.browser_search.clear();
                             }
                         }
-                        if self.embedded && ui.button("＋ New component").clicked() {
+                        if self.embedded && ui.button("+ New component").clicked() {
                             self.requests.push(Request::NewComponent);
                             self.show_browser = false;
                         }
@@ -417,10 +415,10 @@ impl OpticsPanel {
                                 if ui.button("⟳  Rotate                R").clicked() {
                                     choice = Some(MenuChoice::Rotate(1));
                                 }
-                                if ui.button("⟲  Rotate back      ⇧R").clicked() {
+                                if ui.button("⟲  Rotate back      Shift+R").clicked() {
                                     choice = Some(MenuChoice::Rotate(-1));
                                 }
-                                if ui.button("⧉  Duplicate          ⇧D").clicked() {
+                                if ui.button("⎘  Duplicate          Shift+D").clicked() {
                                     choice = Some(MenuChoice::Duplicate);
                                 }
                                 if !crate::panels::circuit::sweep::params(&self.layout, Item::Part(i)).is_empty()
@@ -436,10 +434,10 @@ impl OpticsPanel {
                             Some(Hit::Box(b)) if b < self.layout.instances.len() => {
                                 let d = self.catalog.display(&self.layout.instances[b].block);
                                 ui.label(RichText::new(&d.name).strong());
-                                if d.component.is_some() && ui.button("⤢  Open definition   Tab").clicked() {
+                                if d.component.is_some() && ui.button("↗  Open definition   Tab").clicked() {
                                     choice = Some(MenuChoice::Inspect);
                                 }
-                                if ui.button("⧉  Duplicate          ⇧D").clicked() {
+                                if ui.button("⎘  Duplicate          Shift+D").clicked() {
                                     choice = Some(MenuChoice::Duplicate);
                                 }
                                 let id = self.layout.instances[b].id;
@@ -1159,7 +1157,7 @@ fn function_cell_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
                     edit.on_hover_text(e.to_string());
                     ui.colored_label(ui.visuals().error_fg_color, "!");
                 }
-                if ui.small_button("✕").clicked() {
+                if ui.small_button("×").clicked() {
                     remove = Some(k);
                 }
             });
@@ -1168,7 +1166,7 @@ fn function_cell_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
             exprs.remove(k);
             changed = true;
         }
-        if ui.small_button(format!("＋ {hint}")).clicked() {
+        if ui.small_button(format!("+ {hint}")).clicked() {
             exprs.push("0".into());
             changed = true;
         }

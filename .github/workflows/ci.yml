@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main, photonics-workbench]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -47,8 +47,8 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --locked --no-default-features --lib
 
-  wasm:
-    name: WebAssembly
+  web:
+    name: Web app, site and browser tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -56,13 +56,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2.9.3
-      - run: cargo check --locked --lib --target wasm32-unknown-unknown
-
-  site:
-    name: Website and docs
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7.0.1
+      # Must match the wasm-bindgen version in Cargo.lock.
+      - uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: wasm-bindgen@0.2.130
       - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: web/package.json
@@ -71,6 +68,15 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
-      - name: Build
-        working-directory: web
-        run: pnpm install --frozen-lockfile && pnpm run build
+      - name: Build the web app and the site
+        run: scripts/build-web.sh
+      # Real mouse input in headless Chrome against the built app.
+      - name: Browser tests
+        run: scripts/e2e.sh
+      - name: Screenshots of failed browser tests
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-failures
+          path: target/e2e-failures
+          if-no-files-found: ignore
