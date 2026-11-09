@@ -596,8 +596,8 @@ impl OpticsPanel {
                 if let Some(o) = self.outcome() {
                     for (field, wl) in o.wire_fields.get(i).into_iter().flatten().zip(&o.wavelengths) {
                         ui.monospace(format!(
-                            "{wl:.1} nm  power {:.4}  phase {:.3}π",
-                            field.norm_sqr(),
+                            "{wl:.1} nm  {}  phase {:.3}π",
+                            units::format_both(field.norm_sqr(), self.prefs.power_unit),
                             field.arg().rem_euclid(std::f64::consts::TAU) / std::f64::consts::PI
                         ));
                     }
@@ -683,7 +683,7 @@ impl OpticsPanel {
                         }
                         for (name, p) in &light {
                             ui.label(format!("{name} (light)"));
-                            ui.monospace(format!("{p:.4}"));
+                            ui.monospace(units::format_power(*p, self.prefs.power_unit));
                             ui.end_row();
                         }
                     });

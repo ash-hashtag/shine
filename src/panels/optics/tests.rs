@@ -1328,7 +1328,7 @@ fn lasers_wire_into_boxes_with_waveguides() {
     assert_eq!(panel.waveguide_count(), 1);
     let path = panel.waveguide_points(0).unwrap();
     assert_eq!(panel.hit(path[12]), Hit::Waveguide(0));
-    assert!(panel.hover_text(Hit::Waveguide(0)).unwrap().contains("power 1.0000"));
+    assert!(panel.hover_text(Hit::Waveguide(0)).unwrap().contains("1.00 mW"));
     assert!(panel.hover_text(Hit::LaserOut(0)).unwrap().contains("Wired"));
     panel.delete_wire(WireRef::Waveguide(0));
     assert!(panel.layout.feeds.is_empty());

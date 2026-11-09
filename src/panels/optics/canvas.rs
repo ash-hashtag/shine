@@ -285,7 +285,7 @@ impl OpticsPanel {
                     if output { "out" } else { "in" }
                 );
                 if let Some(pw) = o.and_then(|o| o.port_power.get(&(p.instance, p.port))).filter(|_| output) {
-                    text += &format!("\nPower {pw:.4}");
+                    text += &format!("\nPower {}", crate::panels::units::format_both(*pw, self.prefs.power_unit));
                 }
                 Some(text + "\n\nDrag to connect with a waveguide")
             }
@@ -293,7 +293,7 @@ impl OpticsPanel {
                 let mut text = "Waveguide".to_owned();
                 if let Some(o) = o {
                     for (field, wl) in o.wire_fields.get(w).into_iter().flatten().zip(&o.wavelengths) {
-                        text += &format!("\n{wl:.1} nm: power {:.4}", field.norm_sqr());
+                        text += &format!("\n{wl:.1} nm: {}", crate::panels::units::format_both(field.norm_sqr(), self.prefs.power_unit));
                     }
                 }
                 Some(text)
@@ -476,7 +476,7 @@ impl OpticsPanel {
                 &self.view,
                 &o.beams,
                 pointer,
-                &render::BeamStyle { palette: &palette, strands: self.prefs.channel_strands, arrows: self.prefs.beam_arrows },
+                &render::BeamStyle { palette: &palette, strands: self.prefs.channel_strands, arrows: self.prefs.beam_arrows, unit: self.prefs.power_unit },
             );
             for &(i, power) in o.detector_power.iter().filter(|_| self.prefs.show_readings) {
                 let Some(c) = self.layout.components.get(i) else { continue };
@@ -577,15 +577,8 @@ impl OpticsPanel {
                             || (!output && self.layout.feeds.iter().any(|f| f.to == p));
                         draw_light_port(&painter, screen, output || connected, is_hovered, zoom, theme);
                     }
-                    // Shown when wired, hovered, or while drawing a waveguide.
-                    Hit::LaserOut(i)
-                        if is_hovered
-                            || self.layout.feed_of(i).is_some()
-                            || matches!(self.drag, Drag::Connect(Hit::LightIn(_)))
-                            || matches!(hovered, Hit::Part(j) if j == i) =>
-                    {
-                        draw_light_port(&painter, screen, true, is_hovered, zoom, theme);
-                    }
+                    // Like a box's light output: always there to drag from.
+                    Hit::LaserOut(_) => draw_light_port(&painter, screen, true, is_hovered, zoom, theme),
                     _ => {}
                 }
             }

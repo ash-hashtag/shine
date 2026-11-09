@@ -1,5 +1,6 @@
 //! Drawing the canvas: grid, components, beams and overlays.
 
+use crate::panels::units::PowerUnit;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
 use super::model::{GRID, OpticComponentKind};
@@ -276,11 +277,11 @@ pub fn wavelength_color(nm: f64) -> Color32 {
 }
 
 /// Text describing a beam, for tooltips.
-pub fn beam_label(beam: &Beam) -> String {
+pub fn beam_label(beam: &Beam, unit: PowerUnit) -> String {
     format!(
-        "λ: {:.1} nm\nPower: {:.4}\nAmplitude: {:.4}\nPhase: {:.3} π",
+        "λ: {:.1} nm\nPower: {}\nAmplitude: {:.4}\nPhase: {:.3} π",
         beam.wavelength_nm,
-        beam.field.norm_sqr(),
+        crate::panels::units::format_both(beam.field.norm_sqr(), unit),
         beam.field.norm(),
         beam.field.arg().rem_euclid(std::f64::consts::TAU) / std::f64::consts::PI,
     )
@@ -303,6 +304,8 @@ pub struct BeamStyle<'a> {
     /// Several channels on one segment side by side.
     pub strands: bool,
     pub arrows: bool,
+    /// Unit for powers in tooltips.
+    pub unit: PowerUnit,
 }
 
 /// Draw beams; returns labels of beams under `hover` (screen space).
@@ -314,7 +317,7 @@ pub fn draw_beams(
     hover: Option<Pos2>,
     style: &BeamStyle,
 ) -> Vec<String> {
-    let BeamStyle { palette, strands, arrows } = *style;
+    let BeamStyle { palette, strands, arrows, unit } = *style;
     let key = |b: &Beam| {
         let r = |v: f32| (v * 4.0).round() as i32;
         (r(b.start.x), r(b.start.y), r(b.end.x), r(b.end.y))
@@ -337,7 +340,7 @@ pub fn draw_beams(
         painter.line_segment([start, end], Stroke::new(2.0, color));
 
         if hover.is_some_and(|m| distance_to_segment(m, start, end) < 5.0) {
-            hovered.push(beam_label(beam));
+            hovered.push(beam_label(beam, unit));
         }
         if !arrows {
             continue;
@@ -412,8 +415,8 @@ mod tests {
             color: None,
         };
         assert_eq!(
-            beam_label(&beam),
-            "λ: 650.0 nm\nPower: 0.2500\nAmplitude: 0.5000\nPhase: 1.500 π"
+            beam_label(&beam, PowerUnit::MilliWatt),
+            "λ: 650.0 nm\nPower: 250 µW (-6.02 dBm)\nAmplitude: 0.5000\nPhase: 1.500 π"
         );
     }
 
@@ -434,7 +437,7 @@ mod tests {
             color: None,
         }];
         let palette = crate::panels::prefs::Palette::new(&Default::default(), [532.0, 1550.0]);
-        let style = BeamStyle { palette: &palette, strands: true, arrows: true };
+        let style = BeamStyle { palette: &palette, strands: true, arrows: true, unit: PowerUnit::Dbm };
         ctx.run_ui(Default::default(), |ui| {
             let painter = ui.painter_at(canvas);
             assert_eq!(
@@ -460,7 +463,7 @@ mod tests {
                 )
                 .is_empty()
             );
-            assert!(draw_beams(&painter, canvas, &view, &beams, None, &BeamStyle { palette: &palette, strands: false, arrows: false }).is_empty());
+            assert!(draw_beams(&painter, canvas, &view, &beams, None, &BeamStyle { palette: &palette, strands: false, arrows: false, unit: PowerUnit::MilliWatt }).is_empty());
             // Two channels on one segment are drawn side by side.
             let mut two = beams.to_vec();
             two.push(Beam { wavelength_nm: 1550.0, ..beams[0].clone() });
