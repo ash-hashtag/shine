@@ -64,6 +64,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- The website has `favicon.ico` and WebP icon fallbacks for browsers and apps that don't
+  use the SVG icon.
 - Powers just under a unit boundary read "1.00 mW", not "1000 µW".
 - The browser app's files are loaded under a hash of their contents, so a new version is
   never mixed with a cached old one (and an unchanged one stays cached).

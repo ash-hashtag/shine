@@ -83,7 +83,11 @@ the home page describes the app (`SoftwareApplication`, `WebSite`), and each doc
 `TechArticle` with breadcrumbs and its last-modified date from git. `sitemap.xml` lists
 the home page and every docs page with their dates and images; `/app` and the 404 page
 are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`, and their social card to
-`scripts/og-cards.py`.
+`scripts/og-cards.py`. Social cards and screenshots are WebP.
+
+The icon is `web/public/favicon.svg`; `scripts/favicons.sh` makes the fallbacks from it
+(`favicon.ico` with 16, 32 and 48 px, `favicon.webp` at 192 px and `icon-512.webp` for the
+web app manifest). Run it after changing the SVG.
 
 ## Continuous integration and releases
 

@@ -54,7 +54,9 @@ const imageUrl = site ? new URL(`${base}${image}`, site).href : `${base}${image}
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafaf8" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17181b" />
+    <link rel="icon" href={`${base}favicon.ico`} sizes="48x48" />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <link rel="icon" href={`${base}favicon.webp`} type="image/webp" sizes="192x192" />
     <link rel="manifest" href={`${base}site.webmanifest`} />
     <link rel="alternate" type="text/plain" title="Shine documentation for language models" href={`${base}llms.txt`} />
     {site && <link rel="sitemap" href={`${base}sitemap.xml`} />}

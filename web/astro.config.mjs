@@ -60,6 +60,11 @@ export default defineConfig({
       description: "Guides and reference for Shine, the photonic circuit simulator.",
       logo: { src: "./src/assets/logo.svg", replacesTitle: false },
       favicon: "/favicon.svg",
+      // Raster fallbacks for browsers without SVG icons (scripts/favicons.sh).
+      head: [
+        { tag: "link", attrs: { rel: "icon", href: "/favicon.ico", sizes: "48x48" } },
+        { tag: "link", attrs: { rel: "icon", href: "/favicon.webp", type: "image/webp", sizes: "192x192" } },
+      ],
       social: [{ icon: "github", label: "GitHub", href: repo }],
       sidebar: [
         { label: "Overview", link: "/docs/" },
