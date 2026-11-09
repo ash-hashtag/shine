@@ -28,6 +28,7 @@ pub use model::{GRID, Layout, Line, OpticComponentKind, PlacedComponent};
 
 use super::chips::ChipBrowser;
 use super::circuit::sim::{self, Machine, NoDocuments, Options, Outcome};
+use super::prefs::Preferences;
 use super::project::{Catalog, DocId};
 use super::ui_kit;
 use editor::{Axis, Editor};
@@ -99,8 +100,6 @@ pub enum ExamplesTab {
     Chips,
 }
 
-/// Seconds between clock ticks while running.
-pub const TICK_SECONDS: f64 = 0.5;
 
 pub struct OpticsPanel {
     pub layout: Layout,
@@ -124,6 +123,8 @@ pub struct OpticsPanel {
     /// The document being edited, to refuse placing it inside itself.
     pub doc_id: Option<DocId>,
     pub search: String,
+    /// How things look; set by the host each frame.
+    pub prefs: Preferences,
     /// The categorised browser of every part and component.
     pub show_browser: bool,
     /// Folder shown in the browser, an index into [`library::SECTIONS`].
@@ -172,6 +173,7 @@ impl Default for OpticsPanel {
             catalog: Catalog::default(),
             doc_id: None,
             search: String::new(),
+            prefs: Preferences::default(),
             show_browser: false,
             browser_section: 0,
             browser_search: String::new(),
@@ -601,7 +603,12 @@ impl OpticsPanel {
         let catalog = &self.catalog;
         let counts = |b: &BlockRef| catalog.counts(b);
         let placed = match item {
-            Placeable::Part(kind) => self.editor.place(&mut self.layout, kind, world, &counts).is_some(),
+            Placeable::Part(mut kind) => {
+                if let OpticComponentKind::Laser { wavelength, .. } = &mut kind {
+                    *wavelength = self.prefs.default_wavelength_nm;
+                }
+                self.editor.place(&mut self.layout, kind, world, &counts).is_some()
+            }
             Placeable::Block(BlockRef::Component(id)) if self.doc_id.is_some_and(|me| !catalog.can_place(id, me)) => {
                 self.notify("A component can't contain itself");
                 return;
@@ -711,11 +718,11 @@ impl OpticsPanel {
         }
         self.handle_keys(ui);
         if self.running {
-            if self.time - self.last_tick >= TICK_SECONDS {
+            if self.time - self.last_tick >= self.prefs.tick_seconds {
                 self.last_tick = self.time;
                 self.tick();
             }
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(TICK_SECONDS));
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(self.prefs.tick_seconds));
         }
         if self.simulation_active && !self.embedded {
             self.refresh_simulation();

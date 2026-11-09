@@ -20,8 +20,10 @@ Save** writes the whole project to one `.shine` file; **File → Open** reads it
 A compact binary file: the 4 bytes `SHNE`, a 2-byte format version (little-endian), then
 the project encoded with [postcard](https://docs.rs/postcard). It is about five times
 smaller than the same project as JSON. Files from older versions are converted when
-opened (for example format 1's separate schematics become layouts of boxes); a file from
-a *newer* Shine than yours is refused with a message to update. JSON layouts from early
+opened: format 1's separate schematics become layouts of boxes, and format 2's lasers
+(which all interfered with each other) go onto shared source A so they simulate as before.
+A file from a *newer* Shine than yours is refused with a message to update. Preferences
+are not part of a project; they're saved with the app. JSON layouts from early
 versions can still be opened.
 
 ## Desktop app

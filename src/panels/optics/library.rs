@@ -3,9 +3,11 @@
 use egui::{Color32, Id, Pos2, RichText, Ui};
 
 use super::examples::component_examples;
+use super::canvas::source_letter;
 use super::model::{BlockRef, Builtin, Item, OpticComponentKind, Terminal, cell_of};
 use super::{Drag, Hit, MenuChoice, OpticsPanel, Request, Tool, WireRef, input_number, output_number, render};
 use crate::panels::circuit::sim;
+use crate::panels::prefs::{Palette, WAVELENGTH_PRESETS, is_visible};
 use crate::panels::project::{BlockDisplay, Catalog};
 use crate::panels::ui_kit;
 
@@ -91,7 +93,9 @@ pub fn entries(catalog: &Catalog, with_examples: bool, search: &str) -> Vec<Entr
     part(SECTIONS[0], palette[0]);
     part(SECTIONS[0], palette[6]);
     part(SECTIONS[0], OpticComponentKind::Detector { threshold: 0.5 });
-    for &k in &palette[1..=5] {
+    // The lens is left out: a ray-on-grid model can't focus, so it would
+    // only pass light through. Old files that contain one still open.
+    for &k in palette[1..=5].iter().filter(|k| **k != OpticComponentKind::Lens) {
         part(SECTIONS[1], k);
     }
     for &k in &palette[7..] {
@@ -703,15 +707,55 @@ impl OpticsPanel {
         egui::Grid::new("part_params").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             let tau = std::f32::consts::TAU;
             match &mut component.kind {
-                OpticComponentKind::Laser { amplitude, phase, wavelength, .. } => {
+                OpticComponentKind::Laser { amplitude, phase, wavelength, source, color, .. } => {
                     ui.label("Amplitude");
                     ui.add(egui::Slider::new(amplitude, 0.0..=2.0));
                     ui.end_row();
                     ui.label("Phase");
-                    ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad"));
+                    ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad"))
+                        .on_hover_text("Only matters relative to lasers on the same source");
                     ui.end_row();
                     ui.label("Wavelength");
-                    ui.add(egui::DragValue::new(wavelength).range(200.0..=2000.0).speed(0.5).suffix(" nm"));
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(wavelength).range(200.0..=2000.0).speed(0.5).suffix(" nm"));
+                        egui::ComboBox::from_id_salt("laser_wavelength")
+                            .selected_text("Presets")
+                            .show_ui(ui, |ui| {
+                                for &(nm, what) in WAVELENGTH_PRESETS {
+                                    ui.selectable_value(wavelength, nm, format!("{nm:.0} nm  {what}"));
+                                }
+                            });
+                    });
+                    ui.end_row();
+                    ui.label("");
+                    let band = if is_visible(*wavelength as f64) { "visible" } else if *wavelength > 780.0 { "infrared" } else { "ultraviolet" };
+                    ui.label(RichText::new(band).small().weak());
+                    ui.end_row();
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("laser_source")
+                        .selected_text(if *source == 0 { "Own (independent)".to_owned() } else { format!("Shared {}", source_letter(*source)) })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(source, 0, "Own (independent)");
+                            for s in 1..=8u8 {
+                                ui.selectable_value(source, s, format!("Shared {}", source_letter(s)));
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "Lasers on the same shared source are phase-locked, like light split from one laser, and interfere. \
+                             Independent lasers never interfere with each other: their powers add, as with real separate lasers.",
+                        );
+                    ui.end_row();
+                    ui.label("Colour");
+                    ui.horizontal(|ui| {
+                        let mut own = color.is_some();
+                        if ui.checkbox(&mut own, "Own colour").on_hover_text("Draw this laser's light in a colour you choose").changed() {
+                            *color = own.then_some(color.unwrap_or([220, 60, 60]));
+                        }
+                        if let Some(c) = color {
+                            ui.color_edit_button_srgb(c);
+                        }
+                    });
                     ui.end_row();
                 }
                 OpticComponentKind::BeamSplitter { reflectivity, transparency, .. } => {
@@ -847,7 +891,7 @@ impl OpticsPanel {
                 self.tick();
             }
             let run = if self.running { "Pause" } else { "Run" };
-            if ui.small_button(run).on_hover_text(format!("Tick every {}s", super::TICK_SECONDS)).clicked() {
+            if ui.small_button(run).on_hover_text(format!("Tick every {}s (Preferences)", self.prefs.tick_seconds)).clicked() {
                 self.running = !self.running;
             }
             if ui.small_button("Reset").on_hover_text("Clear every register").clicked() {
@@ -869,6 +913,34 @@ impl OpticsPanel {
         };
         let rounds = if o.iterations > 1 { format!(" · settled in {} rounds", o.iterations) } else { String::new() };
         ui.label(RichText::new(summary + &rounds).small().weak());
+
+        // Which colour is which light.
+        if !o.wavelengths.is_empty() {
+            let palette = Palette::new(&self.prefs, o.wavelengths.iter().copied());
+            let mut channels: Vec<(f64, Option<[u8; 3]>)> =
+                o.wavelengths.iter().copied().zip(o.channel_colors.iter().copied()).collect();
+            channels.sort_by(|a, b| a.0.total_cmp(&b.0));
+            channels.dedup();
+            ui.horizontal_wrapped(|ui| {
+                for (nm, chosen) in channels {
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 2.0, palette.color(nm, chosen));
+                    ui.label(RichText::new(format!("{nm:.0} nm")).small());
+                }
+            });
+        }
+        egui::CollapsingHeader::new(RichText::new("What this simulation assumes").small()).show(ui, |ui| {
+            for line in [
+                "Light is a classical wave: interference and resonance are exact, but there are no photons, noise or quantum effects.",
+                "Beams are thin rays on the grid: no diffraction, spreading or polarisation.",
+                "Only lasers on the same shared source interfere; independent lasers add power.",
+                "Waveguides have one effective index (2.4), no dispersion or loss.",
+                "Steady state only: no time, bandwidth or data rate.",
+                "Parts are ideal unless you add loss; powers are relative units.",
+            ] {
+                ui.label(RichText::new(format!("• {line}")).small().weak());
+            }
+        });
 
         let displays: Vec<(usize, String, u64)> = self
             .layout

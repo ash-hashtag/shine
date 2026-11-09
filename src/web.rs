@@ -79,8 +79,8 @@ pub async fn start(canvas_id: String, query: Option<String>) -> Result<(), JsVal
         .start(
             canvas,
             web_options(query.as_deref().unwrap_or_default()),
-            Box::new(move |_cc| {
-                let mut app = ShineApp::default();
+            Box::new(move |cc| {
+                let mut app = ShineApp::new(cc);
                 if let Some(query) = query.as_deref() {
                     app.workspace.apply_url_query(query);
                 }

@@ -23,7 +23,7 @@ fn main() -> eframe::Result {
     let result = eframe::run_native(
         "Shine",
         options,
-        Box::new(|_cc| Ok(Box::<ShineApp>::default())),
+        Box::new(|cc| Ok(Box::new(ShineApp::new(cc)))),
     );
     if let Err(e) = &result {
         tracing::error!("Shine exited with an error: {e}");

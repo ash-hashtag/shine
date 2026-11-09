@@ -72,6 +72,21 @@ a [component](components.md).
   zooms.
 - **Home** frames everything; **.** (period) frames the selection.
 
+## Preferences
+
+**Edit → Preferences…** sets how Shine looks and behaves, and is remembered between
+sessions (a settings file on desktop, the browser's storage on the web):
+
+| Setting | Options |
+|---|---|
+| Theme | System, light or dark |
+| Grid, port names | Show or hide the grid and the names on component boxes |
+| Light colours | Real colours where visible (infrared and ultraviolet in distinct false colours), a distinct colour per wavelength, or one colour; use lasers' own colours |
+| Channels | Draw each wavelength on a waveguide or beam as its own strand |
+| Beams, readings | Direction arrows; detector powers on the canvas |
+| New lasers | Their wavelength, typed or from presets |
+| Simulation | Live simulation for new documents; clock speed |
+
 ## Keyboard and mouse reference
 
 | Keys | Action |

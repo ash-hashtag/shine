@@ -12,6 +12,7 @@ use super::optics::input::{Action, SHORTCUTS};
 use super::optics::model::{self, BlockRef, Layout, OpticComponentKind, PlacedComponent, cell_center};
 use super::optics::{OpticsPanel, Placeable};
 use super::project::{Catalog, ComponentMeta, DocId, Project};
+use super::prefs::{LightColors, Preferences, Theme, WAVELENGTH_PRESETS};
 use super::{Request, ui_kit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +52,11 @@ pub struct Workspace {
     pub status: Option<(String, f64)>,
     /// Files read asynchronously (browser file picker), opened next frame.
     pub incoming: Inbox,
+    /// How things look and behave; saved between sessions by the app.
+    pub prefs: Preferences,
+    pub show_preferences: bool,
+    /// Theme last applied to the context.
+    applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
     time: f64,
 }
@@ -70,6 +76,9 @@ impl Default for Workspace {
             dialog: None,
             status: None,
             incoming: Default::default(),
+            prefs: Preferences::default(),
+            show_preferences: false,
+            applied_theme: None,
             ctx: None,
             time: 0.0,
         };
@@ -112,6 +121,7 @@ impl Workspace {
 
     pub fn new_layout(&mut self) -> DocId {
         let id = self.project.add_layout("Layout", Layout::default(), 10.0);
+        self.project.doc_mut(id).expect("just added").panel_mut().simulation_active = self.prefs.live_simulation;
         self.open_tab(id);
         id
     }
@@ -539,6 +549,7 @@ impl Workspace {
     pub fn ui(&mut self, ui: &mut Ui) {
         self.time = ui.input(|i| i.time);
         self.ctx = Some(ui.ctx().clone());
+        self.apply_theme(ui.ctx());
         self.receive_files();
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
@@ -596,9 +607,30 @@ impl Workspace {
     fn sync_catalog(&mut self) {
         let catalog = self.project.catalog();
         let id = self.active;
+        let prefs = self.prefs.clone();
         if let Some(p) = self.active_panel() {
             p.catalog = catalog;
             p.doc_id = id;
+            p.prefs = prefs;
+        }
+    }
+
+    /// Replace the preferences (e.g. with those saved last session).
+    pub fn set_preferences(&mut self, prefs: Preferences) {
+        self.prefs = prefs;
+        for doc in &mut self.project.documents {
+            doc.panel_mut().simulation_active = self.prefs.live_simulation;
+        }
+    }
+
+    fn apply_theme(&mut self, ctx: &egui::Context) {
+        if self.applied_theme != Some(self.prefs.theme) {
+            ctx.set_theme(match self.prefs.theme {
+                Theme::System => egui::ThemePreference::System,
+                Theme::Light => egui::ThemePreference::Light,
+                Theme::Dark => egui::ThemePreference::Dark,
+            });
+            self.applied_theme = Some(self.prefs.theme);
         }
     }
 
@@ -893,6 +925,10 @@ impl Workspace {
                     self.apply(action);
                 }
             }
+            ui.separator();
+            if ui.button("Preferences…").clicked() {
+                self.show_preferences = true;
+            }
         });
         ui.menu_button("View", |ui| {
             ui.checkbox(&mut self.show_library, "Library");
@@ -1082,6 +1118,93 @@ impl Workspace {
         }
 
         self.dialog_ui(ctx);
+        self.preferences_ui(ctx);
+    }
+
+    fn preferences_ui(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_preferences;
+        let mut reset = false;
+        egui::Window::new("Preferences")
+            .open(&mut open)
+            .resizable(false)
+            .default_width(380.0)
+            .show(ctx, |ui| {
+                let p = &mut self.prefs;
+                ui_kit::section(ui, "Appearance");
+                egui::Grid::new("prefs_appearance").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("Theme");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut p.theme, Theme::System, "System");
+                        ui.selectable_value(&mut p.theme, Theme::Light, "Light");
+                        ui.selectable_value(&mut p.theme, Theme::Dark, "Dark");
+                    });
+                    ui.end_row();
+                    ui.label("Grid");
+                    ui.checkbox(&mut p.show_grid, "Show the grid");
+                    ui.end_row();
+                    ui.label("Boxes");
+                    ui.checkbox(&mut p.show_port_names, "Show port names");
+                    ui.end_row();
+                });
+                ui_kit::section(ui, "Light");
+                egui::Grid::new("prefs_light").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("Colours");
+                    ui.vertical(|ui| {
+                        ui.radio_value(&mut p.light_colors, LightColors::Spectral, "Real colours where visible")
+                            .on_hover_text("380–780 nm in their real colour; infrared and ultraviolet each get a distinct false colour");
+                        ui.radio_value(&mut p.light_colors, LightColors::Distinct, "A distinct colour per wavelength");
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut p.light_colors, LightColors::Single, "One colour");
+                            ui.color_edit_button_srgb(&mut p.single_color);
+                        });
+                    });
+                    ui.end_row();
+                    ui.label("");
+                    ui.checkbox(&mut p.laser_colors, "Use a laser's own colour when it has one");
+                    ui.end_row();
+                    ui.label("Channels");
+                    ui.checkbox(&mut p.channel_strands, "Draw each wavelength as its own strand");
+                    ui.end_row();
+                    ui.label("Beams");
+                    ui.checkbox(&mut p.beam_arrows, "Direction arrows");
+                    ui.end_row();
+                    ui.label("Readings");
+                    ui.checkbox(&mut p.show_readings, "Show detector powers on the canvas");
+                    ui.end_row();
+                    ui.label("New lasers");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(&mut p.default_wavelength_nm).range(200.0..=2000.0).suffix(" nm"));
+                        egui::ComboBox::from_id_salt("prefs_wavelength")
+                            .selected_text("Presets")
+                            .show_ui(ui, |ui| {
+                                for &(nm, what) in WAVELENGTH_PRESETS {
+                                    ui.selectable_value(&mut p.default_wavelength_nm, nm, format!("{nm:.0} nm  {what}"));
+                                }
+                            });
+                    });
+                    ui.end_row();
+                });
+                ui_kit::section(ui, "Simulation");
+                egui::Grid::new("prefs_sim").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("New documents");
+                    ui.checkbox(&mut p.live_simulation, "Simulate live");
+                    ui.end_row();
+                    ui.label("Clock");
+                    ui.add(egui::Slider::new(&mut p.tick_seconds, 0.05..=2.0).suffix(" s per tick").logarithmic(true));
+                    ui.end_row();
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Reset to defaults").clicked() {
+                        reset = true;
+                    }
+                    ui.label(egui::RichText::new("Saved automatically").small().weak());
+                });
+            });
+        if reset {
+            self.prefs = Preferences::default();
+        }
+        self.show_preferences = open;
     }
 
     fn dialog_ui(&mut self, ctx: &egui::Context) {

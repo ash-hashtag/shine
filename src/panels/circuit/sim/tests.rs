@@ -396,3 +396,39 @@ fn wdm_link_carries_every_value_on_separate_wavelengths() {
     let o = run_with(&l, &p, &Machine::default(), Some(id));
     assert_eq!(shown(&o, &l, display, 4), 0b0111, "the first channel is no longer dropped");
 }
+
+#[test]
+fn only_lasers_on_a_shared_source_interfere() {
+    // The coherent XOR gate with both inputs on: shared source → the light
+    // cancels on one detector; independent lasers → the powers just add.
+    let shared = examples::xor_gate(true, true);
+    let mut independent = shared.clone();
+    for c in &mut independent.components {
+        if let OpticComponentKind::Laser { source, .. } = &mut c.kind {
+            *source = 0;
+        }
+    }
+    let readings = |l: &Layout| {
+        let o = run(l);
+        let detectors: Vec<f64> = (0..l.components.len()).filter_map(|i| o.reading(i)).collect();
+        (detectors, o.wavelengths.len())
+    };
+    let (coherent, channels) = readings(&shared);
+    assert_eq!(channels, 1, "one source, one solve");
+    assert!(coherent.iter().any(|&p| p < 1e-9), "interference cancels a port: {coherent:?}");
+    let (incoherent, channels) = readings(&independent);
+    assert_eq!(channels, 2, "two independent sources");
+    assert!(incoherent.iter().all(|&p| (p - 1.0).abs() < 1e-9), "each port gets half of each: {incoherent:?}");
+    assert!((coherent.iter().sum::<f64>() - incoherent.iter().sum::<f64>()).abs() < 1e-9, "same total power");
+}
+
+#[test]
+fn laser_colours_reach_the_beams() {
+    let mut l = Layout::with_components(vec![part(0, 0, laser(1.0, 0.0)), part(4, 0, DETECTOR)]);
+    if let OpticComponentKind::Laser { color, .. } = &mut l.components[0].kind {
+        *color = Some([10, 200, 30]);
+    }
+    let o = run(&l);
+    assert_eq!(o.channel_colors, vec![Some([10, 200, 30])]);
+    assert!(o.beams.iter().all(|b| b.color == Some([10, 200, 30])));
+}

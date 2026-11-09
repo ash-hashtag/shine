@@ -623,3 +623,42 @@ fn a_components_pins_toggle_to_try_it_on_its_own() {
     assert_eq!(panel(&mut ws, fa).machine.inputs, vec![1.0, 1.0, 1.0]);
     assert!(!panel(&mut ws, fa).toggle_pin(9999));
 }
+
+#[test]
+fn preferences_reach_the_editor_and_render() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = ws.active.unwrap();
+    ws.show_preferences = true;
+    h.frame(&mut ws, Vec::new());
+    ws.prefs.show_grid = false;
+    ws.prefs.default_wavelength_nm = 1310.0;
+    ws.prefs.theme = crate::panels::prefs::Theme::Dark;
+    h.frame(&mut ws, Vec::new());
+    assert!(!panel(&mut ws, id).prefs.show_grid, "the editor follows the preferences");
+    assert_eq!(h.ctx.options(|o| o.theme_preference), egui::ThemePreference::Dark, "theme applied");
+
+    // New lasers take the preferred wavelength.
+    let laser = OpticComponentKind::palette()[0];
+    panel(&mut ws, id).place(Placeable::Part(laser), model::cell_center(1, 1));
+    assert!(matches!(panel(&mut ws, id).layout.components[0].kind, OpticComponentKind::Laser { wavelength: 1310.0, .. }));
+
+    // The laser inspector with a shared source and its own colour.
+    if let OpticComponentKind::Laser { source, color, .. } = &mut panel(&mut ws, id).layout.components[0].kind {
+        *source = 2;
+        *color = Some([1, 2, 3]);
+    }
+    panel(&mut ws, id).editor.selection.select_only(0);
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    let o = panel(&mut ws, id).sim.as_ref().unwrap().outcome.clone();
+    assert_eq!(o.channel_colors, vec![Some([1, 2, 3])]);
+
+    // Loading saved preferences applies them; "live simulation" covers documents.
+    ws.set_preferences(Preferences { live_simulation: false, ..Preferences::default() });
+    assert!(!panel(&mut ws, id).simulation_active);
+    let new = ws.new_layout();
+    assert!(!panel(&mut ws, new).simulation_active);
+    ws.show_preferences = false;
+    h.frame(&mut ws, Vec::new());
+}

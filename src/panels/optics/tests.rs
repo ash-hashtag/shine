@@ -1007,7 +1007,7 @@ fn registers_tick_in_a_standalone_panel() {
     for _ in 0..25 {
         h.frame(&mut panel, Vec::new());
     }
-    assert!(panel.machine.tick >= 2, "running ticks every {TICK_SECONDS}s");
+    assert!(panel.machine.tick >= 2, "running ticks every 0.5 s");
     panel.reset_clock();
     assert_eq!(panel.machine.tick, 0);
     assert!(!panel.running);

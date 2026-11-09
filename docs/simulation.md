@@ -18,9 +18,11 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
 - **Phase from distance**: a beam crossing one cell picks up the phase of one cell size
   (Inspector → Simulation → Cell size). Waveguides use their drawn length with an
   effective index of 2.4.
-- **Several wavelengths** are solved separately and their powers added: different
-  lasers' colours don't interfere with each other. Lasers on the same wavelength are
-  treated as mutually coherent.
+- **Coherence.** Only lasers on the same *shared source* (A–H) interfere, like light split
+  from one laser. Independent lasers (the default) and different wavelengths are solved
+  separately and their powers added, as with real separate lasers. All independent
+  sources at one wavelength are solved together in one SIMD pass, so this stays fast.
+  Built-in laser blocks and function-cell light share one source.
 
 Fields are normalised so |E|² is power: a laser of amplitude 1 delivers power 1.
 
@@ -37,6 +39,14 @@ as an error instead of guessed.
 A component box is simulated from its layout every time, nested as deep as you like;
 there's no cached approximation. A beam enters a box only on the row of a light input,
 travelling right; unconnected light outputs leave the box as beams to the right.
+
+## Colours
+
+Colours are only a display choice (Edit → Preferences): visible wavelengths can show their
+real colour, infrared and ultraviolet get distinct false colours, or every wavelength gets
+its own colour, or all light one colour; any laser can have its own colour. A waveguide
+carrying several wavelengths is drawn as one strand per channel, and the inspector lists
+which colour is which wavelength.
 
 ## What is simplified
 

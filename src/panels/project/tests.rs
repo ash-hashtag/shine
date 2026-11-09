@@ -150,3 +150,37 @@ fn version_1_files_are_upgraded() {
     // Saving writes the current version.
     assert_eq!(file_format::version(&p.to_bytes()), Ok(file_format::VERSION));
 }
+
+#[test]
+fn version_2_lasers_keep_interfering() {
+    let old = v2::Project {
+        next_id: 2,
+        documents: vec![v2::Document {
+            id: DocId(1),
+            name: "Two lasers".into(),
+            component: None,
+            cell_um: 10.0,
+            layout: v2::Layout2 {
+                components: vec![
+                    v2::Part { kind: v2::Kind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0) }, pos: cell_center(0, 0) },
+                    v2::Part { kind: v2::Kind::Detector { threshold: 0.5 }, pos: cell_center(3, 0) },
+                    v2::Part { kind: v2::Kind::SignalOut, pos: cell_center(3, 2) },
+                ],
+                lines: Vec::new(),
+                instances: Vec::new(),
+                wires: Vec::new(),
+                signals: Vec::new(),
+                next_instance: 0,
+                labels: vec![(2, "q".into())],
+            },
+        }],
+    };
+    let mut bytes = file_format::encode(&old);
+    bytes[4..6].copy_from_slice(&2u16.to_le_bytes());
+    let p = Project::from_bytes(&bytes).unwrap();
+    let l = p.doc(DocId(1)).unwrap().layout();
+    assert!(matches!(l.components[0].kind, OpticComponentKind::Laser { source: 1, color: None, .. }), "on shared source A");
+    assert_eq!(l.components[1].kind, OpticComponentKind::Detector { threshold: 0.5 });
+    assert_eq!(l.label(2), Some("q"));
+    assert_eq!(file_format::version(&p.to_bytes()), Ok(3));
+}

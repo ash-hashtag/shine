@@ -24,7 +24,22 @@ mod app {
         pub workspace: Workspace,
     }
 
+    impl ShineApp {
+        /// The app with the preferences saved by an earlier session.
+        pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+            let mut app = Self::default();
+            if let Some(prefs) = cc.storage.and_then(|s| eframe::get_value(s, crate::panels::prefs::STORAGE_KEY)) {
+                app.workspace.set_preferences(prefs);
+            }
+            app
+        }
+    }
+
     impl eframe::App for ShineApp {
+        fn save(&mut self, storage: &mut dyn eframe::Storage) {
+            eframe::set_value(storage, crate::panels::prefs::STORAGE_KEY, &self.workspace.prefs);
+        }
+
         fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)

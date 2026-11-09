@@ -16,7 +16,7 @@ right edge = out); **signal terminals** are square (top edge = in, bottom edge =
 
 | Part | What it does | Signal terminals |
 |---|---|---|
-| **Laser** | Coherent source with amplitude, phase and wavelength. Points right; R rotates it in 90° steps. | in: *amplitude*, multiplies the amplitude (0 switches it off, 1 leaves it on) |
+| **Laser** | Source with amplitude, phase, wavelength (with presets from violet to the telecom C band), a *source* and an optional colour. Points right; R rotates it in 90° steps. *Own* source (the default): its light never interferes with other lasers, as with real separate lasers. *Shared A–H*: lasers on the same letter are phase-locked, like light split from one laser, and interfere; the letter shows next to the laser. | in: *amplitude*, multiplies the amplitude (0 switches it off, 1 leaves it on) |
 | **Detector** | Photodiode: absorbs light from any direction and reads its power. | out: *power* |
 | **Threshold detector** | A detector whose *bit* option is on: outputs 1 when the power reaches the threshold, else 0. Any detector can be switched between the two in the inspector. | out: *power* (as 0/1) |
 
@@ -26,9 +26,11 @@ right edge = out); **signal terminals** are square (top edge = in, bottom edge =
 |---|---|---|
 | **Beam Splitter** | Partially reflecting mirror; reflectivity sets the split. Rotates in 45° steps. | — |
 | **Mirror** | Reflects light; the dark side absorbs. Rotates in 45° steps. | — |
-| **Lens** | Thin lens. In this grid model it passes light straight through. | — |
 | **Phase Shifter** | Adds a phase to light passing through. | in: *phase*, adds π per unit (1 flips an interferometer) |
 | **Attenuator** | Passes a fraction of the power (transmission 0–1). | in: *transmission*, multiplies it |
+
+Older projects can contain a *Lens*; it is no longer in the library because a ray-on-grid
+model can't focus, so it only passes light through.
 
 ## Electronics & I/O
 

@@ -56,7 +56,7 @@ box, and a waveguide joins it to the second.
 | Mach–Zehnder interferometer | A beam split into two arms and recombined; the phase shifter steers all the light between two detectors. The basic switch and modulator of photonic chips. |
 | Michelson interferometer | Both arms fold back on mirrors, so light crosses the phase shifter twice: π/2 already darkens the detector. Used for precise length measurement. |
 | Fabry–Pérot cavity | Two 90% mirrors form a resonator that transmits everything on resonance; nudge the wavelength or cell size to fall off it. |
-| Coherent XOR gate | Two lasers carry bits in their phase (0 or π); after a π/2 bias and a splitter, one detector reads a XOR b and the other XNOR. |
+| Coherent XOR gate | Two lasers on shared source A carry bits in their phase (0 or π); after a π/2 bias and a splitter, one detector reads a XOR b and the other XNOR. Put one laser on its own source and the interference disappears. |
 | 1→4 fan-out tree | Three 50:50 splitters share one laser equally over four detectors. |
 
 ![The free-space Mach–Zehnder](img/free-space.webp)

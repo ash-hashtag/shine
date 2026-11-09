@@ -63,14 +63,20 @@ pub fn component_color(kind: &OpticComponentKind) -> Color32 {
 }
 
 /// Draw a component centred at `pos` (screen space), `scale` = view zoom.
-pub fn draw_component(
+pub fn draw_component(painter: &Painter, pos: Pos2, kind: &OpticComponentKind, alpha: f32, scale: f32) {
+    draw_component_tinted(painter, pos, kind, alpha, scale, None);
+}
+
+/// [`draw_component`] in a given colour (a laser in its light's colour).
+pub fn draw_component_tinted(
     painter: &Painter,
     pos: Pos2,
     kind: &OpticComponentKind,
     alpha: f32,
     scale: f32,
+    tint: Option<Color32>,
 ) {
-    let color = component_color(kind).gamma_multiply(alpha);
+    let color = tint.unwrap_or_else(|| component_color(kind)).gamma_multiply(alpha);
     let white = Color32::WHITE.gamma_multiply(alpha);
     let s = 15.0 * scale;
     let show_text = scale >= 0.5;
@@ -292,40 +298,54 @@ pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 }
 
 /// Draw beams; returns labels of beams under `hover` (screen space).
+/// Several channels on one segment are drawn side by side when `strands`.
 pub fn draw_beams(
     painter: &Painter,
     canvas: Rect,
     view: &View,
     beams: &[Beam],
     hover: Option<Pos2>,
+    palette: &crate::panels::prefs::Palette,
+    strands: bool,
+    arrows: bool,
 ) -> Vec<String> {
+    let key = |b: &Beam| {
+        let r = |v: f32| (v * 4.0).round() as i32;
+        (r(b.start.x), r(b.start.y), r(b.end.x), r(b.end.y))
+    };
+    let mut per_segment: std::collections::HashMap<(i32, i32, i32, i32), (usize, usize)> = std::collections::HashMap::new();
+    for b in beams {
+        per_segment.entry(key(b)).or_default().1 += 1;
+    }
     let mut hovered = Vec::new();
     for beam in beams {
-        let color = wavelength_color(beam.wavelength_nm)
+        let color = palette
+            .color(beam.wavelength_nm, beam.color)
             .gamma_multiply((beam.field.norm() as f32).clamp(0.15, 1.0));
-        let start = view.to_screen(canvas, beam.start);
-        let end = view.to_screen(canvas, beam.end);
+        let side = Vec2::new(-beam.dir.y, beam.dir.x);
+        let slot = per_segment.get_mut(&key(beam)).expect("counted");
+        let offset = if strands && slot.1 > 1 { (slot.0 as f32 - (slot.1 - 1) as f32 / 2.0) * 2.5 } else { 0.0 };
+        slot.0 += 1;
+        let start = view.to_screen(canvas, beam.start) + side * offset;
+        let end = view.to_screen(canvas, beam.end) + side * offset;
         painter.line_segment([start, end], Stroke::new(2.0, color));
 
         if hover.is_some_and(|m| distance_to_segment(m, start, end) < 5.0) {
             hovered.push(beam_label(beam));
         }
-
+        if !arrows {
+            continue;
+        }
         // Direction arrows roughly every 40 screen points.
         let length = start.distance(end);
         let count = ((length / 40.0).floor() as usize).clamp(1, 200);
         let size = 6.0;
         for i in 1..=count {
-            let t = if count == 1 {
-                0.5
-            } else {
-                i as f32 / (count + 1) as f32
-            };
+            let t = if count == 1 { 0.5 } else { i as f32 / (count + 1) as f32 };
             let at = start + beam.dir * (length * t);
             if !canvas.contains(at) {
                 continue;
             }
-            let side = Vec2::new(-beam.dir.y, beam.dir.x);
             painter.add(Shape::convex_polygon(
                 vec![
                     at + beam.dir * size,
@@ -407,6 +427,7 @@ mod tests {
             field: C64::ONE,
             color: None,
         }];
+        let palette = crate::panels::prefs::Palette::new(&Default::default(), [532.0, 1550.0]);
         ctx.run_ui(Default::default(), |ui| {
             let painter = ui.painter_at(canvas);
             assert_eq!(
@@ -415,7 +436,10 @@ mod tests {
                     canvas,
                     &view,
                     &beams,
-                    Some(Pos2::new(50.0, 102.0))
+                    Some(Pos2::new(50.0, 102.0)),
+                    &palette,
+                    true,
+                    true
                 )
                 .len(),
                 1
@@ -426,11 +450,18 @@ mod tests {
                     canvas,
                     &view,
                     &beams,
-                    Some(Pos2::new(50.0, 150.0))
+                    Some(Pos2::new(50.0, 150.0)),
+                    &palette,
+                    true,
+                    true
                 )
                 .is_empty()
             );
-            assert!(draw_beams(&painter, canvas, &view, &beams, None).is_empty());
+            assert!(draw_beams(&painter, canvas, &view, &beams, None, &palette, false, false).is_empty());
+            // Two channels on one segment are drawn side by side.
+            let mut two = beams.to_vec();
+            two.push(Beam { wavelength_nm: 1550.0, ..beams[0].clone() });
+            assert_eq!(draw_beams(&painter, canvas, &view, &two, Some(Pos2::new(50.0, 101.0)), &palette, true, true).len(), 2);
             draw_grid(&painter, canvas, &view, &CanvasTheme::light());
             draw_grid(
                 &painter,

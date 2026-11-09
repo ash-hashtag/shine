@@ -6,10 +6,11 @@ use egui::{Align2, Color32, CursorIcon, FontId, Pos2, Rect, Sense, Shape, Stroke
 
 use super::library::{badge_fill, block_tooltip, fmt_value, part_description};
 use super::model::{
-    self, BlockRef, Builtin, GRID, Instance, Item, Line, PortRef, Terminal, box_geometry,
+    self, BlockRef, Builtin, GRID, Instance, Item, Line, OpticComponentKind, PortRef, Terminal, box_geometry,
     part_signal_in, part_signal_out,
 };
-use super::render::{self, signal_color, wavelength_color};
+use super::render::{self, signal_color};
+use crate::panels::prefs::Palette;
 use super::{Drag, OpticsPanel, Placeable, Request, Tool, WireRef, input_number, output_number};
 use crate::panels::circuit::sim::Outcome;
 use crate::panels::project::BlockDisplay;
@@ -312,7 +313,9 @@ impl OpticsPanel {
         let zoom = self.view.zoom;
         let to_screen = |p: Pos2| self.view.to_screen(rect, p);
         painter.rect_filled(rect, 0.0, theme.background);
-        render::draw_grid(&painter, rect, &self.view, theme);
+        if self.prefs.show_grid {
+            render::draw_grid(&painter, rect, &self.view, theme);
+        }
 
         if self.layout.components.is_empty() && self.layout.instances.is_empty() && self.layout.lines.is_empty() && self.dragging_new.is_none() {
             ui_kit::empty_hint(
@@ -372,7 +375,7 @@ impl OpticsPanel {
                 continue;
             }
             let d = self.catalog.display(&inst.block);
-            draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, hovered == Hit::Box(b));
+            draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, hovered == Hit::Box(b), self.prefs.show_port_names);
             if self.editor.boxes.contains(b) {
                 let active = self.editor.boxes.active() == Some(b);
                 painter.rect_stroke(
@@ -384,32 +387,69 @@ impl OpticsPanel {
             }
         }
 
-        // Waveguides.
+        // Colours for this frame's light: every wavelength simulated or emitted.
+        let laser_wavelengths = self.layout.components.iter().filter_map(|c| match c.kind {
+            OpticComponentKind::Laser { wavelength, .. } => Some(wavelength as f64),
+            _ => None,
+        });
+        let palette = Palette::new(
+            &self.prefs,
+            outcome.iter().flat_map(|o| o.wavelengths.iter().copied()).chain(laser_wavelengths),
+        );
+
+        // Waveguides, one coloured strand per lit channel.
         for w in 0..self.layout.wires.len() {
             let Some(path) = self.waveguide_points(w) else { continue };
             let base = theme.major_line.gamma_multiply(1.6);
-            let color = outcome
+            let mut lit: Vec<(f64, Color32)> = outcome
                 .as_ref()
-                .and_then(|o| {
-                    let fields = o.wire_fields.get(w)?;
-                    let (field, &wl) = fields.iter().zip(&o.wavelengths).max_by(|a, b| a.0.norm_sqr().total_cmp(&b.0.norm_sqr()))?;
-                    (field.norm_sqr() > 1e-9).then(|| wavelength_color(wl).gamma_multiply((field.norm() as f32).clamp(0.35, 1.0)))
+                .and_then(|o| o.wire_fields.get(w).map(|fields| (o, fields)))
+                .map(|(o, fields)| {
+                    fields
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, f)| f.norm_sqr() > 1e-9)
+                        .map(|(k, f)| {
+                            let color = palette.color(o.wavelengths[k], o.channel_colors.get(k).copied().flatten());
+                            (f.norm_sqr(), color.gamma_multiply((f.norm() as f32).clamp(0.35, 1.0)))
+                        })
+                        .collect()
                 })
-                .unwrap_or(base);
+                .unwrap_or_default();
+            lit.sort_by(|a, b| b.0.total_cmp(&a.0));
             let selected = self.selected_wire == Some(WireRef::Waveguide(w));
-            let width = if selected || hovered == Hit::Waveguide(w) { 4.5 } else { 3.0 };
+            let width = (if selected || hovered == Hit::Waveguide(w) { 4.5 } else { 3.0 }) * zoom.clamp(0.5, 1.5);
             let points: Vec<Pos2> = path.into_iter().map(to_screen).collect();
             if selected {
                 painter.add(Shape::line(points.clone(), Stroke::new(width + 3.0, theme.active.gamma_multiply(0.5))));
             }
-            painter.add(Shape::line(points, Stroke::new(width * zoom.clamp(0.5, 1.5), color)));
+            if self.prefs.channel_strands && lit.len() > 1 {
+                let strand = (width * 0.8).max(1.5);
+                let n = lit.len() as f32;
+                for (k, (_, color)) in lit.iter().enumerate() {
+                    let shift = (k as f32 - (n - 1.0) / 2.0) * strand;
+                    painter.add(Shape::line(offset_path(&points, shift), Stroke::new(strand, *color)));
+                }
+            } else {
+                let color = lit.first().map_or(base, |l| l.1);
+                painter.add(Shape::line(points, Stroke::new(width, color)));
+            }
         }
 
         // Beams and readings.
         let mut beam_labels = Vec::new();
         if let Some(o) = &outcome {
-            beam_labels = render::draw_beams(&painter, rect, &self.view, &o.beams, pointer);
-            for &(i, power) in &o.detector_power {
+            beam_labels = render::draw_beams(
+                &painter,
+                rect,
+                &self.view,
+                &o.beams,
+                pointer,
+                &palette,
+                self.prefs.channel_strands,
+                self.prefs.beam_arrows,
+            );
+            for &(i, power) in o.detector_power.iter().filter(|_| self.prefs.show_readings) {
                 let Some(c) = self.layout.components.get(i) else { continue };
                 painter.text(
                     to_screen(c.pos) + Vec2::new(14.0, 10.0) * zoom,
@@ -427,7 +467,23 @@ impl OpticsPanel {
             if !rect.expand(GRID * zoom).contains(at) {
                 continue;
             }
-            render::draw_component(&painter, at, &c.kind, 1.0, zoom);
+            let tint = match c.kind {
+                OpticComponentKind::Laser { wavelength, color, .. } => Some(palette.color(wavelength as f64, color)),
+                _ => None,
+            };
+            render::draw_component_tinted(&painter, at, &c.kind, 1.0, zoom, tint);
+            if let OpticComponentKind::Laser { source: source @ 1.., .. } = c.kind
+                && zoom >= 0.6
+            {
+                // Lasers on a shared source show its letter.
+                painter.text(
+                    at + Vec2::new(-14.0, -12.0) * zoom,
+                    Align2::CENTER_CENTER,
+                    source_letter(source),
+                    FontId::proportional((10.0 * zoom).clamp(8.0, 14.0)),
+                    theme.text,
+                );
+            }
             if let Some(v) = self.pin_value(i) {
                 // Pins light up like a number input's bits.
                 let lamp = at + Vec2::new(14.0, -12.0) * zoom;
@@ -798,6 +854,7 @@ fn draw_box(
     theme: &CanvasTheme,
     zoom: f32,
     hovered: bool,
+    port_names: bool,
 ) {
     let dark = theme.background.r() < 100;
     let body = if dark { Color32::from_rgb(50, 53, 60) } else { Color32::from_rgb(232, 235, 241) };
@@ -867,7 +924,7 @@ fn draw_box(
         }
     }
     // Port names, when there is room.
-    if zoom < 0.9 || super::shows_number(&inst.block) {
+    if !port_names || zoom < 0.9 || super::shows_number(&inst.block) {
         return;
     }
     let g = box_geometry(inst.cell, d.counts());
@@ -883,4 +940,21 @@ fn draw_box(
             painter.text(to_screen(at) + offset, align, name, small.clone(), theme.weak_text);
         }
     }
+}
+
+/// Letter of a shared light source (1 → A).
+pub fn source_letter(source: u8) -> String {
+    char::from(b'A' + source.saturating_sub(1).min(25)).to_string()
+}
+
+/// A polyline shifted sideways by `shift` screen points.
+fn offset_path(points: &[Pos2], shift: f32) -> Vec<Pos2> {
+    (0..points.len())
+        .map(|i| {
+            let a = points[i.saturating_sub(1)];
+            let b = points[(i + 1).min(points.len() - 1)];
+            let d = (b - a).normalized();
+            points[i] + Vec2::new(-d.y, d.x) * shift
+        })
+        .collect()
 }
