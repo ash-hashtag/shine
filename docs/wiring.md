@@ -25,6 +25,12 @@ A beam also connects to boxes: a beam that reaches the left edge of a box on the
 light input enters that input, and light leaving an unconnected output of a box goes out
 of its right edge as a beam. Light hitting a box anywhere else is absorbed.
 
+To feed a box from a free-space laser, drag the laser's pin (or the laser itself) onto the
+box's light input: Shine turns the laser to face the input and, unless it already has a
+clear line along that row, moves it into the cell just left of the input. The **Laser**
+waveguide block (under *Waveguide blocks*) is the alternative: it has a light output you
+wire with a waveguide like any box.
+
 ## Waveguides
 
 Drag from a box's light output (round, right edge) to another box's light input (round,

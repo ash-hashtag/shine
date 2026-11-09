@@ -567,16 +567,24 @@ impl OpticsPanel {
                     _ => (waveguide_path(world, start), theme.active, 3.0),
                 };
                 // Over a port of the other kind: warn and say what fixes it.
-                let hint = super::bridge::mismatch_hint(from, hovered);
+                // A laser's pin onto a light input aims the laser instead.
+                let aim = self.laser_to_input(from, hovered).is_some();
+                let hint = if aim { None } else { super::bridge::mismatch_hint(from, hovered) };
                 let color = if hint.is_some() { ui.visuals().warn_fg_color } else { color };
                 painter.add(Shape::line(path.into_iter().map(to_screen).collect(), Stroke::new(width, color.gamma_multiply(0.7))));
-                if let (Some(hint), Some(screen)) = (hint, pointer) {
-                    let more = if super::bridge::needed(from, hovered).is_some() { " — drop to add one" } else { "" };
-                    let text = format!("⚠ {hint}{more}");
-                    let galley = painter.layout_no_wrap(text, FontId::proportional(12.5), ui.visuals().warn_fg_color);
+                let tip = match hint {
+                    Some(hint) => {
+                        let more = if super::bridge::needed(from, hovered).is_some() { " — drop to add one" } else { "" };
+                        Some((format!("⚠ {hint}{more}"), ui.visuals().warn_fg_color))
+                    }
+                    None if aim => Some(("Drop to aim this laser's beam into the input".to_owned(), theme.active)),
+                    None => None,
+                };
+                if let (Some((text, tip_color)), Some(screen)) = (tip, pointer) {
+                    let galley = painter.layout_no_wrap(text, FontId::proportional(12.5), tip_color);
                     let at = screen + Vec2::new(14.0, 14.0);
                     painter.rect_filled(Rect::from_min_size(at, galley.size()).expand(5.0), 4.0, theme.background);
-                    painter.galley(at, galley, ui.visuals().warn_fg_color);
+                    painter.galley(at, galley, tip_color);
                 }
             }
         }
@@ -631,6 +639,13 @@ impl OpticsPanel {
 
     /// Finish drawing a wire from `from` by dropping it on `to`.
     fn connect(&mut self, from: Hit, to: Hit) {
+        if let Some((laser, light)) = self.laser_to_input(from, to) {
+            match self.aim_laser(laser, light) {
+                Ok(()) => self.notify("Laser aimed at the input: its beam goes in there"),
+                Err(e) => self.notify(format!("Can't aim the laser: {e}")),
+            }
+            return;
+        }
         if let Some(bridge) = super::bridge::needed(from, to) {
             self.offer_bridge(bridge);
             return;

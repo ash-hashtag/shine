@@ -1293,3 +1293,45 @@ fn inspector_shows_real_units() {
     let text = panel.hover_text(Hit::Part(detector)).unwrap();
     assert!(text.contains("dBm") && text.contains("W"), "{text}");
 }
+
+#[test]
+fn dragging_a_laser_to_a_light_input_aims_it() {
+    // A free-space laser's light is a beam: dragging its pin onto a box's
+    // light input turns it and moves it next to the input, rather than
+    // offering a converter.
+    let mut panel = OpticsPanel::default();
+    let mzi = add_box(&mut panel, Builtin::Mzi { theta: 0.0, phi: 0.0 }, (6, 3));
+    panel.layout.components.push(model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(0.0, -1.0), source: 0, color: None },
+        pos: cell_center(0, 8),
+    });
+    let mut h = Harness::new(&mut panel);
+    let pin = scr(&panel, panel.terminal_pos(Terminal { item: Item::Part(0), port: 0 }, false).unwrap());
+    let input = PortRef { instance: mzi, port: 0 };
+    let into = scr(&panel, panel.light_port_pos(input, false).unwrap());
+    assert!(bridge::mismatch_hint(panel.hit(panel.view.to_world(panel.canvas_rect().unwrap(), pin)), Hit::LightIn(input)).is_some());
+    h.drag(pin, into, &mut panel, PointerButton::Primary);
+    assert!(panel.bridge.is_none(), "no converter offered");
+    assert!(panel.layout.wires.is_empty() && panel.layout.signals.is_empty());
+    let laser = panel.layout.components[0];
+    assert_eq!(cell_of(laser.pos), (5, 3));
+    assert!(matches!(laser.kind, OpticComponentKind::Laser { dir, .. } if dir == Vec2::new(1.0, 0.0)));
+    // The light now goes through the MZI.
+    h.frame(&mut panel, Vec::new());
+    let o = panel.outcome().expect("simulated");
+    let total: f64 = (0..2).map(|k| o.port_power.get(&(mzi, k)).copied().unwrap_or(0.0)).sum();
+    assert!((total - 1.0).abs() < 1e-9, "{total}");
+
+    // With a clear line along the input's row, it only turns.
+    panel.layout.components[0].pos = cell_center(1, 4);
+    panel.aim_laser(0, PortRef { instance: mzi, port: 1 }).unwrap();
+    assert_eq!(cell_of(panel.layout.components[0].pos), (1, 4));
+    // With no room next to the input, it says so and leaves things alone.
+    panel.layout.components.push(model::PlacedComponent { kind: model::DETECTOR, pos: cell_center(5, 3) });
+    panel.layout.components[0].pos = cell_center(0, 8);
+    assert!(panel.aim_laser(0, input).unwrap_err().contains("no room"));
+    assert_eq!(cell_of(panel.layout.components[0].pos), (0, 8));
+    // Dropping onto the laser's body from the input works too.
+    assert_eq!(panel.laser_to_input(Hit::LightIn(input), Hit::Part(0)), Some((0, input)));
+    assert_eq!(panel.laser_to_input(Hit::LightIn(input), Hit::Part(1)), None, "not a laser");
+}

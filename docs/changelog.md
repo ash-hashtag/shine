@@ -24,6 +24,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - Sweep plots in mW, dBm, or dB relative to the input power, with readouts for every
   curve: peak, minimum, insertion loss and extinction ratio.
 
+### Fixed
+
+- Dragging a free-space laser's pin onto a box's light input (an MZI, say) warned about
+  connecting a signal to light and offered to insert another laser. It now aims the laser
+  at that input: the laser turns to face it and moves next to it if needed.
+
 ## 0.1.0 (2026-11-09)
 
 The first release.

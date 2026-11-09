@@ -144,6 +144,43 @@ impl OpticsPanel {
         Ok(())
     }
 
+    /// A wire dragged between a free-space laser (its signal pin or body) and
+    /// a box's light input: the laser's light is a beam, so this means "aim
+    /// it there".
+    pub fn laser_to_input(&self, from: Hit, to: Hit) -> Option<(usize, PortRef)> {
+        let ((Hit::SignalIn(Terminal { item: Item::Part(i), .. }) | Hit::Part(i), Hit::LightIn(light))
+        | (Hit::LightIn(light), Hit::SignalIn(Terminal { item: Item::Part(i), .. }) | Hit::Part(i))) = (from, to)
+        else {
+            return None;
+        };
+        matches!(self.layout.components.get(i)?.kind, OpticComponentKind::Laser { .. }).then_some((i, light))
+    }
+
+    /// Point a laser's beam into a box's light input: it turns to face right
+    /// and, unless it already has a clear line to the input, moves next to it.
+    pub fn aim_laser(&mut self, laser: usize, light: PortRef) -> Result<(), String> {
+        let catalog = &self.catalog;
+        let counts = |b: &BlockRef| catalog.counts(b);
+        let inst = self.layout.instance(light.instance).ok_or("that box no longer exists")?;
+        let (x0, row) = (inst.cell.0, inst.cell.1 + light.port as i32);
+        let (lx, ly) = super::model::cell_of(self.layout.components[laser].pos);
+        let clear_line = ly == row && lx < x0 && (lx + 1..x0).all(|x| !self.layout.occupied((x, row), &counts));
+        let at = if clear_line { (lx, ly) } else { (x0 - 1, row) };
+        if !clear_line && self.layout.occupied(at, &counts) {
+            return Err(format!("no room left of the input (cell {}, {}); clear it, or move the laser into that row", at.0, at.1));
+        }
+        let OpticComponentKind::Laser { dir, .. } = &mut self.layout.components[laser].kind else {
+            return Err("that part isn't a laser".into());
+        };
+        *dir = Vec2::new(1.0, 0.0);
+        self.layout.components[laser].pos = cell_center(at.0, at.1);
+        // A waveguide into this port would take priority over the beam.
+        self.layout.wires.retain(|w| w.to != light);
+        self.editor.clear_selection();
+        self.editor.selection.select_only(laser);
+        Ok(())
+    }
+
     /// Accept (insert the converter) or dismiss the open offer.
     pub fn apply_bridge_choice(&mut self, accept: bool) {
         let Some(offer) = self.bridge.take() else { return };
