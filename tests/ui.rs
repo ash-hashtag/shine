@@ -66,7 +66,7 @@ fn every_menu_opens_and_lists_its_actions() {
     let menus: [(&str, &[&str]); 6] = [
         ("File", &["New layout", "New component", "Open…", "Save", "Save as…", "Examples…"]),
         ("Edit", &["Undo", "Redo", "Duplicate", "Delete", "Preferences…"]),
-        ("View", &["Library", "Inspector", "Live simulation", "Frame all", "Frame selected", "Keyboard & mouse"]),
+        ("View", &["Library", "Inspector", "Live simulation", "Frame all", "Frame selected", "Performance graph", "Keyboard & mouse"]),
         ("Analysis", &["Sweep…"]),
         ("Component", &["Rename…", "Stop sharing as component"]),
         ("Help", &["Keyboard & mouse", "Examples"]),
@@ -413,4 +413,24 @@ fn a_components_exported_phase_is_set_on_its_box() {
     h.get_by_label("↺").click();
     h.run_steps(3);
     assert_eq!(active(&h).layout.instances[0].param("phase"), None);
+}
+
+#[test]
+fn fps_and_the_performance_graph() {
+    let mut h = app();
+    click_menu(&mut h, "View", "Performance graph");
+    assert!(h.state().prefs.show_performance_graph);
+    h.run_steps(3);
+    assert!(h.query_all_by_label("Performance").count() > 0, "the graph's window");
+    h.state_mut().prefs.show_frame_time = true;
+    h.run_steps(3);
+    let text = |n: egui_kittest::Node<'_>| {
+        let a = n.accesskit_node();
+        a.label().or_else(|| a.value()).unwrap_or_default()
+    };
+    let readouts: Vec<String> = h.query_all_by_label_contains("simulation").map(text).filter(|l| l.contains(" ms")).collect();
+    assert_eq!(readouts.len(), 2, "status bar and graph: {readouts:?}");
+    let readout = &readouts[0];
+    assert!(readout.contains("fps") || readout.starts_with("idle"), "{readout}");
+    assert!(!h.state().stats.frames.is_empty(), "frames are recorded");
 }

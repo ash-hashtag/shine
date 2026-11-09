@@ -39,8 +39,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   component. The example Mach–Zehnder component exports its phase. Projects are now
   format 6.
 
-- Frame time in the status bar (Preferences → Show frame time): how long frames take and
-  how much is simulation. Slow frames are also logged.
+- Frames per second and frame time in the status bar, and a performance graph (View →
+  Performance graph) of the time between frames and per frame against 60 and 30 fps, to
+  tell a real drop in frames from an impression. Slow frames are also logged.
 
 ### Changed
 

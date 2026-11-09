@@ -43,44 +43,7 @@ const SMOOTH_DRAG_BUDGET_MS: f64 = 8.0;
 /// How often a slow design re-simulates while something is being dragged.
 const DRAG_SIMULATIONS_PER_SECOND: f64 = 10.0;
 
-/// Frame timings, smoothed over recent frames.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct FrameStats {
-    /// CPU time of the last frame, drawing included (from eframe; `None` in tests).
-    pub frame_cpu_ms: Option<f64>,
-    /// Time in the editor's own code per frame (smoothed).
-    pub ui_ms: f64,
-    /// Time simulating per frame (smoothed).
-    pub simulate_ms: f64,
-    /// Simulation time so far this frame.
-    simulating: f64,
-    /// How long the last simulation took, and when it ran (seconds).
-    pub last_simulation_ms: f64,
-    last_simulation_at: f64,
-    /// When a slow frame was last logged.
-    logged_at: f64,
-}
-
-impl FrameStats {
-    /// Fold one frame's timings in.
-    fn record(&mut self, ui_ms: f64, now: f64) {
-        let smooth = |old: f64, new: f64| if old == 0.0 { new } else { old * 0.8 + new * 0.2 };
-        self.ui_ms = smooth(self.ui_ms, ui_ms);
-        self.simulate_ms = smooth(self.simulate_ms, self.simulating);
-        let total = self.frame_cpu_ms.unwrap_or(ui_ms).max(ui_ms);
-        if total > 50.0 && now - self.logged_at > 1.0 {
-            self.logged_at = now;
-            tracing::info!("Slow frame: {total:.1} ms, {:.1} ms of it simulating", self.simulating);
-        }
-        self.simulating = 0.0;
-    }
-
-    /// "frame 2.1 ms · simulation 0.4 ms".
-    pub fn summary(&self) -> String {
-        let frame = self.frame_cpu_ms.unwrap_or(self.ui_ms);
-        format!("frame {frame:.1} ms · simulation {:.1} ms", self.simulate_ms)
-    }
-}
+pub use super::perf::FrameStats;
 
 pub struct Workspace {
     pub project: Project,
@@ -1041,6 +1004,8 @@ impl Workspace {
                 self.apply(Action::FrameSelected);
             }
             ui.separator();
+            ui.checkbox(&mut self.prefs.show_performance_graph, "Performance graph")
+                .on_hover_text("Frames per second and frame times, live");
             if ui.button("Keyboard & mouse").clicked() {
                 self.show_shortcuts = true;
             }
@@ -1148,6 +1113,17 @@ impl Workspace {
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
+        let mut open = self.prefs.show_performance_graph;
+        ui_kit::window(ctx, "Performance")
+            .open(&mut open)
+            .default_width(420.0)
+            .show(ctx, |ui| self.stats.graph_ui(ui));
+        self.prefs.show_performance_graph = open;
+        if open {
+            // Keep the graph scrolling while it's open.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+
         let mut open = self.show_shortcuts;
         ui_kit::window(ctx, "Keyboard & mouse")
             .open(&mut open)
@@ -1258,8 +1234,11 @@ impl Workspace {
                     ui.label("Boxes");
                     ui.checkbox(&mut p.show_port_names, "Show port names");
                     ui.end_row();
-                    ui.label("Status bar");
-                    ui.checkbox(&mut p.show_frame_time, "Show frame time");
+                    ui.label("Performance");
+                    ui.vertical(|ui| {
+                        ui.checkbox(&mut p.show_frame_time, "FPS and frame time in the status bar");
+                        ui.checkbox(&mut p.show_performance_graph, "Performance graph");
+                    });
                     ui.end_row();
                 });
                 ui_kit::section(ui, "Light");

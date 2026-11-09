@@ -29,8 +29,14 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
 With live simulation on, the design is simulated again whenever it changes. Small designs
 take well under a millisecond. While you drag something in a design whose simulation
 takes longer than about 8 ms, it re-simulates ten times a second instead of on every
-move, so dragging stays smooth, and once more when you let go. **Edit → Preferences… →
-Show frame time** puts the timings in the status bar.
+move, so dragging stays smooth, and once more when you let go.
+
+To check whether a stutter is real, open **View → Performance graph**: it plots the time
+between frames (what you see as smoothness) and the CPU time of each frame over the last
+seconds, against the 60 and 30 fps lines, with the worst gap of the last second. Shine
+draws only when something changes, so with nothing moving it's *idle*; while you drag,
+the time between frames should stay near the 60 fps line. **Edit → Preferences… →
+Performance** also puts the frame rate and timings in the status bar.
 
 ## Units
 
