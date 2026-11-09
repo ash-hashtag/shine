@@ -3801,6 +3801,7 @@ dependencies = [
  "faer",
  "js-sys",
  "num-complex",
+ "png",
  "postcard",
  "pulp",
  "rayon",

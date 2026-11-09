@@ -1,5 +1,6 @@
 use super::*;
 use crate::panels::optics::examples;
+use crate::panels::optics::model::{BlockRef, Builtin};
 
 fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_string()).collect()

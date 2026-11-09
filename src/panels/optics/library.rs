@@ -1101,14 +1101,38 @@ impl OpticsPanel {
                 ui.end_row();
             }
         });
+        let (copy, save) = ui
+            .horizontal(|ui| {
+                let copy = ui.small_button("Copy CSV").on_hover_text("Every reading, to paste into a spreadsheet").clicked();
+                (copy, ui.small_button("Save CSV…").clicked())
+            })
+            .inner;
+        if copy || save {
+            let csv = self.readings_csv(&o);
+            if copy {
+                ui.ctx().copy_text(csv);
+                self.notify("Readings copied");
+            } else {
+                self.saved(crate::panels::export::save("readings.csv", "CSV", "csv", csv.as_bytes()));
+            }
+        }
     }
 
-    /// Whether a connection is being drawn (for tests and the status line).
+    /// Every reading as CSV: detectors, output ports, displays, registers and
+    /// the light leaving boxes.
+    pub fn readings_csv(&self, o: &sim::Outcome) -> String {
+        let catalog = &self.catalog;
+        let layout = &self.layout;
+        let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+        crate::panels::circuit::readings::to_csv(&crate::panels::circuit::readings::readings(layout, o, &names))
+    }
+
     /// Whether the mouse is moving something: a grab, a drag, a new part.
     pub fn interacting(&self) -> bool {
         self.editor.grab.is_some() || self.drag != Drag::None || self.dragging_new.is_some()
     }
 
+    /// Whether a connection is being drawn (for tests and the status line).
     pub fn connecting(&self) -> bool {
         matches!(self.drag, Drag::Connect(_))
     }

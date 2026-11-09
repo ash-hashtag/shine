@@ -53,6 +53,8 @@ pub struct SweepState {
     pub scale: Scale,
     /// Show the peak, minimum, insertion loss and extinction table.
     pub show_readouts: bool,
+    /// Where the plot was last drawn, for saving it as an image.
+    pub plot_rect: Option<egui::Rect>,
     /// Plot boxes' light outputs too (hidden by default when there are detectors).
     pub box_outputs: bool,
     pub result: Option<SweepResult>,
@@ -72,6 +74,7 @@ impl Default for SweepState {
             scale: Scale::Linear,
             box_outputs: false,
             show_readouts: true,
+            plot_rect: None,
             result: None,
         }
     }
@@ -326,7 +329,7 @@ impl OpticsPanel {
         let readouts: Vec<sweep::Readout> =
             result.readouts().into_iter().filter(|r| shown.iter().any(|s| s.name == r.name)).collect();
         let table = if s.show_readouts { (readouts.len() as f32 * 20.0 + 28.0).min(150.0) } else { 0.0 };
-        Plot::new("sweep_plot")
+        let plot = Plot::new("sweep_plot")
             .height((ui.available_height() - 64.0 - table).max(180.0))
             .legend(Legend::default())
             .x_axis_label(result.x_label.clone())
@@ -342,6 +345,7 @@ impl OpticsPanel {
                     p.line(Line::new(series.name.clone(), points));
                 }
             });
+        s.plot_rect = Some(plot.response.rect);
         let unit = self.prefs.power_unit;
         let header = egui::CollapsingHeader::new("Readouts").id_salt("sweep_readouts").open(Some(s.show_readouts)).show(ui, |ui| {
             readouts_table(ui, &readouts, unit);
@@ -349,16 +353,39 @@ impl OpticsPanel {
         if header.header_response.clicked() {
             s.show_readouts = !s.show_readouts;
         }
+        let (mut save_csv, mut save_image) = (false, None);
         ui.horizontal(|ui| {
             if ui.button("Copy CSV").on_hover_text("Paste into a spreadsheet").clicked() {
                 ui.ctx().copy_text(result.to_csv());
             }
             if ui.button("Save CSV…").clicked() {
-                save_csv(&result.to_csv());
+                save_csv = true;
+            }
+            if ui.button("Save image…").on_hover_text("The plot as a PNG image").clicked() {
+                save_image = s.plot_rect;
             }
             ui.label(RichText::new(format!("{} points × {} outputs", result.xs.len(), result.series.len())).small().weak());
         });
+        if save_csv {
+            let csv = result.to_csv();
+            self.saved(crate::panels::export::save("sweep.csv", "CSV", "csv", csv.as_bytes()));
+        }
+        if let Some(rect) = save_image {
+            self.requests.push(Request::SaveImage { name: "sweep.png", rect });
+        }
         run
+    }
+
+    /// Say where a file went, or why it didn't.
+    pub(super) fn saved(&mut self, result: Result<Option<String>, String>) {
+        match result {
+            Ok(Some(to)) => self.notify(format!("Saved {to}")),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!("{e}");
+                self.notify(format!("Not saved: {e}"));
+            }
+        }
     }
 }
 
@@ -389,20 +416,4 @@ fn readouts_table(ui: &mut Ui, readouts: &[sweep::Readout], unit: PowerUnit) {
 fn fmt_x(x: f64) -> String {
     let s = format!("{x:.4}");
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn save_csv(csv: &str) {
-    if let Some(path) = rfd::FileDialog::new().add_filter("CSV", &["csv"]).set_file_name("sweep.csv").save_file()
-        && let Err(e) = std::fs::write(&path, csv)
-    {
-        tracing::error!("Failed to save {}: {e}", path.display());
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn save_csv(csv: &str) {
-    if let Err(e) = crate::web::download("sweep.csv", csv.as_bytes()) {
-        tracing::error!("Download failed: {e}");
-    }
 }

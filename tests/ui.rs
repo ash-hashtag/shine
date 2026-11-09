@@ -485,3 +485,39 @@ fn a_component_box_offers_its_exported_parameters_for_sweeping() {
     let s = &active(&h).sweep;
     assert_eq!((s.target, s.param.as_str()), (Some(Item::Box(id)), "phase"));
 }
+
+#[test]
+fn readings_and_images_are_exported() {
+    // Saves go to a folder instead of a dialog.
+    let dir = std::env::temp_dir().join(format!("shine-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // SAFETY: set before anything in this test binary reads it; no other test saves files.
+    unsafe { std::env::set_var("SHINE_EXPORT_DIR", &dir) };
+
+    let mut h = app();
+    assert!(h.state_mut().open_example("4-channel-wdm-optical-link"));
+    h.run_steps(4);
+    // The inspector's readouts: copy and save as CSV.
+    h.get_by_label("Copy CSV").click();
+    h.run_steps(2);
+    assert_eq!(active(&h).status.as_ref().map(|s| s.0.as_str()), Some("Readings copied"));
+    h.get_by_label("Save CSV…").click();
+    h.run_steps(2);
+    let csv = std::fs::read_to_string(dir.join("readings.csv")).expect("saved");
+    assert!(csv.contains("\"Display 26,9\",11,\"\""), "{csv}");
+
+    // The canvas as an image: the screenshot comes back through egui's
+    // callback, which the test harness doesn't render, so hand one over.
+    click_menu(&mut h, "View", "Save canvas image…");
+    let (name, rect) = h.state().pending_image.expect("waiting for a screenshot");
+    assert_eq!(name, "canvas.png");
+    let shot = egui::ColorImage::new([1400, 900], vec![egui::Color32::from_rgb(10, 20, 30); 1400 * 900]);
+    *h.state().screenshot.lock().unwrap() = Some(std::sync::Arc::new(shot));
+    h.run_steps(2);
+    assert!(h.state().pending_image.is_none());
+    let bytes = std::fs::read(dir.join("canvas.png")).expect("image saved");
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
+    let info = reader.info();
+    assert_eq!((info.width, info.height), (rect.width().round() as u32, rect.height().round() as u32), "just the canvas");
+    std::fs::remove_dir_all(&dir).ok();
+}

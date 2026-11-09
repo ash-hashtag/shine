@@ -65,6 +65,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Export: every reading as CSV (inspector → Readouts → Copy CSV / Save CSV…), the canvas
+  as a PNG image (View → Save canvas image…), and a sweep's plot as a PNG image.
 - `shine simulate PROJECT.shine`: readings, wavelength sweeps and parameter sweeps from
   the command line, as text or CSV, with exit codes for scripts and CI.
 - Help → About Shine: the version, what's new in it, links to the docs and to report a

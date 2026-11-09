@@ -76,6 +76,10 @@ pub struct Workspace {
     pub crash_report: Option<String>,
     /// Help → About.
     pub about: super::about::About,
+    /// An image to save from the next screenshot: file name and area (points).
+    pub pending_image: Option<(&'static str, egui::Rect)>,
+    /// Where the screenshot lands when it's taken.
+    pub screenshot: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<egui::ColorImage>>>>,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -106,6 +110,8 @@ impl Default for Workspace {
             closing: false,
             crash_report: None,
             about: Default::default(),
+            pending_image: None,
+            screenshot: Default::default(),
             applied_theme: None,
             ctx: None,
             time: 0.0,
@@ -674,6 +680,7 @@ impl Workspace {
                 Request::PlaceExample { example, cell } => self.place_example(example, cell),
                 Request::Tick => self.tick(),
                 Request::RunSweep => self.run_sweep(),
+                Request::SaveImage { name, rect } => self.capture(name, rect),
             }
         }
     }
@@ -772,6 +779,7 @@ impl Workspace {
         self.ctx = Some(ui.ctx().clone());
         self.apply_theme(ui.ctx());
         self.receive_files();
+        self.receive_screenshot(ui);
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
         }
@@ -1171,6 +1179,12 @@ impl Workspace {
                 self.apply(Action::FrameSelected);
             }
             ui.separator();
+            let canvas = self.active.and_then(|id| self.project.doc(id)).and_then(|d| d.panel().canvas_rect());
+            if ui.add_enabled(canvas.is_some(), egui::Button::new("Save canvas image…")).on_hover_text("The canvas as a PNG image").clicked()
+                && let Some(rect) = canvas
+            {
+                self.capture("canvas.png", rect);
+            }
             ui.checkbox(&mut self.prefs.show_performance_graph, "Performance graph")
                 .on_hover_text("Frames per second and frame times, live");
             if ui.button("Keyboard & mouse").clicked() {
@@ -1281,6 +1295,37 @@ impl Workspace {
                 }
             });
         });
+    }
+
+    /// Save the area `rect` of the window as a PNG: asks for a screenshot,
+    /// which arrives a frame or two later (see [`Self::receive_screenshot`]).
+    pub fn capture(&mut self, name: &'static str, rect: egui::Rect) {
+        self.pending_image = Some((name, rect));
+        if let Some(ctx) = &self.ctx {
+            let slot = self.screenshot.clone();
+            let repaint = ctx.clone();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
+                *slot.lock().expect("not poisoned") = Some(image);
+                repaint.request_repaint();
+            })));
+        }
+    }
+
+    /// A screenshot for [`Self::capture`]: crop it and save it.
+    fn receive_screenshot(&mut self, ui: &Ui) {
+        let Some((name, rect)) = self.pending_image else { return };
+        let Some(image) = self.screenshot.lock().expect("not poisoned").take() else { return };
+        self.pending_image = None;
+        let cropped = super::export::crop(&image, rect, ui.ctx().pixels_per_point());
+        let saved = super::export::png(&cropped).and_then(|bytes| super::export::save(name, "PNG image", "png", &bytes));
+        match saved {
+            Ok(Some(to)) => self.notify(format!("Saved {to}")),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!("Image not saved: {e}");
+                self.notify(format!("Image not saved: {e}"));
+            }
+        }
     }
 
     /// The project's file name, or "Unsaved project".

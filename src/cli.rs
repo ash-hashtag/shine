@@ -3,10 +3,10 @@
 
 use std::fmt::Write as _;
 
+use crate::panels::circuit::readings;
 use crate::panels::circuit::sim::{self, Machine, Options};
 use crate::panels::circuit::sweep::{self, SweepKind, SweepSpec};
-use crate::panels::optics::model::{BlockRef, Builtin, Item, Layout, OpticComponentKind, cell_of};
-use crate::panels::optics::{input_number, output_number};
+use crate::panels::optics::model::{Item, Layout, OpticComponentKind, cell_of};
 use crate::panels::project::{DocId, Project};
 use crate::panels::units;
 
@@ -241,38 +241,16 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     if let Some(e) = &o.error {
         return Err(Failure::Simulation(e.clone()));
     }
-    // (name, value, unit, human-readable)
-    let mut rows: Vec<(String, f64, &str, String)> = Vec::new();
-    for (name, power, from_box) in sweep::outputs(layout, &o, &names) {
-        if !from_box || args.box_outputs {
-            rows.push((name, power, "mW", units::format_both(power, units::PowerUnit::MilliWatt)));
-        }
-    }
-    for inst in &layout.instances {
-        let at = format!("{},{}", inst.cell.0, inst.cell.1);
-        match &inst.block {
-            BlockRef::Builtin(Builtin::Display { bits }) => {
-                let n = input_number(layout, &o, inst.id, *bits as usize);
-                rows.push((format!("Display {at}"), n as f64, "", n.to_string()));
-            }
-            BlockRef::Builtin(Builtin::Register { bits }) => {
-                let n = output_number(&o, inst.id, *bits as usize);
-                rows.push((format!("Register {at}"), n as f64, "", n.to_string()));
-            }
-            _ => {}
-        }
-    }
+    let rows: Vec<readings::Reading> =
+        readings::readings(layout, &o, &names).into_iter().filter(|r| !r.from_box || args.box_outputs).collect();
     let mut out = String::new();
     if args.csv {
-        out += "\"reading\",\"value\",\"unit\"\n";
-        for (name, value, unit, _) in &rows {
-            let _ = writeln!(out, "\"{}\",{value},\"{unit}\"", name.replace('"', "\"\""));
-        }
+        out = readings::to_csv(&rows);
     } else {
-        let width = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
+        let width = rows.iter().map(|r| r.name.chars().count()).max().unwrap_or(0);
         let _ = writeln!(out, "{} · {} · settled in {} rounds", doc.name, args.project, o.iterations);
-        for (name, _, _, shown) in &rows {
-            let _ = writeln!(out, "  {name:<width$}  {shown}");
+        for r in &rows {
+            let _ = writeln!(out, "  {:<width$}  {}", r.name, r.shown(units::PowerUnit::MilliWatt));
         }
         if rows.is_empty() {
             out += "  (no detectors, output ports, displays or registers)\n";

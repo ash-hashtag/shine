@@ -78,7 +78,7 @@ design take a few seconds.
 
 **Copy CSV** puts the data on the clipboard, ready to paste into a spreadsheet. **Save
 CSV…** writes a file (in the browser, it downloads). The first column is the swept value;
-then one power column (mW) per output.
+then one power column (mW) per output. **Save image…** saves the plot as a PNG image.
 
 A link can open a sweep directly: `?example=4-channel-wdm-optical-link&sweep` opens the
 example and runs a sweep of its first laser.

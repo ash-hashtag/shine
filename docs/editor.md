@@ -72,6 +72,19 @@ a [component](components.md).
   zooms.
 - **Home** frames everything; **.** (period) frames the selection.
 
+## Exporting
+
+- **Readings:** under *Readouts* in the inspector, **Copy CSV** and **Save CSV…** give
+  every reading of the design (detectors, output ports, displays, registers, and the light
+  leaving each box) as CSV: name, value, unit. `shine simulate --csv` prints the same
+  ([Command line](command-line.md)).
+- **Images:** **View → Save canvas image…** saves the canvas, as you see it, as a PNG
+  image; a sweep's plot has **Save image…** in its window.
+- **Sweeps:** CSV from the [sweep window](sweeps.md#exporting).
+
+On desktop a save dialog asks where (with `SHINE_EXPORT_DIR` set, files go straight into
+that folder); in the browser files download.
+
 ## Preferences
 
 **Edit → Preferences…** sets how Shine looks and behaves, and is remembered between

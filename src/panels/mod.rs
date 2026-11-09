@@ -3,6 +3,7 @@ pub mod beam_sim;
 pub mod chips;
 pub mod circuit;
 pub mod empty;
+pub mod export;
 pub mod file_format;
 pub mod history;
 pub mod optics;
@@ -17,7 +18,7 @@ pub mod units;
 pub mod workspace;
 
 /// Things a document editor asks its host (the workspace) to do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Request {
     New,
     Open,
@@ -35,4 +36,6 @@ pub enum Request {
     Tick,
     /// Run the sweep set up in the editor's sweep window.
     RunSweep,
+    /// Save the part of the window under `rect` (in points) as a PNG image.
+    SaveImage { name: &'static str, rect: egui::Rect },
 }
