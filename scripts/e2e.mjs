@@ -45,6 +45,12 @@ const click = async (x, y) => {
   await mouse("mouseReleased", x, y, { button: "left", clickCount: 1 });
   await sleep(300);
 };
+const key = async (key, code, keyCode, modifiers = 0) => {
+  for (const type of ["keyDown", "keyUp"]) {
+    await send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, modifiers });
+  }
+  await sleep(200);
+};
 /** Press at (x1, y1), move in steps to (x2, y2), release. */
 const drag = async (x1, y1, x2, y2) => {
   await move(x1, y1);
@@ -176,6 +182,29 @@ await test("a laser wired to an MZI lights both of its outputs", async () => {
   let wired = false;
   for (let y = 315; y < 470 && !wired; y += 2) wired = lightNear(570, y, 1);
   expect(wired, "no lit waveguide between the laser and the MZI");
+});
+
+await test("work survives reloading the page", async () => {
+  // From a clean slate (no saved session), put a laser on the grid; the
+  // session is saved every few seconds while drawing, so a reload brings
+  // it back.
+  // Clear the storage from another page of the site: the app saves its
+  // session when it's left, so it mustn't be running then.
+  await send("Page.navigate", { url: `${site}/` });
+  await sleep(1500);
+  await send("Runtime.evaluate", { expression: "localStorage.clear()" });
+  await open();
+  await capture();
+  expect(!lightNear(900, 311) && !lightNear(900, 471), "should start empty");
+  await drag(...LASER_IN_LIBRARY, 450, 330);
+  await sleep(5500);
+  await move(910, 700); // a frame, so the periodic save runs
+  await move(900, 700);
+  await sleep(500);
+  await open();
+  await move(900, 700);
+  await capture();
+  expect(lightNear(900, 311), "the laser is gone after a reload");
 });
 
 await test("an example opens from a link and shows its light", async () => {

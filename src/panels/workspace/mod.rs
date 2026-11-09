@@ -70,6 +70,8 @@ pub struct Workspace {
     pub pending_open: Option<PendingOpen>,
     /// Window title last set (desktop).
     title: String,
+    /// The window is closing (desktop): the session is saved as a clean exit.
+    pub closing: bool,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -97,6 +99,7 @@ impl Default for Workspace {
             saved_fingerprint: 0,
             pending_open: None,
             title: String::new(),
+            closing: false,
             applied_theme: None,
             ctx: None,
             time: 0.0,
@@ -234,6 +237,66 @@ impl Workspace {
         self.project.path = Some(path.to_owned());
         self.mark_saved();
         Ok(())
+    }
+
+    /// The session to keep in the app's storage.
+    pub fn session(&self) -> super::session::Session {
+        super::session::Session {
+            project: self.project.to_bytes(),
+            path: self.project.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            saved_fingerprint: self.saved_fingerprint,
+            tabs: self.tabs.iter().map(|d| d.0).collect(),
+            active: self.active.map(|d| d.0),
+            views: self
+                .tabs
+                .iter()
+                .filter_map(|&id| {
+                    let v = self.project.doc(id)?.panel().view;
+                    Some((id.0, v.pan.x, v.pan.y, v.zoom))
+                })
+                .collect(),
+            clean_exit: self.closing,
+        }
+    }
+
+    /// Continue where the last session left off: its project, tabs, and
+    /// whether it had unsaved changes.
+    pub fn restore(&mut self, session: super::session::Session) -> Result<(), String> {
+        let project = Project::from_bytes(&session.project)?;
+        self.project = project;
+        self.project.path = session.path.map(std::path::PathBuf::from);
+        self.saved_fingerprint = session.saved_fingerprint;
+        for (id, x, y, zoom) in session.views {
+            if let Some(doc) = self.project.doc_mut(DocId(id)) {
+                doc.panel_mut().set_view(super::optics::view::View { pan: egui::Vec2::new(x, y), zoom });
+            }
+        }
+        self.tabs.clear();
+        self.active = None;
+        for id in session.tabs.into_iter().map(DocId) {
+            if self.project.doc(id).is_some() {
+                self.tabs.push(id);
+            }
+        }
+        match session.active.map(DocId).filter(|id| self.tabs.contains(id)).or(self.tabs.first().copied()) {
+            Some(id) => self.open_tab(id),
+            None => {
+                if let Some(first) = self.project.documents.first().map(|d| d.id) {
+                    self.open_tab(first);
+                }
+            }
+        }
+        if !session.clean_exit && !cfg!(target_arch = "wasm32") {
+            self.notify("Shine didn't close properly last time; your work from a few seconds before was restored");
+        }
+        Ok(())
+    }
+
+    /// Start over with an empty project (asking about unsaved changes).
+    pub fn new_project(&mut self) {
+        let mut fresh = Project::new();
+        fresh.add_layout("Layout", Layout::default(), 10.0);
+        self.request_open("a new project".into(), fresh.to_bytes(), None);
     }
 
     /// Whether the project has changed since it was last saved or opened.
@@ -1044,6 +1107,9 @@ impl Workspace {
             .and_then(|id| self.project.doc(id))
             .is_some_and(|d| d.component.is_some());
         ui.menu_button("File", |ui| {
+            if ui.button("New project").on_hover_text("Close this project and start an empty one").clicked() {
+                self.new_project();
+            }
             if ui.button("New layout").clicked() {
                 self.new_layout();
             }

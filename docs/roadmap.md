@@ -31,7 +31,7 @@ actually contains is in the [Changelog](changelog.md). Ideas and requests are we
 
 What a tool people rely on every day needs, before more features.
 
-- [ ] **Never lose work**: unsaved changes are marked and confirmed before they're
+- [x] **Never lose work**: unsaved changes are marked and confirmed before they're
       discarded; saves are atomic; the session is saved continuously and restored after a
       crash or a closed tab
 - [ ] **Crash reports**: a crash is logged with what's needed to fix it, and the next start

@@ -10,6 +10,7 @@ pub mod prefs;
 pub mod project;
 pub mod schematic;
 pub mod selection;
+pub mod session;
 pub mod ui_kit;
 pub mod units;
 pub mod workspace;

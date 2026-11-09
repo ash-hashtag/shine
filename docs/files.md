@@ -21,6 +21,17 @@ one, so with unsaved changes Shine asks first: save (or download) and open, open
 saving, or cancel. Saving writes the file under a temporary name and then renames it, so a
 save that fails part-way never damages the file you had.
 
+### Your session is kept
+
+Shine keeps the open project, its tabs and their views in the app's storage (a settings
+file on desktop, the browser's storage on the web) every few seconds and when you leave,
+and opens it again next time, unsaved changes included, still marked as unsaved. Closing
+the window or the tab, or a crash, loses at most a few seconds of work. If the desktop
+app didn't close properly, it says so when it restores your work. **File → New project**
+starts over with an empty project (asking first if there are unsaved changes). The kept
+session is a safety net, not a substitute for saving: save projects you want to keep as
+files.
+
 ## The `.shine` format
 
 A compact binary file: the 4 bytes `SHNE`, a 2-byte format version (little-endian), then

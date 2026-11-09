@@ -64,6 +64,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- The session (project, tabs, views, unsaved changes) is kept every few seconds and
+  restored at the next start, so closing the window or tab, or a crash, loses at most a
+  few seconds of work. File → New project starts over.
 - Unsaved changes are shown in the status bar (and the desktop window title), and
   opening another project asks before discarding them. Saves are atomic: a failed save
   leaves the previous file intact.

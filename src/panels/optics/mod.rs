@@ -358,6 +358,13 @@ impl OpticsPanel {
         self.notify("New layout");
     }
 
+    /// Show the canvas at `view` (a restored session), instead of framing
+    /// the layout when it's first drawn.
+    pub fn set_view(&mut self, view: View) {
+        self.view = view;
+        self.frame_pending = false;
+    }
+
     /// Replace the layout (loading a file or an example).
     pub fn set_layout(&mut self, layout: Layout, cell_um: f64) {
         self.editor.cancel_grab(&mut self.layout);
