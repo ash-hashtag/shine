@@ -3,11 +3,15 @@ name = "shine"
 version = "0.1.1"
 edition = "2024"
 default-run = "shine"
+description = "Photonic circuit simulator: design and simulate photonic circuits, from free-space optics to waveguide chips"
+license = "MIT"
+repository = "https://github.com/ash-hashtag/shine"
+homepage = "https://shine.lupyd.com"
 
 [features]
 default = ["gui"]
 # The editor. Disable with `default-features = false` to use only the `photonics` library.
-gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd"]
+gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp"]
 # Stderr + optional file logging setup for binaries.
 logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
 
@@ -40,6 +44,8 @@ postcard = { version = "1.1.3", features = ["use-std"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.12.0"
 tracing-appender = { version = "0.2.5", optional = true }
+# The desktop app's "Check for updates" (the browser app is always current).
+ehttp = { version = "0.7.3", optional = true }
 faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "rayon"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

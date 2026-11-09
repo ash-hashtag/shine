@@ -1,3 +1,4 @@
+pub mod about;
 pub mod beam_sim;
 pub mod chips;
 pub mod circuit;

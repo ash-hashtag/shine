@@ -74,6 +74,8 @@ pub struct Workspace {
     pub closing: bool,
     /// The report of a crash in the last run (desktop), shown until dismissed.
     pub crash_report: Option<String>,
+    /// Help → About.
+    pub about: super::about::About,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -103,6 +105,7 @@ impl Default for Workspace {
             title: String::new(),
             closing: false,
             crash_report: None,
+            about: Default::default(),
             applied_theme: None,
             ctx: None,
             time: 0.0,
@@ -1225,6 +1228,10 @@ impl Workspace {
             if ui.button("Examples").clicked() {
                 self.show_examples = true;
             }
+            ui.separator();
+            if ui.button("About Shine").clicked() {
+                self.about.open = true;
+            }
         });
 
         // The one control people look for first: always visible, top right.
@@ -1357,6 +1364,9 @@ impl Workspace {
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
+        if self.about.open {
+            self.about.ui(ctx);
+        }
         self.crash_window(ctx);
         self.unsaved_dialog(ctx);
         if !cfg!(target_arch = "wasm32") {

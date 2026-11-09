@@ -58,6 +58,11 @@ line options:
 
 Logs always go to stderr. The Windows release opens no console window, so use `--log-file` there.
 
+**Help → About Shine** shows the version, what's new in it, and links to the docs and to
+report a problem. On desktop, **Check for updates** asks GitHub for the latest release
+and links to it if it's newer; Shine makes no network requests otherwise. The browser
+version is always the latest.
+
 If the app crashes, it writes `crash-report.txt` (the message, where it happened, the
 version, the system and a backtrace; no project data) to its settings folder and to the
 log. The next start restores your work and shows the report, with **Report on GitHub**

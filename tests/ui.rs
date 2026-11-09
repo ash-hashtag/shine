@@ -69,7 +69,7 @@ fn every_menu_opens_and_lists_its_actions() {
         ("View", &["Library", "Inspector", "Live simulation", "Frame all", "Frame selected", "Performance graph", "Keyboard & mouse"]),
         ("Analysis", &["Sweep…"]),
         ("Component", &["Rename…", "Stop sharing as component"]),
-        ("Help", &["Keyboard & mouse", "Examples"]),
+        ("Help", &["Keyboard & mouse", "Examples", "About Shine"]),
     ];
     for (menu, items) in menus {
         h.get_by_label(menu).click();
@@ -446,4 +446,15 @@ fn a_crash_in_the_last_run_is_shown_once() {
     h.run_steps(3);
     assert!(h.state().crash_report.is_none());
     assert_eq!(h.query_all_by_label("Shine crashed last time").count(), 0);
+}
+
+#[test]
+fn about_shows_the_version_and_whats_new() {
+    let mut h = app();
+    click_menu(&mut h, "Help", "About Shine");
+    h.run_steps(3);
+    assert!(h.query_by_label(&format!("Shine {}", env!("CARGO_PKG_VERSION"))).is_some());
+    assert!(h.query_by_label_contains("What's new in").is_some());
+    assert!(h.query_by_label("Check for updates").is_some());
+    assert!(h.query_by_label("Report a problem").is_some());
 }

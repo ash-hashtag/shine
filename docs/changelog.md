@@ -64,6 +64,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Help → About Shine: the version, what's new in it, links to the docs and to report a
+  problem, and on desktop a "Check for updates" against the latest GitHub release.
 - Crash reports: the desktop app writes a report (message, place, version, system,
   backtrace) and shows it at the next start with a one-click GitHub issue; the browser's
   error page links to one too.
