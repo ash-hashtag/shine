@@ -3,7 +3,7 @@
 # headless Chromium.
 #   scripts/screenshots.sh <built site dir>
 # Writes web/public/screenshots/*.webp (site), docs/img/*.webp (docs) and the
-# Open Graph card.
+# Open Graph cards (web/public/og/).
 set -euo pipefail
 site=$1
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -60,10 +60,5 @@ for png in "$tmp"/ui/*.png; do
   webp "$png" "$docs_out/$(basename "$png" .png).webp"
 done
 
-# Social preview card for Open Graph / Twitter.
-sed "s|SCREENSHOT|file://$site_out/link.webp|" "$root/scripts/og-card.html" > "$tmp/og-card.html"
-chromium --headless=new --no-sandbox --hide-scrollbars --force-color-profile=srgb \
-  --allow-file-access-from-files --window-size=1200,630 \
-  --screenshot="$tmp/og.png" "file://$tmp/og-card.html" 2>/dev/null
-webp "$tmp/og.png" "$site_out/og.webp"
-echo "  $site_out/og.webp"
+# Social preview cards for the home page and every docs page.
+python3 "$root/scripts/og-cards.py"

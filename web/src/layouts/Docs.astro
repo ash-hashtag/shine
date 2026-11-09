@@ -1,6 +1,7 @@
 ---
 import Base from "./Base.astro";
 import { docs, docPath, type Doc } from "../docs";
+import { inPublic, lastModified } from "../git";
 
 interface Props {
   doc: Doc;
@@ -12,10 +13,51 @@ const all = await docs();
 const index = all.findIndex((d) => d.id === doc.id);
 const prev = all[index - 1];
 const next = all[index + 1];
-const source = `https://github.com/ash-hashtag/shine/blob/main/docs/${doc.id === "readme" ? "README" : doc.id}.md`;
+const file = `docs/${doc.id === "readme" ? "README" : doc.id}.md`;
+const source = `https://github.com/ash-hashtag/shine/blob/main/${file}`;
+const modified = lastModified(file);
+
+// Each page has its own social card (scripts/og-cards.py); new pages fall back to the site's.
+const card = `og/${doc.id}.webp`;
+const image = inPublic(card) ? card : undefined;
+
+const site = Astro.site;
+const abs = (path: string) => (site ? new URL(`${base}${path}`, site).href : `${base}${path}`);
+const pageUrl = abs(docPath(doc));
+const structuredData = [
+  {
+    "@type": "TechArticle",
+    "@id": `${pageUrl}#article`,
+    headline: doc.data.title,
+    description: doc.data.description,
+    url: pageUrl,
+    image: abs(image ?? "screenshots/og.webp"),
+    inLanguage: "en",
+    ...(modified && { dateModified: modified }),
+    isPartOf: { "@type": "WebSite", name: "Shine", url: abs("") },
+    about: { "@type": "SoftwareApplication", name: "Shine", url: abs("") },
+    publisher: { "@type": "Organization", name: "Lupyd", url: "https://lupyd.com" },
+  },
+  {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Shine", item: abs("") },
+      { "@type": "ListItem", position: 2, name: "Docs", item: abs("docs/") },
+      ...(doc.id === "readme" ? [] : [{ "@type": "ListItem", position: 3, name: doc.data.title, item: pageUrl }]),
+    ],
+  },
+];
 ---
 
-<Base title={`${doc.data.title} · Shine docs`} description={doc.data.description}>
+<Base
+  title={`${doc.data.title} · Shine docs`}
+  description={doc.data.description}
+  image={image}
+  imageAlt={`${doc.data.title}: ${doc.data.description}`}
+  type="article"
+  modified={modified}
+  structuredData={structuredData}
+>
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href={base}><img src={`${base}favicon.svg`} alt="" />Shine</a>

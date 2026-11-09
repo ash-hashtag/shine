@@ -1,0 +1,11 @@
+{
+  "name": "Shine — photonic circuit simulator",
+  "short_name": "Shine",
+  "description": "Design and simulate photonic circuits in the browser.",
+  "start_url": "/app/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#17181b",
+  "theme_color": "#0b6e69",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

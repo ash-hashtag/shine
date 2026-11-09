@@ -44,6 +44,16 @@ library, every example, every keyboard shortcut and every MCP tool must be menti
 Screenshots in `docs/img/` and `web/public/screenshots/` come from the real app:
 `scripts/build-web.sh --screenshots` regenerates them with headless Chromium, including
 the interactive ones (menus, the parts browser) driven by `scripts/ui-screenshots.mjs`.
+The same run renders a 1200×630 social card for the home page and each docs page
+(`scripts/og-cards.py`, into `web/public/og/`), so new pages get one too.
+
+## Search engines and link previews
+
+Every page has a canonical link, Open Graph and Twitter card tags, and schema.org data:
+the home page describes the app (`SoftwareApplication`, `WebSite`), and each docs page is a
+`TechArticle` with breadcrumbs and its last-modified date from git. `sitemap.xml` lists
+the home page and every docs page with their dates and images; `/app` and the 404 page
+are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`.
 
 ## Continuous integration and releases
 

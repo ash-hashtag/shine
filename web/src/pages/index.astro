@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import { version } from "../git";
 
 const base = import.meta.env.BASE_URL;
 const app = `${base}app/`;
@@ -21,32 +22,55 @@ const title = "Shine — photonic circuit simulator";
 const description =
   "Design optical circuits from beam splitters to wavelength-multiplexed data links, reuse them as components, and simulate light and electronics together — in the browser, from Rust, or through an AI assistant.";
 
-// schema.org description for search engines.
+// schema.org data for search engines: the app, the site, and who publishes it.
 const site = Astro.site;
-const structuredData = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "Shine",
-  description,
-  applicationCategory: "DesignApplication",
-  applicationSubCategory: "Photonic circuit simulation",
-  operatingSystem: "Web browser, Linux, macOS, Windows",
-  featureList: [
-    "Free-space optics with exact interference",
-    "Reusable components connected by waveguides and signal wires",
-    "Mixed-signal simulation: detectors, registers, clock and function cells",
-    "A 4-channel WDM optical link with ring-resonator multiplexing",
-    "An electro-optic 8-bit adder and accumulator",
-    "MZI mesh programming for optical matrix multiplication",
-    "Wavelength sweeps of rings, interleavers and WDM demultiplexers",
-    "Model Context Protocol server for AI assistants",
-  ],
-  ...(site && {
-    url: new URL(base, site).href,
-    image: new URL(`${base}screenshots/og.webp`, site).href,
-    screenshot: ["link", "adder", "full-adder", "accumulator", "components", "free-space", "dft", "wdm"].map((n) => new URL(`${base}screenshots/${n}.webp`, site).href),
-  }),
-};
+const abs = (path: string) => (site ? new URL(`${base}${path}`, site).href : `${base}${path}`);
+const shots = ["link", "adder", "full-adder", "accumulator", "components", "free-space", "dft", "wdm"];
+const softwareVersion = version();
+const structuredData = [
+  {
+    "@type": "WebSite",
+    "@id": `${abs("")}#website`,
+    name: "Shine",
+    url: abs(""),
+    description,
+    publisher: { "@id": "https://lupyd.com/#organization" },
+  },
+  {
+    "@type": "Organization",
+    "@id": "https://lupyd.com/#organization",
+    name: "Lupyd",
+    url: "https://lupyd.com",
+  },
+  {
+    "@type": "SoftwareApplication",
+    "@id": `${abs("")}#app`,
+    name: "Shine",
+    description,
+    url: abs(""),
+    applicationCategory: "DesignApplication",
+    applicationSubCategory: "Photonic circuit simulation",
+    operatingSystem: "Web browser, Linux, Windows, macOS",
+    ...(softwareVersion && { softwareVersion }),
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    downloadUrl: "https://github.com/ash-hashtag/shine/releases",
+    installUrl: abs("app/"),
+    codeRepository: "https://github.com/ash-hashtag/shine",
+    softwareHelp: { "@type": "CreativeWork", url: abs("docs/") },
+    image: abs("screenshots/og.webp"),
+    screenshot: shots.map((n) => abs(`screenshots/${n}.webp`)),
+    featureList: [
+      "Free-space optics with exact interference",
+      "Reusable components connected by waveguides and signal wires",
+      "Mixed-signal simulation: detectors, registers, clock and function cells",
+      "A 4-channel WDM optical link with ring-resonator multiplexing",
+      "An electro-optic 8-bit adder and accumulator",
+      "MZI mesh programming for optical matrix multiplication",
+      "Model Context Protocol server for AI assistants",
+    ],
+    publisher: { "@id": "https://lupyd.com/#organization" },
+  },
+];
 
 const rust = `use shine::photonics::*;
 
@@ -71,8 +95,7 @@ const mcp = `{
 }`;
 ---
 
-<Base title={title} description={description}>
-  <script type="application/ld+json" slot="head" set:html={JSON.stringify(structuredData)} />
+<Base title={title} description={description} imageAlt="Shine: a 4-channel WDM optical link designed and simulated in the browser." structuredData={structuredData}>
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href={base}><img src={`${base}favicon.svg`} alt="" />Shine</a>
