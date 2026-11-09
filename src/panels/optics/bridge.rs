@@ -130,7 +130,7 @@ impl OpticsPanel {
                     return Err(format!("no room left of the port (cell {}, {}); clear it or place a laser aimed at the port", at.0, at.1));
                 }
                 self.layout.components.push(PlacedComponent {
-                    kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0) },
+                    kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
                     pos: cell_center(at.0, at.1),
                 });
                 let laser = self.layout.components.len() - 1;

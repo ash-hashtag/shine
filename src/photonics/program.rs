@@ -131,7 +131,19 @@ pub struct Row {
     /// rows belonging to a [`SolveBlock`].
     pub target: u32,
     pub source: C64,
+    /// Id of the source component emitting `source` (see `Component::source_id`).
+    pub source_id: u32,
     pub terms: Range<u32>,
+}
+
+/// Which sources emit during a run.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Sources<'a> {
+    Off,
+    All,
+    /// Lane `l` carries only the sources whose id is `ids[l]`: one mutually
+    /// coherent group per lane, all solved in one vectorised pass.
+    PerLane(&'a [u32]),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,6 +213,7 @@ impl Program {
         let comp = circuit.nodes[node].component.as_ref();
         let s = comp.s_matrix(self.wavelength_nm);
         let emission = comp.emission(self.wavelength_nm);
+        let source_id = comp.source_id();
         let id = NodeId(node as u32);
         let inputs = layout.node_inputs(id);
 
@@ -219,6 +232,7 @@ impl Program {
             self.rows.push(Row {
                 target: layout.output_slot(id.output(j)) as u32,
                 source: emission.as_ref().map_or(C64::ZERO, |e| e[j]),
+                source_id,
                 terms: terms_start..self.terms.len() as u32,
             });
         }
@@ -255,6 +269,7 @@ impl Program {
             let comp = circuit.nodes[node].component.as_ref();
             let s = comp.s_matrix(self.wavelength_nm);
             let emission = comp.emission(self.wavelength_nm);
+            let source_id = comp.source_id();
             let inputs = layout.node_inputs(NodeId(node as u32));
             for j in 0..comp.num_outputs() {
                 let terms_start = self.terms.len() as u32;
@@ -272,6 +287,7 @@ impl Program {
                 self.rows.push(Row {
                     target: row as u32,
                     source: emission.as_ref().map_or(C64::ZERO, |e| e[j]),
+                source_id,
                     terms: terms_start..self.terms.len() as u32,
                 });
                 row += 1;
@@ -337,7 +353,18 @@ impl Program {
         ports: &[InPort],
         fields: MatRef<'_, C64>,
     ) -> Result<Solution, CircuitError> {
-        self.execute(ports, fields, true)
+        self.execute(ports, fields, Sources::All)
+    }
+
+    /// The light of each group of sources on its own: solution `k` holds the
+    /// fields from the sources with id `sources[k]` only, nothing injected
+    /// on open inputs. All groups run together, one per SIMD lane.
+    pub fn run_sources(&self, sources: &[u32]) -> Result<Vec<Solution>, CircuitError> {
+        if sources.is_empty() {
+            return Ok(Vec::new());
+        }
+        let batch = self.execute(&[], Mat::<C64>::zeros(0, sources.len()).as_ref(), Sources::PerLane(sources))?;
+        Ok(sources.iter().enumerate().map(|(lane, &id)| batch.lane(lane, id)).collect())
     }
 
     /// Linear response from `inputs` to `outputs`, with sources disabled.
@@ -347,7 +374,7 @@ impl Program {
         outputs: &[OutPort],
     ) -> Result<Matrix, CircuitError> {
         let n = inputs.len();
-        let sol = self.execute(inputs, Mat::<C64>::identity(n, n).as_ref(), false)?;
+        let sol = self.execute(inputs, Mat::<C64>::identity(n, n).as_ref(), Sources::Off)?;
         Ok(Mat::from_fn(outputs.len(), n, |i, j| {
             sol.output_field_at(outputs[i], j)
         }))
@@ -357,7 +384,7 @@ impl Program {
         &self,
         ports: &[InPort],
         fields: MatRef<'_, C64>,
-        with_sources: bool,
+        sources: Sources<'_>,
     ) -> Result<Solution, CircuitError> {
         assert_eq!(ports.len(), fields.nrows(), "one row of fields per port");
         let slots = ports
@@ -380,10 +407,14 @@ impl Program {
                     }
                 }
             }
+            let sources = match sources {
+                Sources::PerLane(ids) => Sources::PerLane(&ids[start..start + width]),
+                other => other,
+            };
             Arch::new().dispatch(Execute {
                 program: self,
                 state: &mut state,
-                with_sources,
+                sources,
             });
             state
         });
@@ -391,6 +422,7 @@ impl Program {
         Ok(Solution {
             layout: self.layout.clone(),
             wavelength_nm: self.wavelength_nm,
+            source: None,
             lanes,
             chunks,
         })
@@ -437,7 +469,7 @@ impl State {
 struct Execute<'a> {
     program: &'a Program,
     state: &'a mut State,
-    with_sources: bool,
+    sources: Sources<'a>,
 }
 
 impl WithSimd for Execute<'_> {
@@ -448,7 +480,7 @@ impl WithSimd for Execute<'_> {
         let Self {
             program,
             state,
-            with_sources,
+            sources,
         } = self;
         let lanes = state.lanes;
         let mut acc_re = vec![0.0; lanes];
@@ -456,9 +488,23 @@ impl WithSimd for Execute<'_> {
 
         // Evaluates one row into the accumulators.
         let eval = |row: &Row, state: &State, acc_re: &mut [f64], acc_im: &mut [f64]| {
-            let src = if with_sources { row.source } else { C64::ZERO };
-            acc_re.fill(src.re);
-            acc_im.fill(src.im);
+            match sources {
+                Sources::All => {
+                    acc_re.fill(row.source.re);
+                    acc_im.fill(row.source.im);
+                }
+                Sources::Off => {
+                    acc_re.fill(0.0);
+                    acc_im.fill(0.0);
+                }
+                Sources::PerLane(ids) => {
+                    for (l, &id) in ids.iter().enumerate() {
+                        let src = if row.source_id == id { row.source } else { C64::ZERO };
+                        acc_re[l] = src.re;
+                        acc_im[l] = src.im;
+                    }
+                }
+            }
             for t in program.terms(row) {
                 let (xr, xi) = state.slot(t.slot as usize);
                 caxpy(simd, acc_re, acc_im, xr, xi, t.coeff);
@@ -503,6 +549,7 @@ impl WithSimd for Execute<'_> {
 pub struct Solution {
     layout: Arc<Layout>,
     wavelength_nm: f64,
+    source: Option<u32>,
     lanes: usize,
     chunks: Vec<State>,
 }
@@ -512,8 +559,33 @@ impl Solution {
         self.wavelength_nm
     }
 
+    /// The source id whose light this is, from [`Circuit::simulate_sources`](super::Circuit::simulate_sources).
+    pub fn source(&self) -> Option<u32> {
+        self.source
+    }
+
     pub fn batch_size(&self) -> usize {
         self.lanes
+    }
+
+    /// One sample of a batch as its own solution, tagged with `source`.
+    fn lane(&self, lane: usize, source: u32) -> Solution {
+        let chunk = &self.chunks[lane / CHUNK_LANES];
+        let l = lane % CHUNK_LANES;
+        let slots = self.layout.num_slots;
+        let mut state = State::zeros(slots, 1);
+        for slot in 0..slots {
+            let v = chunk.get(slot, l);
+            state.re[slot] = v.re;
+            state.im[slot] = v.im;
+        }
+        Solution {
+            layout: self.layout.clone(),
+            wavelength_nm: self.wavelength_nm,
+            source: Some(source),
+            lanes: 1,
+            chunks: vec![state],
+        }
     }
 
     fn value(&self, slot: usize, lane: usize) -> C64 {

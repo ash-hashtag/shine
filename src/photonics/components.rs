@@ -25,6 +25,14 @@ pub trait Component: Debug + Send + Sync {
     fn emission_wavelengths(&self) -> Vec<f64> {
         Vec::new()
     }
+
+    /// Which light source a source's emission comes from. Sources with the
+    /// same id are mutually coherent (phase-locked, like light split from
+    /// one laser); different ids are independent, so they don't interfere
+    /// and their powers add.
+    fn source_id(&self) -> u32 {
+        0
+    }
 }
 
 /// Amplitude transmission for a loss given in dB.
@@ -341,6 +349,8 @@ pub struct Laser {
     pub amplitude: f64,
     pub phase: f64,
     pub wavelength_nm: f64,
+    /// Lasers sharing an id are phase-locked (see [`Component::source_id`]).
+    pub source: u32,
 }
 
 impl Laser {
@@ -349,11 +359,18 @@ impl Laser {
             amplitude,
             phase: 0.0,
             wavelength_nm,
+            source: 0,
         }
     }
 
     pub fn with_phase(mut self, phase: f64) -> Self {
         self.phase = phase;
+        self
+    }
+
+    /// Put this laser in a coherence group: lasers with the same id interfere.
+    pub fn with_source(mut self, source: u32) -> Self {
+        self.source = source;
         self
     }
 }
@@ -377,6 +394,9 @@ impl Component for Laser {
     }
     fn emission_wavelengths(&self) -> Vec<f64> {
         vec![self.wavelength_nm]
+    }
+    fn source_id(&self) -> u32 {
+        self.source
     }
 }
 

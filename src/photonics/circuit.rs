@@ -270,9 +270,34 @@ impl Circuit {
         self.compile(wavelength_nm)?.run(drives)
     }
 
-    /// Steady state at every wavelength emitted by the circuit's sources.
+    /// Every (wavelength, source id) pair the circuit's sources emit, sorted.
+    pub fn emission_channels(&self) -> Vec<(f64, u32)> {
+        let mut channels: Vec<(f64, u32)> = self
+            .nodes
+            .iter()
+            .flat_map(|n| {
+                let id = n.component.source_id();
+                n.component.emission_wavelengths().into_iter().map(move |wl| (wl, id))
+            })
+            .collect();
+        channels.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        channels.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-9 && a.1 == b.1);
+        channels
+    }
+
+    /// Steady state of the light from the circuit's sources: one solution per
+    /// wavelength and source id. Sources sharing an id interfere; separate
+    /// solutions are mutually incoherent, so their powers add.
     pub fn simulate_sources(&self) -> Result<Vec<Solution>, CircuitError> {
-        self.sweep(&self.emission_wavelengths(), &[])
+        // Compile once per wavelength; each source group is one cheap run.
+        let channels = self.emission_channels();
+        let mut wavelengths: Vec<f64> = channels.iter().map(|c| c.0).collect();
+        wavelengths.dedup();
+        let per_wavelength = super::par::try_map(&wavelengths, |&wl| {
+            let sources: Vec<u32> = channels.iter().filter(|c| c.0 == wl).map(|c| c.1).collect();
+            Program::compile(self, wl)?.run_sources(&sources)
+        })?;
+        Ok(per_wavelength.into_iter().flatten().collect())
     }
 
     /// Simulate over many wavelengths in parallel.
@@ -536,6 +561,36 @@ mod api_tests {
         c.add(Laser::new(1.0, 650.0));
         c.add(Laser::new(3.0, 1550.0));
         assert_eq!(c.emission_wavelengths(), vec![650.0, 1550.0]);
+    }
+
+    #[test]
+    fn independent_sources_add_power() {
+        // Two equal lasers into a 50:50 coupler. Phase-locked, they steer all
+        // the light to one port; independent, each port gets half of each.
+        for (same_source, port0) in [(true, 0.0), (false, 1.0)] {
+            let mut c = Circuit::new();
+            let l0 = c.add(Laser::new(1.0, 1550.0).with_phase(-PI / 2.0));
+            let l1 = c.add(Laser::new(1.0, 1550.0).with_source(if same_source { 0 } else { 7 }));
+            let dc = c.add(DirectionalCoupler::balanced());
+            let (d0, d1) = (c.add(Detector::new()), c.add(Detector::new()));
+            c.connect(l0.output(0), dc.input(0)).unwrap();
+            c.connect(l1.output(0), dc.input(1)).unwrap();
+            c.connect(dc.output(0), d0.input(0)).unwrap();
+            c.connect(dc.output(1), d1.input(0)).unwrap();
+            let sols = c.simulate_sources().unwrap();
+            assert_eq!(sols.len(), if same_source { 1 } else { 2 });
+            let total = |d| sols.iter().map(|s| s.detected_power(d)).fold(0.0, |a, b| a + b);
+            assert!((total(d0) - port0).abs() < 1e-12, "same source {same_source}: {}", total(d0));
+            assert!((total(d0) + total(d1) - 2.0).abs() < 1e-12, "power is conserved");
+        }
+        let mut c = Circuit::new();
+        c.add(Laser::new(1.0, 1550.0).with_source(3));
+        c.add(Laser::new(1.0, 1550.0).with_source(3));
+        c.add(Laser::new(1.0, 1310.0).with_source(3));
+        c.add(Laser::new(1.0, 1550.0));
+        assert_eq!(c.emission_channels(), vec![(1310.0, 3), (1550.0, 0), (1550.0, 3)]);
+        assert_eq!(c.simulate_sources().unwrap()[0].source(), Some(3));
+        assert_eq!(c.simulate(1550.0, &[]).unwrap().source(), None);
     }
 
     #[test]

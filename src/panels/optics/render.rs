@@ -383,6 +383,7 @@ mod tests {
             dir: Vec2::new(1.0, 0.0),
             wavelength_nm: 650.0,
             field: C64::new(0.0, -0.5),
+            color: None,
         };
         assert_eq!(
             beam_label(&beam),
@@ -404,6 +405,7 @@ mod tests {
             dir: Vec2::new(1.0, 0.0),
             wavelength_nm: 532.0,
             field: C64::ONE,
+            color: None,
         }];
         ctx.run_ui(Default::default(), |ui| {
             let painter = ui.painter_at(canvas);

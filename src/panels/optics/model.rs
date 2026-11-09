@@ -18,6 +18,14 @@ pub enum OpticComponentKind {
         phase: f32,
         wavelength: f32,
         dir: Vec2,
+        /// Which light source this laser's light comes from: 0 is its own,
+        /// independent source; lasers sharing 1–8 (shown as A–H) are
+        /// phase-locked, like light split from one laser, and interfere.
+        #[serde(default)]
+        source: u8,
+        /// Colour to draw its light in, instead of the wavelength's colour.
+        #[serde(default)]
+        color: Option<[u8; 3]>,
     },
     BeamSplitter {
         reflectivity: f32,
@@ -66,6 +74,8 @@ impl OpticComponentKind {
                 phase: 0.0,
                 wavelength: 650.0,
                 dir: Vec2::new(1.0, 0.0),
+                source: 0,
+                color: None,
             },
             Self::BeamSplitter {
                 reflectivity: 0.5,

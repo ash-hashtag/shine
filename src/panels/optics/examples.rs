@@ -28,6 +28,8 @@ fn laser(dx: f32, dy: f32, phase: f32) -> OpticComponentKind {
         phase,
         wavelength: 650.0,
         dir: Vec2::new(dx, dy),
+        source: 0,
+        color: None,
     }
 }
 
@@ -92,13 +94,21 @@ pub fn fabry_perot() -> Layout {
 }
 
 /// Bits are laser phases: 0 -> 0, pi -> 1.
+/// Both lasers share source A: interference needs light from one laser
+/// (in a real bench, split from it).
 pub fn xor_gate(a: bool, b: bool) -> Layout {
     let bit = |v: bool| if v { std::f32::consts::PI } else { 0.0 };
+    let shared = |mut kind: OpticComponentKind| {
+        if let OpticComponentKind::Laser { source, .. } = &mut kind {
+            *source = 1;
+        }
+        kind
+    };
     layout(vec![
-        at(-3, 0, laser(1.0, 0.0, bit(a))),
+        at(-3, 0, shared(laser(1.0, 0.0, bit(a)))),
         at(-1, 0, shifter(std::f32::consts::FRAC_PI_2)),
         at(0, 0, splitter(-1.0, -1.0, 0.5)),
-        at(0, 3, laser(0.0, -1.0, bit(b))),
+        at(0, 3, shared(laser(0.0, -1.0, bit(b)))),
         at(0, -3, DETECTOR),
         at(3, 0, DETECTOR),
     ])
@@ -139,7 +149,7 @@ pub fn layout_examples() -> Vec<LayoutExample> {
         },
         LayoutExample {
             name: "Coherent XOR gate",
-            description: "Two lasers encode bits in their phase (0 → 0, π → 1). After a π/2 bias and a beam splitter, the top detector reads a XOR b (power 2 = 1) and the right detector reads XNOR. Set each laser's phase to 0 or π to try all inputs.",
+            description: "Two lasers on one shared source (A) encode bits in their phase (0 → 0, π → 1). After a π/2 bias and a beam splitter, the top detector reads a XOR b (power 2 = 1) and the right detector reads XNOR. Set each laser's phase to 0 or π to try all inputs.",
             cell_um: 10.0,
             build: || xor_gate(false, true),
         },
@@ -199,6 +209,8 @@ pub fn full_adder() -> Layout {
         phase: 0.0,
         wavelength: 1550.0,
         dir: Vec2::new(dx, dy),
+        source: 0,
+        color: None,
     };
     let mut l = layout(vec![
         at(0, -3, signal_in),
@@ -394,6 +406,8 @@ pub fn wdm_link(project: &mut Project) -> DocId {
             phase: 0.0,
             wavelength: nm as f32,
             dir: Vec2::new(1.0, 0.0),
+            source: 0,
+            color: None,
         }));
         let laser = l.components.len() - 1;
         signal(&mut l, (data, k), (Item::Part(laser), 0));

@@ -12,7 +12,7 @@ fn part(i: i32, j: i32, kind: OpticComponentKind) -> PlacedComponent {
 }
 
 fn laser(dx: f32, dy: f32) -> OpticComponentKind {
-    OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(dx, dy) }
+    OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(dx, dy), source: 0, color: None }
 }
 
 fn t(item: Item, port: usize) -> Terminal {

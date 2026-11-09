@@ -36,6 +36,8 @@ pub struct Beam {
     pub wavelength_nm: f64,
     /// Field at the start of the segment.
     pub field: C64,
+    /// Colour chosen for the light's source, instead of the wavelength's.
+    pub color: Option<[u8; 3]>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -174,6 +176,8 @@ mod tests {
                     phase: 0.0,
                     wavelength: 650.0,
                     dir: egui::vec2(1.0, 0.0),
+                    source: 0,
+                    color: None,
                 },
             ),
             at(0.0, 0.0, splitter(-1.0, 1.0)),
@@ -237,6 +241,8 @@ mod layout_tests {
             phase: 0.0,
             wavelength,
             dir,
+            source: 0,
+            color: None,
         }
     }
 

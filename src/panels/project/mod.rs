@@ -165,6 +165,102 @@ pub(crate) struct DocumentFile {
     layout: Layout,
 }
 
+/// Format 2: lasers had no source or colour, and every laser was coherent
+/// with every other. They become lasers on one shared source.
+pub(crate) mod v2 {
+    use egui::{Pos2, Vec2};
+    use serde::{Deserialize, Serialize};
+
+    use super::{ComponentMeta, DocId, DocumentFile};
+    use crate::panels::optics::model::{Instance, Layout, Line, OpticComponentKind, PlacedComponent, SignalWire, Wire};
+
+    #[derive(Clone, Copy, Serialize, Deserialize)]
+    pub enum Kind {
+        Laser { amplitude: f32, phase: f32, wavelength: f32, dir: Vec2 },
+        BeamSplitter { reflectivity: f32, transparency: f32, normal: Vec2 },
+        Mirror { normal: Vec2 },
+        Lens,
+        PhaseShifter { phase: f32 },
+        Attenuator { transmission: f32 },
+        Detector { threshold: f32 },
+        InputPort { dir: Vec2 },
+        OutputPort,
+        SignalIn,
+        SignalOut,
+    }
+
+    #[derive(Clone, Copy, Serialize, Deserialize)]
+    pub struct Part {
+        pub kind: Kind,
+        pub pos: Pos2,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Layout2 {
+        pub components: Vec<Part>,
+        pub lines: Vec<Line>,
+        pub instances: Vec<Instance>,
+        pub wires: Vec<Wire>,
+        pub signals: Vec<SignalWire>,
+        pub next_instance: u32,
+        pub labels: Vec<(usize, String)>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Document {
+        pub id: DocId,
+        pub name: String,
+        pub component: Option<ComponentMeta>,
+        pub cell_um: f64,
+        pub layout: Layout2,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Project {
+        pub next_id: u64,
+        pub documents: Vec<Document>,
+    }
+
+    pub fn kind(k: Kind) -> OpticComponentKind {
+        match k {
+            Kind::Laser { amplitude, phase, wavelength, dir } => {
+                OpticComponentKind::Laser { amplitude, phase, wavelength, dir, source: 1, color: None }
+            }
+            Kind::BeamSplitter { reflectivity, transparency, normal } => {
+                OpticComponentKind::BeamSplitter { reflectivity, transparency, normal }
+            }
+            Kind::Mirror { normal } => OpticComponentKind::Mirror { normal },
+            Kind::Lens => OpticComponentKind::Lens,
+            Kind::PhaseShifter { phase } => OpticComponentKind::PhaseShifter { phase },
+            Kind::Attenuator { transmission } => OpticComponentKind::Attenuator { transmission },
+            Kind::Detector { threshold } => OpticComponentKind::Detector { threshold },
+            Kind::InputPort { dir } => OpticComponentKind::InputPort { dir },
+            Kind::OutputPort => OpticComponentKind::OutputPort,
+            Kind::SignalIn => OpticComponentKind::SignalIn,
+            Kind::SignalOut => OpticComponentKind::SignalOut,
+        }
+    }
+
+    pub fn upgrade(d: Document) -> DocumentFile {
+        let l = d.layout;
+        DocumentFile {
+            id: d.id,
+            name: d.name,
+            component: d.component,
+            cell_um: d.cell_um,
+            layout: Layout {
+                components: l.components.into_iter().map(|p| PlacedComponent { kind: kind(p.kind), pos: p.pos }).collect(),
+                lines: l.lines,
+                instances: l.instances,
+                wires: l.wires,
+                signals: l.signals,
+                next_instance: l.next_instance,
+                labels: l.labels,
+            },
+        }
+    }
+}
+
 /// Format 1: layouts held only primitives (detectors had no threshold) and
 /// schematics were a separate document kind. Both become layouts.
 pub(crate) mod v1 {
@@ -216,7 +312,10 @@ pub(crate) mod v1 {
 
     fn part(p: Part) -> PlacedComponent {
         let kind = match p.kind {
-            Kind::Laser { amplitude, phase, wavelength, dir } => OpticComponentKind::Laser { amplitude, phase, wavelength, dir },
+            // Lasers were all mutually coherent then: keep them on one source.
+            Kind::Laser { amplitude, phase, wavelength, dir } => {
+                OpticComponentKind::Laser { amplitude, phase, wavelength, dir, source: 1, color: None }
+            }
             Kind::BeamSplitter { reflectivity, transparency, normal } => {
                 OpticComponentKind::BeamSplitter { reflectivity, transparency, normal }
             }
@@ -537,6 +636,13 @@ impl Project {
                 ProjectFile {
                     next_id: old.next_id,
                     documents: old.documents.into_iter().map(v1::upgrade).collect(),
+                }
+            }
+            2 => {
+                let old: v2::Project = file_format::decode_body(bytes)?;
+                ProjectFile {
+                    next_id: old.next_id,
+                    documents: old.documents.into_iter().map(v2::upgrade).collect(),
                 }
             }
             _ => file_format::decode(bytes)?,

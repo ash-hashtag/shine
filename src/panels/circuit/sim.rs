@@ -165,7 +165,11 @@ pub fn block_counts(block: &BlockRef, docs: &dyn Documents) -> PortCounts {
 /// Field on a waveguide at each wavelength.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Outcome {
+    /// One light channel per entry: its wavelength. Channels are mutually
+    /// incoherent (different wavelengths, or independent sources).
     pub wavelengths: Vec<f64>,
+    /// Display colour chosen for each channel's source, if any.
+    pub channel_colors: Vec<Option<[u8; 3]>>,
     /// Beams in the top layout.
     pub beams: Vec<Beam>,
     /// Power at each detector and output port of the top layout, by part index.
@@ -384,7 +388,16 @@ struct Optics<'a> {
     stack: Vec<DocId>,
     /// Nodes whose received power feeds the electronics.
     sensors: Vec<(Key, NodeId)>,
+    /// Photonics source id for the next independent laser.
+    next_source: u32,
+    /// Display colour chosen for a source's light, by photonics source id.
+    colors: HashMap<u32, [u8; 3]>,
 }
+
+/// Photonics source ids: shared sources A–H are 1–8; each independent laser
+/// gets its own id from here up. Built-in laser blocks and function-cell
+/// light share id 0.
+const FIRST_INDEPENDENT_SOURCE: u32 = 1000;
 
 /// A straight free-space path from one part (or box output) to the next.
 pub struct Segment {
@@ -430,9 +443,20 @@ impl Optics<'_> {
                     phase,
                     wavelength,
                     dir,
+                    source,
+                    color,
                 } => {
                     let a = amplitude as f64 * drive.unwrap_or(1.0);
-                    let n = c.add(Laser::new(a, wavelength as f64).with_phase(phase as f64));
+                    let id = if source == 0 {
+                        self.next_source += 1;
+                        self.next_source
+                    } else {
+                        source as u32
+                    };
+                    if let Some(color) = color {
+                        self.colors.entry(id).or_insert(color);
+                    }
+                    let n = c.add(Laser::new(a, wavelength as f64).with_phase(phase as f64).with_source(id));
                     (Some(n), vec![(0, direction_index(dir))], false)
                 }
                 OpticComponentKind::Detector { .. } => {
@@ -666,7 +690,9 @@ pub fn simulate(
 ) -> Outcome {
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
-    let mut outcome = Outcome::default();
+    // The last round's light, turned into an outcome once it settles: the
+    // beams and fields are only needed for the final state.
+    let mut last = None;
     for iteration in 1..=options.max_iterations.max(2) {
         let mut electronics = Electronics {
             docs,
@@ -689,6 +715,8 @@ pub fn simulate(
             max_len: options.max_len,
             stack: root.into_iter().collect(),
             sensors: Vec::new(),
+            next_source: FIRST_INDEPENDENT_SOURCE,
+            colors: HashMap::new(),
         };
         let mut circuit = Circuit::new();
         let built = match optics.build(&mut circuit, layout, &[], cell_um) {
@@ -706,15 +734,29 @@ pub fn simulate(
             .map(|(key, node)| (key.clone(), total(&|s| s.detected_power(*node))))
             .collect();
 
+        let source_colors = std::mem::take(&mut optics.colors);
         let stable = iteration > 1 && same(&electronics.signals, &signals, 1e-12) && same(&new_powers, &powers, 1e-9);
         signals = electronics.signals;
         powers = new_powers;
 
-        outcome = Outcome {
+        last = Some((solutions, built, source_colors, iteration, stable));
+        if stable {
+            break;
+        }
+    }
+    let Some((solutions, built, source_colors, iteration, stable)) = last else {
+        return Outcome::failed("nothing to simulate");
+    };
+    let total = |f: &dyn Fn(&crate::photonics::Solution) -> f64| solutions.iter().map(f).fold(0.0, |a, b| a + b);
+        let colors: Vec<Option<[u8; 3]>> =
+            solutions.iter().map(|s| s.source().and_then(|id| source_colors.get(&id).copied())).collect();
+        let mut outcome = Outcome {
             wavelengths: solutions.iter().map(|s| s.wavelength_nm()).collect(),
+            channel_colors: colors.clone(),
             beams: solutions
                 .iter()
-                .flat_map(|sol| {
+                .zip(&colors)
+                .flat_map(|(sol, &color)| {
                     built.segments.iter().filter_map(move |seg| {
                         let field = sol.input_field(seg.input);
                         (field.norm_sqr() > 1e-12).then(|| Beam {
@@ -723,6 +765,7 @@ pub fn simulate(
                             dir: seg.dir,
                             wavelength_nm: sol.wavelength_nm(),
                             field,
+                            color,
                         })
                     })
                 })
@@ -762,10 +805,6 @@ pub fn simulate(
             converged: stable,
             error: None,
         };
-        if stable {
-            break;
-        }
-    }
     if !outcome.converged && outcome.error.is_none() {
         outcome.error = Some(format!(
             "The circuit did not settle after {} rounds; a feedback loop may be oscillating",
