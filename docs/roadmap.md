@@ -27,13 +27,31 @@ actually contains is in the [Changelog](changelog.md). Ideas and requests are we
 - [x] Coherent and independent light sources; real and false colours
 - [x] Desktop (Linux, Windows, macOS) and browser builds; MCP server; documentation
 
+## Milestone: production ready
+
+What a tool people rely on every day needs, before more features.
+
+- [ ] **Never lose work**: unsaved changes are marked and confirmed before they're
+      discarded; saves are atomic; the session is saved continuously and restored after a
+      crash or a closed tab
+- [ ] **Crash reports**: a crash is logged with what's needed to fix it, and the next start
+      says what happened
+- [ ] **About and updates**: the version, what's new, and where to report problems
+- [ ] **Command-line simulation**: `shine simulate project.shine --sweep … --csv`, for
+      scripts and CI
+- [ ] **Export**: sweep data as CSV (done), readouts as CSV, plots and the canvas as images
+- [ ] **Sweep a component's exported parameters**
+- [ ] **Speed on big designs**: simulation time that grows gently with the number of
+      components (measured with `examples/frame_bench`)
+- [ ] **Accessibility**: every control named for screen readers; keyboard use throughout
+- [ ] **Installable builds**: signed and notarised desktop apps, and instructions until then
+
 ## Milestone: answer the questions engineers ask
 
 - [x] **Wavelength sweeps**: transmission versus wavelength for any design
 - [x] **Parameter sweeps**: sweep a part's parameter and plot the outputs
 - [x] **Real units**: power in mW and dBm, losses in dB, insertion loss and extinction
       ratio readouts
-- [ ] **Export**: sweep data as CSV (done), readouts as CSV, plots and the canvas as images
 
 ## Milestone: circuits with real numbers
 
@@ -47,14 +65,7 @@ want them.
 - [ ] **Monte Carlo**: how a design holds up to fabrication variation
 - [ ] **Validation page**: simulated results plotted against textbook formulas (rings,
       MZI, Fabry–Pérot, couplers, the DFT mesh)
-- [ ] **Command-line simulation**: `shine simulate project.shine --sweep … --csv`, for
-      scripts and CI
 - [ ] **Two polarisations** per port
-
-## Milestone: easy to adopt
-
-- [ ] An About box with the version and release notes
-- [ ] Instructions for unsigned binaries, then signed and notarised desktop builds
 
 ## Later: realistic simulation (separate)
 
