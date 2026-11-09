@@ -1,0 +1,52 @@
+---
+import Section from "../layouts/Section.astro";
+
+const base = import.meta.env.BASE_URL;
+
+const mcp = `{
+  "mcpServers": {
+    "shine": { "command": "shine-mcp" }
+  }
+}`;
+
+const tools: [string, string][] = [
+  ["list_blocks", "Lists the building blocks, their ports, parameters, defaults and units."],
+  ["simulate_circuit", "Solves a circuit exactly at every laser wavelength: detector readings, output powers, fields."],
+  ["sweep_wavelength", "Spectra of filters, rings and interferometers over a wavelength range."],
+  ["decompose_matrix", "MZI phase settings that implement a matrix on a chip (Reck or SVD meshes)."],
+  ["simulate_project", "Opens a saved project and reports detectors, displays and outputs of every document."],
+  ["save_project", "Writes a circuit as a project a person can open and edit in the editor."],
+];
+---
+
+<Section
+  page="ai"
+  title="AI assistants · Shine"
+  heading="Usable by AI assistants"
+  description="shine-mcp is a Model Context Protocol server: Claude and other assistants can build, simulate and save photonic circuits with Shine. Docs for language models at llms.txt."
+  intro="shine-mcp is a Model Context Protocol server. Assistants can list the building blocks, simulate circuits and sweep spectra, program MZI meshes for a matrix, read the displays and outputs of a saved project, and save a circuit as a project you open and refine in the editor."
+  imageAlt="Shine for AI assistants: a circuit saved by an assistant, opened in the editor."
+>
+  <section class="first">
+    <div class="wrap">
+      <h2>Connect it</h2>
+      <p>Download <code>shine-mcp</code> with a <a href="https://github.com/ash-hashtag/shine/releases">release</a>, then point your client at it:</p>
+        <pre><code>{mcp}</code></pre>
+      <h2>Tools</h2>
+      <div class="grid">
+        {tools.map(([name, what]) => (
+          <div class="card">
+            <h3><code>{name}</code></h3>
+            <p>{what}</p>
+          </div>
+        ))}
+      </div>
+      <h2>For language models</h2>
+      <p>
+        The whole documentation is available as plain text: <a href={`${base}llms.txt`}>llms.txt</a> (an index) and
+        <a href={`${base}llms-full.txt`}>llms-full.txt</a> (everything in one file).
+      </p>
+      <p><a href={`${base}docs/ai/`}>Read the AI guide →</a></p>
+    </div>
+  </section>
+</Section>

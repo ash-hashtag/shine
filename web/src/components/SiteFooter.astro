@@ -1,0 +1,47 @@
+---
+// The site's footer, shared by every page.
+const base = import.meta.env.BASE_URL;
+const repo = "https://github.com/ash-hashtag/shine";
+const columns = [
+  {
+    title: "Shine",
+    links: [
+      { href: `${base}app/`, label: "Open the app" },
+      { href: `${base}features/`, label: "Features" },
+      { href: `${base}library/`, label: "Rust library" },
+      { href: `${base}ai/`, label: "AI assistants" },
+    ],
+  },
+  {
+    title: "Learn",
+    links: [
+      { href: `${base}docs/`, label: "Documentation" },
+      { href: `${base}docs/getting-started/`, label: "Getting started" },
+      { href: `${base}docs/examples/`, label: "Examples" },
+      { href: `${base}llms.txt`, label: "llms.txt" },
+    ],
+  },
+  {
+    title: "GitHub",
+    links: [
+      { href: repo, label: "Source code" },
+      { href: `${repo}/releases`, label: "Downloads" },
+      { href: `${repo}/issues`, label: "Issues" },
+    ],
+  },
+];
+---
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-columns">
+      {columns.map((c) => (
+        <div>
+          <h2>{c.title}</h2>
+          <ul>{c.links.map((l) => <li><a href={l.href}>{l.label}</a></li>)}</ul>
+        </div>
+      ))}
+    </div>
+    <p class="footer-note">Shine · photonic circuit simulator · <a href={repo}>github.com/ash-hashtag/shine</a></p>
+  </div>
+</footer>

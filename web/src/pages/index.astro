@@ -1,22 +1,13 @@
 ---
 import Base from "../layouts/Base.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
 import { version } from "../git";
 
 const base = import.meta.env.BASE_URL;
 const app = `${base}app/`;
 const shot = (name: string) => `${base}screenshots/${name}.webp`;
 
-const keys: [string, string][] = [
-  ["Middle drag", "Pan"],
-  ["Wheel / pinch", "Zoom at cursor"],
-  ["G, then X / Y", "Move, locked to an axis"],
-  ["Shift D", "Duplicate"],
-  ["Shift A", "Add menu"],
-  ["Tab", "Open a component"],
-  ["Drag a port", "Wire it up"],
-  ["Space", "Run / stop simulation"],
-  ["Ctrl Z", "Undo"],
-];
 
 const title = "Shine — photonic circuit simulator";
 const description =
@@ -72,42 +63,19 @@ const structuredData = [
   },
 ];
 
-const rust = `use shine::photonics::*;
 
-let mut c = Circuit::new();
-let laser = c.add(Laser::new(1.0, 1550.0));
-let split = c.add(DirectionalCoupler::balanced());
-let heat  = c.add(PhaseShifter::new(std::f64::consts::PI));
-let join  = c.add(DirectionalCoupler::balanced());
-let pd    = c.add(Detector::new());
-c.connect(laser.output(0), split.input(0))?;
-c.connect(split.output(0), heat.input(0))?;
-c.connect(heat.output(0), join.input(0))?;
-c.connect(split.output(1), join.input(1))?;
-c.connect(join.output(0), pd.input(0))?;
 
-let power = c.simulate(1550.0, &[])?.detected_power(pd); // 1.0`;
-
-const mcp = `{
-  "mcpServers": {
-    "shine": { "command": "shine-mcp" }
-  }
-}`;
+const explore = [
+  { href: `${base}features/`, title: "Features", text: "Free-space optics, components, registers and a clock, MZI meshes, filters: everything Shine simulates." },
+  { href: `${base}docs/`, title: "Documentation", text: "Guides with screenshots, a reference of every part, and how the simulation works." },
+  { href: `${base}library/`, title: "Rust library", text: "Use the simulator on its own: compiled circuits, SIMD batches, MZI mesh programming." },
+  { href: `${base}ai/`, title: "AI assistants", text: "An MCP server so Claude and other assistants can build, simulate and save circuits." },
+  { href: "https://github.com/ash-hashtag/shine", title: "GitHub", text: "Source code, downloads for Linux, Windows and macOS, and issues." },
+];
 ---
 
 <Base title={title} description={description} imageAlt="Shine: a 4-channel WDM optical link designed and simulated in the browser." structuredData={structuredData}>
-  <header class="site-header">
-    <div class="wrap">
-      <a class="brand" href={base}><img src={`${base}favicon.svg`} alt="" />Shine</a>
-      <nav>
-        <a href={`${base}docs/`}>Docs</a>
-        <a href="#features">Features</a>
-        <a href="#library">Library</a>
-        <a href="#ai">AI</a>
-        <a class="button primary" href={app}>Open the app</a>
-      </nav>
-    </div>
-  </header>
+  <SiteHeader />
 
   <main>
     <div class="wrap hero">
@@ -133,190 +101,26 @@ const mcp = `{
       />
     </div>
 
-    <section id="features">
+    <section>
       <div class="wrap">
-        <h2>From a bench to a chip</h2>
-        <p class="section-intro">
-          One grid holds everything: free-space parts, component boxes, waveguides between them,
-          and signal wires for the electronics. Every result updates as you edit.
-        </p>
-
-        <div class="feature">
-          <div class="text">
-            <h3>What photonic chips do today</h3>
-            <p>
-              Data centres move data between servers on light. A silicon-photonic transceiver
-              puts several wavelengths on one waveguide, each carrying its own bit stream. In
-              Shine's version, four bits switch lasers at 1530–1560&nbsp;nm, ring resonators add
-              each colour to a shared waveguide, and matching rings at the receiver drop each one
-              onto a detector that turns it back into a bit.
-            </p>
-            <ul>
-              <li>Click the input bits and watch them arrive.</li>
-              <li>Detune a receiver ring and its channel disappears.</li>
-            </ul>
-            <a href={`${app}?example=4-channel-wdm-optical-link`}>Open the WDM link →</a>
-          </div>
-          <img class="shot" src={shot("link")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="A four-channel WDM link: four lasers switched by the bits of 11 are added to one waveguide by ring resonators, and four receiver rings drop them onto detectors; the display shows 11." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Logic with light, as a teaching model</h3>
-            <p>
-              A full adder built from parts you can inspect: input bits drive phase shifters in an
-              interferometer whose interference gives the sum, and a thresholded detector gives
-              the carry. Eight of them make an 8-bit adder. It shows how light and electronics hand
-              off, not how arithmetic is done in practice: research chips keep the carry in light,
-              and photonics earns its place in links and linear algebra.
-            </p>
-            <ul>
-              <li>Click a bit of either number and watch the result change.</li>
-              <li>Press <kbd>Tab</kbd> on a full adder to open its optics.</li>
-            </ul>
-            <a href={`${app}?example=8-bit-photonic-adder&tab=full-adder`}>Open the full adder →</a>
-          </div>
-          <img class="shot" src={shot("full-adder")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="The full-adder component: input pins drive phase shifters in a free-space interferometer and three lasers aimed at a threshold detector." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Memory and a clock</h3>
-            <p>
-              Registers store their inputs on each clock tick, number inputs and displays connect a
-              circuit to the outside, and function cells compute anything you can write as an
-              expression over signals and received light. Feed an adder's result back into a
-              register and it counts.
-            </p>
-            <a href={`${app}?example=photonic-accumulator`}>Open the accumulator →</a>
-          </div>
-          <img class="shot" src={shot("accumulator")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="A photonic accumulator: a register's outputs feed eight full adders whose sums feed back into the register." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Free-space layouts</h3>
-            <p>
-              Place lasers, mirrors, beam splitters, phase shifters and detectors on a grid. Beams
-              pick up phase over distance, so interference and cavity resonances come out right,
-              not approximated by a fixed number of bounces.
-            </p>
-            <a href={`${app}?example=mach-zehnder-interferometer`}>Open the Mach–Zehnder layout →</a>
-          </div>
-          <img class="shot" src={shot("free-space")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="Free-space Mach–Zehnder interferometer with coloured beams and detector readings." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Reusable components</h3>
-            <p>
-              Save any layout as a component with a name, initials and description. It becomes a
-              box: light ports on its sides, signal terminals on top and bottom. Drop it anywhere
-              and wire it up.
-            </p>
-            <ul>
-              <li>Hover a box to read its description.</li>
-              <li>Press <kbd>Tab</kbd> to open its definition in its own tab.</li>
-              <li>Edits there update every place it is used.</li>
-            </ul>
-            <a href={`${app}?example=cascaded-interferometers`}>Open the component example →</a>
-          </div>
-          <img class="shot" src={shot("components")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="A free-space Mach–Zehnder saved as a component and used twice: a beam enters the first box and a waveguide joins it to the second." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Computing with light</h3>
-            <p>
-              Meshes of Mach–Zehnder interferometers perform linear algebra as light passes
-              through. Shine programs them for you: a Fourier transform, a switch tree, or any
-              matrix through its singular value decomposition.
-            </p>
-            <a href={`${app}?examples=chips&chip=optical-fourier-transform`}>Open the optical DFT →</a>
-          </div>
-          <img class="shot" src={shot("dft")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="The optical Fourier transform chip example: an MZI mesh separating a sampled tone into frequency bins." />
-        </div>
-
-        <div class="feature">
-          <div class="text">
-            <h3>Filters and wavelengths</h3>
-            <p>
-              Rings, interleavers and add–drop filters respond to wavelength. Several lasers can
-              share a waveguide, and each colour is solved on its own. Sweep a design to see its
-              spectrum, like this four-channel demultiplexer.
-            </p>
-            <a href={`${app}?examples=chips&chip=wdm-demultiplexer`}>See the WDM spectrum →</a>
-          </div>
-          <img class="shot" src={shot("wdm")} width="1400" height="900" loading="lazy" decoding="async"
-            alt="Spectrum of a four-channel ring demultiplexer: each drop port peaks at its own wavelength." />
-        </div>
+        <h2>What photonic chips do today</h2>
       </div>
     </section>
 
     <section>
       <div class="wrap">
-        <h2>Feels like Blender</h2>
-        <p class="section-intro">
-          Navigation and editing follow Blender's conventions, so the keys you already know work.
-          Press <kbd>F1</kbd> in the app for the full list.
-        </p>
-        <ul class="keys">
-          {keys.map(([k, what]) => <li><span>{what}</span><kbd>{k}</kbd></li>)}
-        </ul>
-      </div>
-    </section>
-
-    <section id="library">
-      <div class="wrap">
-        <h2>A library, not just an app</h2>
-        <p class="section-intro">
-          The simulator is a Rust crate you can use on its own. Circuits compile per wavelength
-          into a flat program: straight-through parts become SIMD multiply-adds over whole batches
-          of inputs, and feedback loops get an LU factorisation computed once.
-        </p>
-        <div class="grid">
-          <div class="card">
-            <h3>Exact</h3>
-            <p>Steady state solved as a linear system; loops and resonances need no iteration limit.</p>
-          </div>
-          <div class="card">
-            <h3>Fast</h3>
-            <p>Batched SIMD kernels with runtime CPU dispatch; wavelength sweeps run in parallel.</p>
-          </div>
-          <div class="card">
-            <h3>Composable</h3>
-            <p>Rings, meshes, switch trees and WDM demultiplexers are blocks you can nest.</p>
-          </div>
-          <div class="card">
-            <h3>Compact files</h3>
-            <p>Projects save in a binary <code>.shine</code> format, about five times smaller than JSON.</p>
-          </div>
+        <h2>Explore</h2>
+        <div class="grid explore">
+          {explore.map((e) => (
+            <a class="card link-card" href={e.href}>
+              <h3>{e.title} →</h3>
+              <p>{e.text}</p>
+            </a>
+          ))}
         </div>
-        <pre><code>{rust}</code></pre>
-      </div>
-    </section>
-
-    <section id="ai">
-      <div class="wrap">
-        <h2>Usable by AI assistants</h2>
-        <p class="section-intro">
-          <code>shine-mcp</code> is a Model Context Protocol server. Assistants can list the
-          building blocks, simulate circuits and sweep spectra, program MZI meshes for a matrix,
-          read the displays and outputs of a saved project, and save a circuit as a project you
-          open and refine in the editor.
-        </p>
-        <pre><code>{mcp}</code></pre>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">Shine · photonic circuit simulator · <a href={app}>Open the app</a></div>
-  </footer>
+  <SiteFooter />
 </Base>

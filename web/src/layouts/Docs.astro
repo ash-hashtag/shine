@@ -1,5 +1,7 @@
 ---
 import Base from "./Base.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
 import { docs, docPath, type Doc } from "../docs";
 import { inPublic, lastModified } from "../git";
 
@@ -58,18 +60,13 @@ const structuredData = [
   modified={modified}
   structuredData={structuredData}
 >
-  <header class="site-header">
-    <div class="wrap">
-      <a class="brand" href={base}><img src={`${base}favicon.svg`} alt="" />Shine</a>
-      <nav>
-        <a href={`${base}docs/`}>Docs</a>
-        <a href="https://github.com/ash-hashtag/shine">GitHub</a>
-        <a class="button primary" href={`${base}app/`}>Open the app</a>
-      </nav>
-    </div>
-  </header>
+  <SiteHeader current="docs" />
   <div class="wrap docs">
     <nav class="docs-nav" aria-label="Documentation">
+      <div class="docs-search">
+        <pagefind-modal-trigger placeholder="Search the docs"></pagefind-modal-trigger>
+        <pagefind-modal></pagefind-modal>
+      </div>
       {all.map((d) => (
         <a href={`${base}${docPath(d)}`} aria-current={d.id === doc.id ? "page" : undefined}>
           {d.id === "readme" ? "Overview" : d.data.title}
@@ -78,12 +75,18 @@ const structuredData = [
       <a class="llms" href={`${base}llms-full.txt`}>Plain text for LLMs</a>
     </nav>
     <article class="docs-body">
-      <slot />
-      <footer class="docs-pager">
+      <div data-pagefind-body>
+        <slot />
+      </div>
+      <footer class="docs-pager" data-pagefind-ignore>
         {prev ? <a href={`${base}${docPath(prev)}`}>← {prev.id === "readme" ? "Overview" : prev.data.title}</a> : <span />}
         <a class="edit" href={source}>Edit this page</a>
         {next ? <a href={`${base}${docPath(next)}`}>{next.data.title} →</a> : <span />}
       </footer>
     </article>
   </div>
+  <SiteFooter />
+  <!-- Search over the docs: Pagefind indexes them after `astro build` (not in `astro dev`). -->
+  <link rel="stylesheet" href={`${base}pagefind/pagefind-component-ui.css`} slot="head" />
+  <script is:inline src={`${base}pagefind/pagefind-component-ui.js`} defer></script>
 </Base>

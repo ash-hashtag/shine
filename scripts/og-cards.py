@@ -53,6 +53,15 @@ hero = root / "web" / "public" / "screenshots" / "link.webp"
 render("", "Design photonic circuits and watch the light.",
        "Exact simulation, reusable components, in your browser.", hero, root / "web" / "public" / "screenshots" / "og.webp")
 
+# The site's section pages.
+shots = root / "web" / "public" / "screenshots"
+for name, title, summary, shot in [
+    ("features", "From a bench to a chip", "WDM links, free-space optics, components, registers, MZI meshes and filters.", "full-adder"),
+    ("library", "A library, not just an app", "The simulator as a Rust crate: compiled circuits, SIMD batches, MZI mesh programming.", "dft"),
+    ("ai", "Usable by AI assistants", "An MCP server so assistants can build, simulate and save photonic circuits.", "components"),
+]:
+    render("Shine", title, summary, shots / f"{shot}.webp", out_dir / f"site-{name}.webp")
+
 for page in sorted(docs.glob("*.md")):
     text = page.read_text()
     meta = front_matter(text)

@@ -20,8 +20,11 @@ Wayland or X11 at runtime).
 
 ## The website and browser build
 
-`web/` is an Astro site: the home page, these docs at `/docs`, `/llms.txt`, and `/app`
-(the editor compiled to WebAssembly). It uses pnpm.
+`web/` is an Astro site: the home page, the section pages (`/features`, `/library`,
+`/ai`), these docs at `/docs`, `/llms.txt`, and `/app` (the editor compiled to
+WebAssembly). It uses pnpm. `pnpm run build` also runs [Pagefind](https://pagefind.app),
+which indexes the docs (only the `data-pagefind-body` part of each docs page) for the
+search box in the docs sidebar; search isn't available under `pnpm dev`.
 
 ```sh
 scripts/build-web.sh                 # WebAssembly + site into web/dist
@@ -53,7 +56,8 @@ Every page has a canonical link, Open Graph and Twitter card tags, and schema.or
 the home page describes the app (`SoftwareApplication`, `WebSite`), and each docs page is a
 `TechArticle` with breadcrumbs and its last-modified date from git. `sitemap.xml` lists
 the home page and every docs page with their dates and images; `/app` and the 404 page
-are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`.
+are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`, and their social card to
+`scripts/og-cards.py`.
 
 ## Continuous integration and releases
 

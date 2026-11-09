@@ -31,8 +31,22 @@ export const GET: APIRoute = async ({ site }) => {
       { path: "screenshots/wdm.webp", caption: "The spectrum of a four-channel ring demultiplexer." },
     ],
   };
+  const sections: Page[] = [
+    { name: "features", caption: "Shine features", shot: "screenshots/full-adder.webp" },
+    { name: "library", caption: "Shine as a Rust library", shot: "screenshots/dft.webp" },
+    { name: "ai", caption: "Shine for AI assistants", shot: "screenshots/components.webp" },
+  ].map(({ name, caption, shot }) => ({
+    path: `${name}/`,
+    priority: "0.8",
+    modified: lastModified(`web/src/pages/${name}.astro`),
+    images: [
+      ...(inPublic(`og/site-${name}.webp`) ? [{ path: `og/site-${name}.webp`, caption }] : []),
+      { path: shot, caption },
+    ],
+  }));
   const pages: Page[] = [
     home,
+    ...sections,
     ...(await docs()).map((d) => {
       const card = `og/${d.id}.webp`;
       return {

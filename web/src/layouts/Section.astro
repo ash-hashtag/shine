@@ -1,0 +1,57 @@
+---
+// A top-level page of the site (Features, Library, AI): header, a page
+// heading, the content, and the footer, with breadcrumbs for search engines.
+import Base from "./Base.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { inPublic, lastModified } from "../git";
+
+interface Props {
+  page: "features" | "library" | "ai";
+  title: string;
+  heading: string;
+  description: string;
+  intro: string;
+  imageAlt: string;
+}
+
+const { page, title, heading, description, intro, imageAlt } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const site = Astro.site;
+const abs = (path: string) => (site ? new URL(`${base}${path}`, site).href : `${base}${path}`);
+const card = `og/site-${page}.webp`;
+const image = inPublic(card) ? card : undefined;
+const modified = lastModified(`web/src/pages/${page}.astro`);
+const structuredData = [
+  {
+    "@type": "WebPage",
+    "@id": `${abs(`${page}/`)}#page`,
+    name: title,
+    description,
+    url: abs(`${page}/`),
+    image: abs(image ?? "screenshots/og.webp"),
+    ...(modified && { dateModified: modified }),
+    isPartOf: { "@type": "WebSite", name: "Shine", url: abs("") },
+    about: { "@type": "SoftwareApplication", name: "Shine", url: abs("") },
+  },
+  {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Shine", item: abs("") },
+      { "@type": "ListItem", position: 2, name: heading, item: abs(`${page}/`) },
+    ],
+  },
+];
+---
+
+<Base title={title} description={description} image={image} imageAlt={imageAlt} modified={modified} structuredData={structuredData}>
+  <SiteHeader current={page} />
+  <main>
+    <div class="wrap page-head">
+      <h1>{heading}</h1>
+      <p class="lead">{intro}</p>
+    </div>
+    <slot />
+  </main>
+  <SiteFooter />
+</Base>

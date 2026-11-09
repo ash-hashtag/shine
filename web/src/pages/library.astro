@@ -1,0 +1,59 @@
+---
+import Section from "../layouts/Section.astro";
+
+const base = import.meta.env.BASE_URL;
+
+const rust = `use shine::photonics::*;
+
+let mut c = Circuit::new();
+let laser = c.add(Laser::new(1.0, 1550.0));
+let split = c.add(DirectionalCoupler::balanced());
+let heat  = c.add(PhaseShifter::new(std::f64::consts::PI));
+let join  = c.add(DirectionalCoupler::balanced());
+let pd    = c.add(Detector::new());
+c.connect(laser.output(0), split.input(0))?;
+c.connect(split.output(0), heat.input(0))?;
+c.connect(heat.output(0), join.input(0))?;
+c.connect(split.output(1), join.input(1))?;
+c.connect(join.output(0), pd.input(0))?;
+
+let power = c.simulate(1550.0, &[])?.detected_power(pd); // 1.0`;
+---
+
+<Section
+  page="library"
+  title="Rust library · Shine"
+  heading="A library, not just an app"
+  description="Shine's photonic simulator as a Rust crate: build circuits from components and blocks, compile them per wavelength, and run batches of inputs with SIMD kernels."
+  intro="The simulator is a Rust crate you can use on its own. Circuits compile per wavelength into a flat program: straight-through parts become SIMD multiply-adds over whole batches of inputs, and feedback loops get an LU factorisation computed once."
+  imageAlt="Shine as a Rust library: an optical Fourier transform computed by an MZI mesh."
+>
+  <section class="first">
+    <div class="wrap">
+        <div class="grid">
+          <div class="card">
+            <h3>Exact</h3>
+            <p>Steady state solved as a linear system; loops and resonances need no iteration limit.</p>
+          </div>
+          <div class="card">
+            <h3>Fast</h3>
+            <p>Batched SIMD kernels with runtime CPU dispatch; wavelength sweeps run in parallel.</p>
+          </div>
+          <div class="card">
+            <h3>Composable</h3>
+            <p>Rings, meshes, switch trees and WDM demultiplexers are blocks you can nest.</p>
+          </div>
+          <div class="card">
+            <h3>Compact files</h3>
+            <p>Projects save in a binary <code>.shine</code> format, about five times smaller than JSON.</p>
+          </div>
+        </div>
+        <h2>A Mach–Zehnder in a few lines</h2>
+        <pre><code>{rust}</code></pre>
+        <p>
+          <a href={`${base}docs/library/`}>Read the library guide →</a> ·
+          <a href="https://github.com/ash-hashtag/shine">Source on GitHub →</a>
+        </p>
+    </div>
+  </section>
+</Section>
