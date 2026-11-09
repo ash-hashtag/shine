@@ -193,7 +193,7 @@ impl OpticsPanel {
         let catalog = &self.catalog;
         let response = ui
             .add_enabled_ui(placeable, |ui| {
-                ui_kit::item_row(ui, selected, &entry.name, |painter, rect| draw_icon(painter, rect, &entry.item, catalog))
+                ui_kit::item_row_sized(ui, selected, &entry.name, 22.0, |painter, rect| draw_icon(painter, rect, &entry.item, catalog))
             })
             .inner;
         if response.drag_started() {
@@ -214,48 +214,59 @@ impl OpticsPanel {
         response.on_hover_text(tip);
     }
 
-    /// Parts library and tools.
+    /// Parts library: search, folders (collapsible), and tools.
     pub fn palette_ui(&mut self, ui: &mut Ui) {
-        ui.add(
-            egui::TextEdit::singleline(&mut self.search)
-                .hint_text("Search parts and components")
-                .desired_width(f32::INFINITY),
-        );
+        ui.horizontal(|ui| {
+            let browse = ui
+                .add(egui::Button::new("▦").min_size(egui::vec2(24.0, 0.0)))
+                .on_hover_text("Browse every part and component by category");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.search)
+                    .hint_text("Search parts")
+                    .desired_width(f32::INFINITY),
+            );
+            if browse.clicked() {
+                self.show_browser = !self.show_browser;
+            }
+        });
+        ui.add_space(2.0);
         let search = self.search.clone();
         let items = entries(&self.catalog, self.embedded, &search);
-        for section in SECTIONS {
-            let rows: Vec<&Entry> = items.iter().filter(|e| e.section == section).collect();
-            let my_components = section == SECTIONS[4];
-            if rows.is_empty() && !(my_components && search.is_empty()) {
-                continue;
-            }
-            ui_kit::section(ui, section);
-            for entry in rows {
+        if !search.trim().is_empty() {
+            for entry in &items {
                 self.library_row(ui, entry);
             }
-            if my_components && search.is_empty() {
-                if self.catalog.components().next().is_none() || !self.embedded {
-                    ui.label(
-                        RichText::new(if self.embedded {
-                            "Build a circuit, add port parts where signals and light enter and leave, then reuse it here as a box."
-                        } else {
-                            "Components live in projects: open the workspace to make them."
-                        })
-                        .small()
-                        .weak(),
-                    );
+            if items.is_empty() {
+                ui.label(RichText::new("Nothing matches").weak());
+            }
+        } else {
+            for (k, section) in SECTIONS.into_iter().enumerate() {
+                let rows: Vec<&Entry> = items.iter().filter(|e| e.section == section).collect();
+                let my_components = section == SECTIONS[4];
+                if rows.is_empty() && !(my_components && self.embedded) {
+                    continue;
                 }
-                if self.embedded
-                    && ui
-                        .button("＋ New component")
-                        .on_hover_text("Start an empty component with ports, ready to fill and reuse")
-                        .clicked()
-                {
-                    self.requests.push(Request::NewComponent);
-                }
+                // Folders: the essentials start open, the rest stay out of the way.
+                egui::CollapsingHeader::new(RichText::new(format!("{section}  ·  {}", rows.len())).strong())
+                    .id_salt(("library_folder", section))
+                    .default_open(k == 0 || my_components)
+                    .show(ui, |ui| {
+                        for entry in rows {
+                            self.library_row(ui, entry);
+                        }
+                        if my_components
+                            && self.embedded
+                            && ui
+                                .small_button("＋ New component")
+                                .on_hover_text("Start an empty component with ports, ready to fill and reuse")
+                                .clicked()
+                        {
+                            self.requests.push(Request::NewComponent);
+                        }
+                    });
             }
         }
-        ui_kit::section(ui, "Tools");
+        ui.separator();
         ui.horizontal(|ui| {
             if ui.selectable_label(self.tool.is_none(), "Select").clicked() {
                 self.tool = None;
@@ -264,14 +275,118 @@ impl OpticsPanel {
                 self.tool = Some(Tool::DrawLine);
             }
         });
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new(
-                "Drag an entry onto the grid. Drag from a port or terminal to wire it: light ports take waveguides, square terminals take signals.",
-            )
-            .small()
-            .weak(),
-        );
+        ui.label(RichText::new("Drag onto the grid · drag ports to wire").small().weak());
+    }
+
+    /// The categorised browser: folders on the left, every part as a tile.
+    pub(super) fn browser_ui(&mut self, ctx: &egui::Context) {
+        if !self.show_browser {
+            return;
+        }
+        let mut open = true;
+        let mut picked: Option<(Placeable, bool)> = None;
+        egui::Window::new("Parts & components")
+            .id(Id::unique("optics_browser"))
+            .open(&mut open)
+            .collapsible(false)
+            .default_size([720.0, 440.0])
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .show(ctx, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.browser_search)
+                        .hint_text("Search everything")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.label(RichText::new("Click a tile, then click the grid to place it, or drag it onto the grid.").small().weak());
+                ui.add_space(4.0);
+                let all = entries(&self.catalog, self.embedded, &self.browser_search);
+                let searching = !self.browser_search.trim().is_empty();
+                ui.horizontal_top(|ui| {
+                    // Folders.
+                    ui.vertical(|ui| {
+                        ui.set_width(200.0);
+                        for (k, section) in SECTIONS.into_iter().enumerate() {
+                            let n = all.iter().filter(|e| e.section == section).count();
+                            if n == 0 && !(k == 4 && self.embedded) {
+                                continue;
+                            }
+                            let label = format!("🗀  {section}  ({n})");
+                            if ui.selectable_label(!searching && self.browser_section == k, label).clicked() {
+                                self.browser_section = k;
+                                self.browser_search.clear();
+                            }
+                        }
+                        if self.embedded && ui.button("＋ New component").clicked() {
+                            self.requests.push(Request::NewComponent);
+                            self.show_browser = false;
+                        }
+                    });
+                    ui.separator();
+                    // Tiles of the chosen folder, or every match while searching.
+                    egui::ScrollArea::vertical().id_salt("browser_tiles").show(ui, |ui| {
+                        let shown: Vec<&Entry> = all
+                            .iter()
+                            .filter(|e| searching || e.section == SECTIONS[self.browser_section.min(SECTIONS.len() - 1)])
+                            .collect();
+                        if shown.is_empty() {
+                            ui.label(RichText::new(if searching { "Nothing matches" } else { "Nothing here yet" }).weak());
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            for entry in shown {
+                                let r = self.tile(ui, entry);
+                                if r.drag_started() {
+                                    picked = Some((entry.item.clone(), true));
+                                } else if r.clicked() {
+                                    picked = Some((entry.item.clone(), false));
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+        if !open {
+            self.show_browser = false;
+        }
+        if let Some((item, dragged)) = picked {
+            self.notify(format!("Placing {}: click the grid", item.name(&self.catalog)));
+            if dragged {
+                self.dragging_new = Some(item.clone());
+            }
+            self.tool = Some(Tool::Place(item));
+            self.show_browser = false;
+        }
+    }
+
+    /// One tile in the browser: icon, name and the start of the description.
+    fn tile(&self, ui: &mut Ui, entry: &Entry) -> egui::Response {
+        let size = egui::vec2(160.0, 82.0);
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+        if ui.is_rect_visible(rect) {
+            let visuals = ui.style().interact(&response);
+            ui.painter().rect(
+                rect,
+                6.0,
+                if response.hovered() { visuals.weak_bg_fill } else { ui.visuals().faint_bg_color },
+                egui::Stroke::new(1.0, visuals.bg_stroke.color),
+                egui::StrokeKind::Inside,
+            );
+            let icon = egui::Rect::from_min_size(rect.min + egui::vec2(8.0, 8.0), egui::vec2(22.0, 22.0));
+            draw_icon(ui.painter(), icon, &entry.item, &self.catalog);
+            let text = ui.visuals().text_color();
+            let name = ui.painter().layout(entry.name.clone(), egui::FontId::proportional(13.0), text, rect.width() - 46.0);
+            let name_bottom = icon.top() + 2.0 + name.size().y;
+            ui.painter().galley(icon.right_top() + egui::vec2(8.0, 2.0), name, text);
+            let mut description = entry.description.clone();
+            if description.chars().count() > 70 {
+                description = description.chars().take(68).collect::<String>() + "…";
+            }
+            let weak = ui.visuals().weak_text_color();
+            let galley = ui.painter().layout(description, egui::FontId::proportional(10.5), weak, rect.width() - 16.0);
+            let top = name_bottom.max(icon.bottom()) + 4.0;
+            ui.painter().with_clip_rect(rect.shrink(2.0)).galley(egui::pos2(rect.left() + 8.0, top), galley, weak);
+        }
+        response.on_hover_text(format!("{}\n{}", entry.name, entry.description))
     }
 
     // ---- menus ------------------------------------------------------------
@@ -354,28 +469,69 @@ impl OpticsPanel {
                         if enter && let Some(first) = items.first() {
                             choice = Some(MenuChoice::Add(first.item.clone()));
                         }
-                        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                            let mut section = "";
-                            for entry in &items {
-                                if entry.section != section {
-                                    section = entry.section;
-                                    ui.label(RichText::new(section).small().weak());
+                        let catalog = &self.catalog;
+                        let row = |ui: &mut Ui, entry: &Entry| {
+                            ui_kit::item_row_sized(ui, false, &entry.name, 22.0, |p, r| draw_icon(p, r, &entry.item, catalog))
+                                .on_hover_text(&entry.description)
+                                .clicked()
+                        };
+                        if menu.search.trim().is_empty() {
+                            // Like Blender's Shift+A: hover a category to open its list.
+                            for (k, section) in SECTIONS.into_iter().enumerate() {
+                                if !items.iter().any(|e| e.section == section) {
+                                    continue;
                                 }
-                                let catalog = &self.catalog;
-                                let row = ui_kit::item_row(ui, false, &entry.name, |p, r| draw_icon(p, r, &entry.item, catalog));
-                                if row.on_hover_text(&entry.description).clicked() {
-                                    choice = Some(MenuChoice::Add(entry.item.clone()));
+                                let open = menu.open_section.is_some_and(|(s, _)| s == k);
+                                let response = ui.add(
+                                    egui::Button::selectable(open, format!("{section}  ›"))
+                                        .min_size(egui::vec2(ui.available_width(), 22.0)),
+                                );
+                                if response.hovered() || response.clicked() {
+                                    menu.open_section = Some((k, response.rect.top()));
                                 }
                             }
-                            if items.is_empty() {
-                                ui.label(RichText::new("Nothing matches").weak());
-                            }
-                        });
+                        } else {
+                            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                                for entry in &items {
+                                    if row(ui, entry) {
+                                        choice = Some(MenuChoice::Add(entry.item.clone()));
+                                    }
+                                }
+                                if items.is_empty() {
+                                    ui.label(RichText::new("Nothing matches").weak());
+                                }
+                            });
+                        }
                         choice
                     })
                     .inner
             });
-        if let Some(choice) = shown.inner {
+        // The open category's entries, beside its row.
+        let mut choice = shown.inner;
+        if menu.search.trim().is_empty()
+            && let Some((k, y)) = menu.open_section
+        {
+            let section = SECTIONS[k];
+            let items = entries(&self.catalog, self.embedded, "");
+            let catalog = &self.catalog;
+            egui::Area::new(Id::unique("optics_submenu"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(Pos2::new(shown.response.rect.right() + 2.0, y - 6.0))
+                .show(ctx, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_width(230.0);
+                        for entry in items.iter().filter(|e| e.section == section) {
+                            let clicked = ui_kit::item_row_sized(ui, false, &entry.name, 22.0, |p, r| draw_icon(p, r, &entry.item, catalog))
+                                .on_hover_text(&entry.description)
+                                .clicked();
+                            if clicked {
+                                choice = Some(MenuChoice::Add(entry.item.clone()));
+                            }
+                        }
+                    });
+                });
+        }
+        if let Some(choice) = choice {
             self.apply_menu_choice(choice, menu.world);
             return;
         }
@@ -383,13 +539,17 @@ impl OpticsPanel {
             self.menu = None;
             return;
         }
-        if !just_opened && ctx.input(|i| i.pointer.any_pressed()) && !shown.response.contains_pointer() {
+        let on_canvas = ctx
+            .input(|i| i.pointer.interact_pos())
+            .is_some_and(|p| ctx.layer_id_at(p).is_none_or(|l| l.order == egui::Order::Background));
+        if !just_opened && ctx.input(|i| i.pointer.any_pressed()) && !shown.response.contains_pointer() && on_canvas {
             self.menu = None;
             return;
         }
         // Keep the typed search.
         if let Some(m) = &mut self.menu {
             m.search = menu.search;
+            m.open_section = menu.open_section;
         }
     }
 

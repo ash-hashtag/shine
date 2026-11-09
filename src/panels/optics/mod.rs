@@ -59,6 +59,8 @@ pub struct Menu {
     pub world: Pos2,
     pub target: Option<Hit>,
     pub search: String,
+    /// Category whose submenu is open, and the screen y of its row.
+    pub open_section: Option<(usize, f32)>,
     opened_at: f64,
 }
 
@@ -122,6 +124,11 @@ pub struct OpticsPanel {
     /// The document being edited, to refuse placing it inside itself.
     pub doc_id: Option<DocId>,
     pub search: String,
+    /// The categorised browser of every part and component.
+    pub show_browser: bool,
+    /// Folder shown in the browser, an index into [`library::SECTIONS`].
+    pub browser_section: usize,
+    pub browser_search: String,
     pub show_toolbar: bool,
     pub show_properties: bool,
     pub show_shortcuts: bool,
@@ -165,6 +172,9 @@ impl Default for OpticsPanel {
             catalog: Catalog::default(),
             doc_id: None,
             search: String::new(),
+            show_browser: false,
+            browser_section: 0,
+            browser_search: String::new(),
             show_toolbar: true,
             show_properties: true,
             show_shortcuts: false,
@@ -581,6 +591,7 @@ impl OpticsPanel {
             world,
             target,
             search: String::new(),
+            open_section: None,
             opened_at: self.time,
         });
     }
@@ -722,6 +733,7 @@ impl OpticsPanel {
     pub fn overlays(&mut self, ctx: &egui::Context) {
         self.menu_ui(ctx);
         self.bridge_ui(ctx);
+        self.browser_ui(ctx);
     }
 
     /// One line for the status bar: transient message, or mode and hints.

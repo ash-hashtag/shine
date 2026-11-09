@@ -105,7 +105,17 @@ pub fn item_row(
     label: &str,
     icon: impl FnOnce(&Painter, Rect),
 ) -> Response {
-    let height = 26.0;
+    item_row_sized(ui, selected, label, 26.0, icon)
+}
+
+/// [`item_row`] at a chosen height (compact lists use about 22).
+pub fn item_row_sized(
+    ui: &mut Ui,
+    selected: bool,
+    label: &str,
+    height: f32,
+    icon: impl FnOnce(&Painter, Rect),
+) -> Response {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), height),
         Sense::click_and_drag(),
@@ -116,13 +126,13 @@ pub fn item_row(
             ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
         }
         let icon_rect =
-            Rect::from_center_size(rect.left_center() + Vec2::new(16.0, 0.0), Vec2::splat(20.0));
+            Rect::from_center_size(rect.left_center() + Vec2::new(16.0, 0.0), Vec2::splat((height - 6.0).min(20.0)));
         icon(ui.painter(), icon_rect);
         ui.painter().text(
             rect.left_center() + Vec2::new(34.0, 0.0),
             Align2::LEFT_CENTER,
             label,
-            FontId::proportional(13.5),
+            FontId::proportional(if height < 24.0 { 13.0 } else { 13.5 }),
             visuals.text_color(),
         );
     }

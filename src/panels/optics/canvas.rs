@@ -295,7 +295,12 @@ impl OpticsPanel {
             self.frame_pending = false;
             self.frame(false);
         }
-        let pointer = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
+        // The canvas only has the pointer when nothing (a menu, a popup, a
+        // window) is on top of it there; otherwise wheel and clicks are theirs.
+        let layer = ui.layer_id();
+        let pointer = ui
+            .input(|i| i.pointer.hover_pos())
+            .filter(|p| rect.contains(*p) && ui.ctx().layer_id_at(*p).is_none_or(|l| l == layer));
         self.mouse_screen = pointer;
         self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
 

@@ -526,9 +526,9 @@ fn context_and_add_menus() {
         "right click selects"
     );
 
-    // Clicking elsewhere closes it.
+    // Clicking the canvas elsewhere closes it.
     h.click(
-        scr(&panel, cell_center(8, 8)),
+        scr(&panel, cell_center(14, 2)),
         &mut panel,
         PointerButton::Primary,
     );
@@ -1125,4 +1125,94 @@ fn converters_bridge_light_and_signals() {
     panel.apply_bridge_choice(false);
     assert!(panel.bridge.is_none());
     assert!(panel.insert_bridge(bridge::Bridge::Drive { signal: bit, light: PortRef { instance: model::InstanceId(99), port: 0 } }).is_err());
+}
+
+#[test]
+fn wheel_over_a_menu_does_not_move_the_grid() {
+    let mut panel = OpticsPanel::default();
+    let mut h = Harness::new(&mut panel);
+    let at = scr(&panel, cell_center(3, 3));
+    h.move_to(at, &mut panel);
+    h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
+    h.frame(&mut panel, Vec::new());
+    assert!(panel.menu.is_some());
+    let (zoom, pan) = (panel.view.zoom, panel.view.pan);
+    // Over the menu: the wheel belongs to it.
+    let over_menu = panel.menu_position().unwrap() + Vec2::new(60.0, 60.0);
+    h.wheel(over_menu, &mut panel, Vec2::new(0.0, -3.0), MouseWheelUnit::Line, MouseWheelSource::Wheel);
+    h.frame(&mut panel, Vec::new());
+    assert_eq!((panel.view.zoom, panel.view.pan), (zoom, pan), "the grid stayed put");
+    assert!(panel.menu.is_some());
+    // Over bare canvas it zooms as usual.
+    let canvas = panel.canvas_rect().unwrap();
+    h.wheel(canvas.right_bottom() - Vec2::new(30.0, 30.0), &mut panel, Vec2::new(0.0, -3.0), MouseWheelUnit::Line, MouseWheelSource::Wheel);
+    assert_ne!(panel.view.zoom, zoom);
+}
+
+#[test]
+fn add_menu_has_category_submenus() {
+    let mut panel = OpticsPanel::default();
+    let mut h = Harness::new(&mut panel);
+    h.move_to(scr(&panel, cell_center(3, 3)), &mut panel);
+    h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
+    h.frame(&mut panel, Vec::new());
+    // Hover down the menu until a category opens its list beside it.
+    let menu = panel.menu_position().unwrap();
+    let mut open = None;
+    for dy in (60..420).step_by(6) {
+        h.move_to(menu + Vec2::new(40.0, dy as f32), &mut panel);
+        if let Some(section) = panel.menu.as_ref().unwrap().open_section {
+            open = Some(section);
+            break;
+        }
+    }
+    let (section, y) = open.expect("hovering a category opens it");
+    assert_eq!(library::SECTIONS[section], "Light & detection", "the first category");
+    h.frame(&mut panel, Vec::new());
+    // Its first entry (Laser) sits to the right of the row; clicking adds it.
+    let menu_right = h.ctx.memory(|m| {
+        m.areas()
+            .visible_layer_ids()
+            .into_iter()
+            .filter_map(|l| m.area_rect(l.id).map(|r| (l, r)))
+            .find(|(l, _)| l.order == egui::Order::Foreground && l.id == egui::Id::unique("optics_menu"))
+            .map(|(_, r)| r.right())
+    });
+    let x = menu_right.expect("menu drawn") + 60.0;
+    h.click(Pos2::new(x, y + 6.0), &mut panel, PointerButton::Primary);
+    assert!(panel.menu.is_none(), "choosing closes the menu");
+    assert_eq!(panel.layout.components.len(), 1);
+    assert!(matches!(panel.layout.components[0].kind, OpticComponentKind::Laser { .. }));
+    assert_eq!(cell_of(panel.layout.components[0].pos), (3, 3), "placed where the menu opened");
+}
+
+#[test]
+fn browser_lists_folders_and_picks_a_part() {
+    let mut panel = OpticsPanel::default();
+    let mut h = Harness::new(&mut panel);
+    panel.show_browser = true;
+    for section in 0..library::SECTIONS.len() {
+        panel.browser_section = section;
+        h.frame(&mut panel, Vec::new());
+    }
+    panel.browser_search = "threshold".into();
+    h.frame(&mut panel, Vec::new());
+    assert!(panel.show_browser);
+    // Closing the window hides it.
+    panel.show_browser = false;
+    h.frame(&mut panel, Vec::new());
+    // The ▦ button next to the search box opens it.
+    h.click(Pos2::new(18.0, 18.0), &mut panel, PointerButton::Primary);
+    assert!(panel.show_browser, "the browse button opens the browser");
+}
+
+#[test]
+fn library_folders_collapse_and_search_flattens() {
+    let mut panel = OpticsPanel::default();
+    let mut h = Harness::new(&mut panel);
+    h.frame(&mut panel, Vec::new());
+    panel.search = "mirror".into();
+    h.frame(&mut panel, Vec::new());
+    panel.search.clear();
+    h.frame(&mut panel, Vec::new());
 }
