@@ -65,9 +65,14 @@ pub enum Builtin {
     Attenuator {
         loss_db: f64,
     },
+    /// A length of waveguide. `n_eff` holds at `reference_nm`; `n_g` (group
+    /// index) sets how its phase changes with wavelength and its delay.
     DelayLine {
         length_um: f64,
         n_eff: f64,
+        n_g: f64,
+        reference_nm: f64,
+        loss_db_per_cm: f64,
     },
     Mzi {
         theta: f64,
@@ -76,17 +81,22 @@ pub enum Builtin {
     YSplitter,
     YCombiner,
     Crossing,
+    /// All-pass ring; indices as for [`Builtin::DelayLine`].
     Ring {
         coupling: f64,
         length_um: f64,
         n_eff: f64,
         loss_db_per_cm: f64,
+        n_g: f64,
+        reference_nm: f64,
     },
     AddDropRing {
         coupling: f64,
         length_um: f64,
         n_eff: f64,
         loss_db_per_cm: f64,
+        n_g: f64,
+        reference_nm: f64,
     },
     SplitterTree {
         levels: u32,
@@ -141,9 +151,13 @@ impl Builtin {
             Self::Coupler { coupling: 0.5 },
             Self::PhaseShifter { phase: 0.0 },
             Self::Attenuator { loss_db: 3.0 },
+            // Silicon strip waveguide at 1550 nm.
             Self::DelayLine {
                 length_um: 10.0,
                 n_eff: 2.4,
+                n_g: 4.2,
+                reference_nm: 1550.0,
+                loss_db_per_cm: 0.0,
             },
             // Balanced: light in one input leaves both outputs, half each.
             Self::Mzi {
@@ -158,12 +172,16 @@ impl Builtin {
                 length_um: 100.0,
                 n_eff: 2.4,
                 loss_db_per_cm: 10.0,
+                n_g: 4.2,
+                reference_nm: 1550.0,
             },
             Self::AddDropRing {
                 coupling: 0.05,
                 length_um: 12.916_666_666_666_666,
                 n_eff: 2.4,
                 loss_db_per_cm: 0.0,
+                n_g: 4.2,
+                reference_nm: 1550.0,
             },
             Self::SplitterTree { levels: 2 },
             Self::SwitchTree {
@@ -422,8 +440,12 @@ impl Builtin {
                 let n = c.add(Attenuator::from_db(*loss_db));
                 single(n, 1, 1)
             }
-            Self::DelayLine { length_um, n_eff } => {
-                let n = c.add(Waveguide::new(*length_um, *n_eff));
+            Self::DelayLine { length_um, n_eff, n_g, reference_nm, loss_db_per_cm } => {
+                let n = c.add(
+                    Waveguide::new(*length_um, *n_eff)
+                        .with_group_index(*n_g, *reference_nm)
+                        .with_loss(*loss_db_per_cm),
+                );
                 single(n, 1, 1)
             }
             Self::Mzi { theta, phi } => {
@@ -447,13 +469,15 @@ impl Builtin {
                 length_um,
                 n_eff,
                 loss_db_per_cm,
+                n_g,
+                reference_nm,
             } => AllPassRing {
                 coupling: *coupling,
                 length_um: *length_um,
                 n_eff: *n_eff,
                 loss_db_per_cm: *loss_db_per_cm,
-                n_g: *n_eff,
-                reference_nm: crate::photonics::REFERENCE_NM,
+                n_g: *n_g,
+                reference_nm: *reference_nm,
             }
             .build(c)?,
             Self::AddDropRing {
@@ -461,14 +485,16 @@ impl Builtin {
                 length_um,
                 n_eff,
                 loss_db_per_cm,
+                n_g,
+                reference_nm,
             } => AddDropRing {
                 coupling_in: *coupling,
                 coupling_drop: *coupling,
                 length_um: *length_um,
                 n_eff: *n_eff,
                 loss_db_per_cm: *loss_db_per_cm,
-                n_g: *n_eff,
-                reference_nm: crate::photonics::REFERENCE_NM,
+                n_g: *n_g,
+                reference_nm: *reference_nm,
             }
             .build(c)?,
             Self::SplitterTree { levels } => SplitterTree { levels: *levels }.build(c)?,

@@ -376,13 +376,16 @@ pub fn cascaded_interferometers(project: &mut Project) -> DocId {
 /// Channel wavelengths of the WDM link, 10 nm apart in the telecom C band.
 pub const WDM_CHANNELS_NM: [f64; 4] = [1530.0, 1540.0, 1550.0, 1560.0];
 
-/// An add–drop ring resonant at `nm` (20th order, n_eff 2.4).
+/// An add–drop ring resonant at `nm` (20th order, n_eff 2.4 there, silicon's
+/// group index 4.2).
 fn channel_ring(nm: f64) -> Builtin {
     Builtin::AddDropRing {
         coupling: 0.05,
         length_um: 20.0 * nm / 1000.0 / 2.4,
         n_eff: 2.4,
         loss_db_per_cm: 2.0,
+        n_g: 4.2,
+        reference_nm: nm,
     }
 }
 

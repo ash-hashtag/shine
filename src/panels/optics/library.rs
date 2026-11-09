@@ -600,7 +600,12 @@ impl OpticsPanel {
                         ));
                     }
                 }
-                ui.label(RichText::new("Carries light between box ports (n_eff 2.4, length from the drawing).").small().weak());
+                let length = self.layout.wires.get(i).and_then(|w| w.length_um).filter(|l| *l > 0.0);
+                let about = match length {
+                    Some(l) => format!("{l} µm of waveguide (n_eff 2.4), set by the MCP server."),
+                    None => "An ideal connection: no length, loss or phase. Use a delay line block for a length of waveguide.".to_owned(),
+                };
+                ui.label(RichText::new(about).small().weak());
             }
             WireRef::Signal(i) => {
                 ui.strong("Signal wire");
@@ -1076,26 +1081,63 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                         .on_hover_text(format!("Passes {t:.3} of the power"))
                 });
             }
-            Builtin::DelayLine { length_um, n_eff } => {
+            Builtin::DelayLine { length_um, n_eff, n_g, reference_nm, loss_db_per_cm } => {
                 row(ui, "Length", &mut |ui| {
                     ui.add(egui::DragValue::new(length_um).range(0.0..=1e6).speed(0.05).suffix(" µm"))
                 });
-                row(ui, "n_eff", &mut |ui| ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01)));
+                row(ui, "n_eff", &mut |ui| {
+                    ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01))
+                        .on_hover_text("Effective index at the reference wavelength")
+                });
+                row(ui, "n_g", &mut |ui| {
+                    ui.add(egui::DragValue::new(n_g).range(1.0..=6.0).speed(0.01)).on_hover_text(
+                        "Group index: sets how the phase changes with wavelength, so resonance spacing and delay. \
+                         Silicon strip ≈ 4.2; equal to n_eff for no dispersion",
+                    )
+                });
+                row(ui, "at", &mut |ui| {
+                    ui.add(egui::DragValue::new(reference_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm"))
+                        .on_hover_text("Wavelength the indices are given at")
+                });
+                row(ui, "Loss", &mut |ui| {
+                    ui.add(egui::DragValue::new(loss_db_per_cm).range(0.0..=1000.0).speed(0.1).suffix(" dB/cm"))
+                });
+                let delay = crate::photonics::Waveguide::new(*length_um, *n_eff).with_group_index(*n_g, *reference_nm).group_delay_ps();
+                ui.label("");
+                ui.label(RichText::new(format!("delay {delay:.3} ps")).small().weak());
+                ui.end_row();
             }
             Builtin::Mzi { theta, phi } => {
                 row(ui, "θ (internal)", &mut |ui| ui.add(egui::Slider::new(theta, 0.0..=tau).suffix(" rad")));
                 row(ui, "φ (input)", &mut |ui| ui.add(egui::Slider::new(phi, 0.0..=tau).suffix(" rad")));
             }
-            Builtin::Ring { coupling, length_um, n_eff, loss_db_per_cm }
-            | Builtin::AddDropRing { coupling, length_um, n_eff, loss_db_per_cm } => {
+            Builtin::Ring { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm }
+            | Builtin::AddDropRing { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm } => {
                 row(ui, "Coupling", &mut |ui| ui.add(egui::Slider::new(coupling, 0.0..=1.0)));
                 row(ui, "Length", &mut |ui| {
                     ui.add(egui::DragValue::new(length_um).range(0.1..=1e5).speed(0.01).suffix(" µm"))
                 });
-                row(ui, "n_eff", &mut |ui| ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01)));
+                row(ui, "n_eff", &mut |ui| {
+                    ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01))
+                        .on_hover_text("Effective index at the reference wavelength")
+                });
+                row(ui, "n_g", &mut |ui| {
+                    ui.add(egui::DragValue::new(n_g).range(1.0..=6.0).speed(0.01)).on_hover_text(
+                        "Group index: sets how the phase changes with wavelength, so resonance spacing and delay. \
+                         Silicon strip ≈ 4.2; equal to n_eff for no dispersion",
+                    )
+                });
+                row(ui, "at", &mut |ui| {
+                    ui.add(egui::DragValue::new(reference_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm"))
+                        .on_hover_text("Wavelength the indices are given at")
+                });
                 row(ui, "Loss", &mut |ui| {
                     ui.add(egui::DragValue::new(loss_db_per_cm).range(0.0..=1000.0).speed(0.1).suffix(" dB/cm"))
                 });
+                let fsr = *reference_nm * *reference_nm / (*n_g * *length_um * 1000.0);
+                ui.label("");
+                ui.label(RichText::new(format!("resonances {fsr:.2} nm apart (FSR)")).small().weak());
+                ui.end_row();
             }
             Builtin::SplitterTree { levels } => {
                 row(ui, "Levels", &mut |ui| ui.add(egui::Slider::new(levels, 0..=5)));

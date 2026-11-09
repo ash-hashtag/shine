@@ -40,8 +40,8 @@ actually contains is in the [Changelog](changelog.md). Ideas and requests are we
 Still circuit-level and still instant, but with the numbers real devices have, when you
 want them.
 
-- [ ] **Waveguide model**: group index (so ring spacing and delays match real devices) and
-      propagation loss; connections stay ideal unless given a length
+- [x] **Waveguide model**: group index (so ring spacing and delays match real devices) and
+      propagation loss for delay lines and rings; connections stay ideal
 - [ ] **S-parameter import** (Touchstone `.sNp`): measured or simulated components from a
       foundry kit (PDK) or an FDTD tool, used as black boxes
 - [ ] **Monte Carlo**: how a design holds up to fabrication variation

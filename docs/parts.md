@@ -66,20 +66,33 @@ On-chip building blocks, drawn as boxes and connected with waveguides.
 | **Directional coupler** | 2 in, 2 out (bar and cross) | coupling (power to the cross port) |
 | **Phase shifter** | 1 in, 1 out | phase |
 | **Attenuator** | 1 in, 1 out | loss in dB |
-| **Delay line** | 1 in, 1 out | length (µm), effective index; phase depends on wavelength |
+| **Delay line** | 1 in, 1 out | length (µm), effective and group index at a wavelength, loss (dB/cm); the inspector shows its delay |
 | **MZI switch** | 2 in, 2 out | θ (internal: π = bar, 0 = cross, π/2 = half to each output, the default), φ (input phase) |
 | **Y-splitter** | 1 in, 2 out | — (equal split) |
 | **Y-combiner** | 2 in, 1 out | — (only the in-phase part is guided) |
 | **Crossing** | 2 in, 2 out | — (no coupling) |
-| **Ring resonator** | in → through | coupling, length, effective index, loss (dB/cm) |
-| **Add–drop ring** | in, add → through, drop | coupling, length, effective index, loss; resonant wavelengths go from in to drop (and from add to through) |
+| **Ring resonator** | in → through | coupling, length, effective and group index at a wavelength, loss (dB/cm); the inspector shows the resonance spacing |
+| **Add–drop ring** | in, add → through, drop | as the ring resonator; resonant wavelengths go from in to drop (and from add to through) |
 | **Splitter tree** | 1 in, 2^levels out | levels |
 | **Switch tree** | 1 in, 2^levels out | levels, address (which output gets the light) |
 | **Optical DFT** | n in, n out | modes; an MZI mesh computing the discrete Fourier transform |
 
-A ring of length L and effective index n resonates at wavelengths λ where n·L = m·λ for a
-whole number m. The [WDM link](examples.md#4-channel-wdm-optical-link) uses
-L = 20·λ / 2.4 to put each ring on its own channel.
+### Waveguide indices
+
+Delay lines and rings are lengths of waveguide described by two numbers, given at a
+reference wavelength (the **at** field, 1550 nm by default):
+
+- **n_eff**, the effective index, sets the phase: a ring of length L resonates where
+  n_eff·L = m·λ for a whole number m. The [WDM link](examples.md#4-channel-wdm-optical-link)
+  uses L = 20·λ / 2.4 to put each ring on its own channel.
+- **n_g**, the group index, sets how quickly that phase changes with wavelength: ring
+  resonances sit λ²/(n_g·L) apart (the free spectral range), and light takes n_g·L/c to
+  cross. New blocks use silicon's values, n_eff 2.4 and n_g 4.2. Set n_g equal to n_eff
+  for a waveguide whose index doesn't change with wavelength.
+
+Away from the reference wavelength the effective index follows
+n_eff(λ) = n_eff − (n_g − n_eff)·(λ − λ₀)/λ₀, the usual first-order model in circuit
+simulators. Waveguides drawn between boxes are ideal (no length, no loss).
 
 ## Component ports
 

@@ -28,6 +28,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   them with a waveguide, without moving the laser. Projects are now format 4; older
   files open as before.
 
+- Group index for delay lines and rings (with the wavelength the indices are given at), and
+  loss for delay lines: ring resonances sit λ²/(n_g·L) apart and delays are n_g·L/c, as on
+  real chips. New blocks use silicon's indices (2.4 and 4.2); the inspector shows a ring's
+  resonance spacing and a delay line's delay. Projects are now format 5; older rings keep
+  their constant index and simulate as before.
+
 ### Changed
 
 - A new MZI switch starts balanced (θ = π/2), so light in one input leaves both outputs.

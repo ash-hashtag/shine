@@ -40,9 +40,9 @@ Pick a part (**Use selection**) and one of its parameters, and the range:
 | Attenuator | transmission |
 | Directional coupler | coupling |
 | Phase shifter / attenuator blocks | phase / loss (dB) |
-| Delay line | length, n_eff |
+| Delay line | length, n_eff, n_g, loss (dB/cm) |
 | MZI switch | θ, φ |
-| Ring, add–drop ring | coupling, length, n_eff, loss (dB/cm) |
+| Ring, add–drop ring | coupling, length, n_eff, n_g, loss (dB/cm) |
 
 ## Reading the plot
 

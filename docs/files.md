@@ -22,7 +22,9 @@ the project encoded with [postcard](https://docs.rs/postcard). It is about five 
 smaller than the same project as JSON. Files from older versions are converted when
 opened: format 1's separate schematics become layouts of boxes, and format 2's lasers
 (which all interfered with each other) go onto shared source A so they simulate as before.
-The current format is 4, which added waveguides from lasers into boxes.
+Format 4 added waveguides from lasers into boxes; the current format, 5, added group
+indices to delay lines and rings (older ones keep a constant index, so they simulate as
+before).
 A file from a *newer* Shine than yours is refused with a message to update. Preferences
 are not part of a project; they're saved with the app. JSON layouts from early
 versions can still be opened.

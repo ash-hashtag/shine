@@ -53,7 +53,7 @@ fn wavelength_sweep_finds_a_ring_resonance() {
         pos: cell_center(0, 0),
     }]);
     l.add_instance(
-        BlockRef::Builtin(Builtin::AddDropRing { coupling: 0.05, length_um: 20.0 * 1.55 / 2.4, n_eff: 2.4, loss_db_per_cm: 0.0 }),
+        BlockRef::Builtin(Builtin::AddDropRing { coupling: 0.05, length_um: 20.0 * 1.55 / 2.4, n_eff: 2.4, loss_db_per_cm: 0.0, n_g: 4.2, reference_nm: 1550.0 }),
         (2, 0),
     );
     let spec = SweepSpec { kind: SweepKind::Wavelength { laser: 0 }, start: 1545.0, stop: 1555.0, points: 101 };
@@ -171,4 +171,38 @@ fn every_parameter_of_every_block_sets_and_reads_back() {
         }
     }
     assert!(checked >= 20, "only {checked} parameters");
+}
+
+#[test]
+fn an_editor_ring_with_a_group_index_has_real_resonance_spacing() {
+    // A laser wired to a default add–drop ring (silicon: n_eff 2.4, n_g 4.2
+    // at 1550 nm), swept from 1500 to 1600 nm: drop-port peaks sit
+    // λ²/(n_g·L) apart, and one is still exactly at 1550 nm.
+    let mut l = Layout::with_components(vec![PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    }]);
+    let ring = Builtin::palette().into_iter().find(|b| matches!(b, Builtin::AddDropRing { .. })).unwrap();
+    let Builtin::AddDropRing { length_um, n_g, .. } = ring else { unreachable!() };
+    assert_eq!(n_g, 4.2);
+    let id = l.add_instance(BlockRef::Builtin(ring), (3, 0));
+    l.connect_feed(0, crate::panels::optics::model::PortRef { instance: id, port: 0 });
+    let spec = SweepSpec { kind: SweepKind::Wavelength { laser: 0 }, start: 1500.0, stop: 1600.0, points: 8001 };
+    let r = run(&l, 10.0, &NoDocuments, &Machine::default(), None, &spec, &no_names);
+    assert!(r.error.is_none(), "{:?}", r.error);
+    let drop = &r.series.iter().find(|s| s.name.ends_with("out2")).unwrap().power;
+    let peaks: Vec<f64> = (1..drop.len() - 1).filter(|&k| drop[k] > drop[k - 1] && drop[k] >= drop[k + 1] && drop[k] > 0.5).map(|k| r.xs[k]).collect();
+    assert!(peaks.iter().any(|p| (p - 1550.0).abs() < 0.01), "{peaks:?}");
+    // With n_eff(λ) linear in λ, neighbouring resonances satisfy exactly
+    // 1/λ₁ − 1/λ₂ = 1/(n_g·L), i.e. a spacing of λ₁λ₂/(n_g·L) ≈ λ²/(n_g·L).
+    let length_nm = length_um * 1000.0;
+    for w in peaks.windows(2) {
+        let inverse = 1.0 / w[0] - 1.0 / w[1];
+        assert!((inverse * 4.2 * length_nm - 1.0).abs() < 1e-3, "peaks {w:?}: 1/λ₁ − 1/λ₂ = {inverse}, want {}", 1.0 / (4.2 * length_nm));
+    }
+    assert!(peaks.len() >= 2, "{peaks:?}");
+    // Without dispersion (n_g = n_eff) they'd be 1.75× further apart.
+    let fsr_ng = 1550.0 * 1550.0 / (4.2 * length_nm);
+    let fsr_neff = 1550.0 * 1550.0 / (2.4 * length_nm);
+    assert!(peaks.windows(2).all(|w| (w[1] - w[0] - fsr_ng).abs() < (w[1] - w[0] - fsr_neff).abs()));
 }

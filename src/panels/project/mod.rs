@@ -165,12 +165,15 @@ pub(crate) struct DocumentFile {
     layout: Layout,
 }
 
+pub(crate) mod v4;
+
 /// Format 3: layouts had no laser feeds (waveguides from a laser into a box).
 pub(crate) mod v3 {
     use serde::{Deserialize, Serialize};
 
+    use super::v4::{Instance, Layout4};
     use super::{ComponentMeta, DocId, DocumentFile};
-    use crate::panels::optics::model::{Instance, Layout, Line, PlacedComponent, SignalWire, Wire};
+    use crate::panels::optics::model::{Line, PlacedComponent, SignalWire, Wire};
 
     #[derive(Serialize, Deserialize)]
     pub struct Layout3 {
@@ -205,7 +208,7 @@ pub(crate) mod v3 {
             name: d.name,
             component: d.component,
             cell_um: d.cell_um,
-            layout: Layout {
+            layout: Layout4 {
                 components: l.components,
                 lines: l.lines,
                 instances: l.instances,
@@ -214,7 +217,8 @@ pub(crate) mod v3 {
                 next_instance: l.next_instance,
                 labels: l.labels,
                 feeds: Vec::new(),
-            },
+            }
+            .upgrade(),
         }
     }
 }
@@ -225,8 +229,9 @@ pub(crate) mod v2 {
     use egui::{Pos2, Vec2};
     use serde::{Deserialize, Serialize};
 
+    use super::v4::{Instance, Layout4};
     use super::{ComponentMeta, DocId, DocumentFile};
-    use crate::panels::optics::model::{Instance, Layout, Line, OpticComponentKind, PlacedComponent, SignalWire, Wire};
+    use crate::panels::optics::model::{Line, OpticComponentKind, PlacedComponent, SignalWire, Wire};
 
     #[derive(Clone, Copy, Serialize, Deserialize)]
     pub enum Kind {
@@ -302,7 +307,7 @@ pub(crate) mod v2 {
             name: d.name,
             component: d.component,
             cell_um: d.cell_um,
-            layout: Layout {
+            layout: Layout4 {
                 components: l.components.into_iter().map(|p| PlacedComponent { kind: kind(p.kind), pos: p.pos }).collect(),
                 lines: l.lines,
                 instances: l.instances,
@@ -311,7 +316,8 @@ pub(crate) mod v2 {
                 next_instance: l.next_instance,
                 labels: l.labels,
                 feeds: Vec::new(),
-            },
+            }
+            .upgrade(),
         }
     }
 }
@@ -323,8 +329,8 @@ pub(crate) mod v1 {
     use serde::{Deserialize, Serialize};
 
     use super::{ComponentMeta, DocId, DocumentFile};
-    use crate::panels::optics::model::{DETECTOR, GRID, Instance, Layout, Line, OpticComponentKind, PlacedComponent};
     use crate::panels::schematic::model::Schematic;
+    use crate::panels::optics::model::{DETECTOR, GRID, Instance, Layout, Line, OpticComponentKind, PlacedComponent};
 
     #[derive(Clone, Copy, Serialize, Deserialize)]
     pub enum Kind {
@@ -348,7 +354,7 @@ pub(crate) mod v1 {
     #[derive(Serialize, Deserialize)]
     pub enum Content {
         Layout { cell_um: f64, components: Vec<Part>, lines: Vec<Line> },
-        Schematic { schematic: Schematic },
+        Schematic { schematic: super::v4::Schematic },
     }
 
     #[derive(Serialize, Deserialize)]
@@ -414,7 +420,7 @@ pub(crate) mod v1 {
                     ..Layout::default()
                 },
             ),
-            Content::Schematic { schematic } => (10.0, schematic_to_layout(schematic)),
+            Content::Schematic { schematic } => (10.0, schematic_to_layout(schematic.upgrade())),
         };
         DocumentFile {
             id: d.id,
@@ -705,6 +711,13 @@ impl Project {
                 ProjectFile {
                     next_id: old.next_id,
                     documents: old.documents.into_iter().map(v3::upgrade).collect(),
+                }
+            }
+            4 => {
+                let old: v4::Project = file_format::decode_body(bytes)?;
+                ProjectFile {
+                    next_id: old.next_id,
+                    documents: old.documents.into_iter().map(v4::upgrade).collect(),
                 }
             }
             _ => file_format::decode(bytes)?,

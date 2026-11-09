@@ -3,7 +3,7 @@ use egui::{Pos2, Vec2};
 use super::*;
 use crate::panels::optics::examples;
 use crate::panels::optics::model::{DETECTOR, OpticComponentKind, PlacedComponent, PortRef, cell_center};
-use crate::panels::schematic::model::Schematic;
+use crate::panels::optics::model::InstanceId;
 
 fn part(i: i32, j: i32, kind: OpticComponentKind) -> PlacedComponent {
     PlacedComponent { kind, pos: cell_center(i, j) }
@@ -99,13 +99,21 @@ fn files_round_trip_and_fingerprints_follow_content() {
 
 #[test]
 fn version_1_files_are_upgraded() {
-    let mut schematic = Schematic::default();
-    let laser = schematic.add(
-        BlockRef::Builtin(Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: 1550.0 }),
-        Pos2::new(0.0, 0.0),
-    );
-    let det = schematic.add(BlockRef::Builtin(Builtin::Detector), Pos2::new(180.0, 120.0));
-    schematic.connect(PortRef { instance: laser, port: 0 }, PortRef { instance: det, port: 0 });
+    // Format 1 stored schematics with the blocks of the time (format 4's).
+    let at = |id: u32, block: v4::Builtin, pos: Pos2| v4::SchematicInstance { id: InstanceId(id), block: v4::BlockRef::Builtin(block), pos };
+    let schematic = v4::Schematic {
+        instances: vec![
+            at(0, v4::Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: 1550.0 }, Pos2::new(0.0, 0.0)),
+            at(1, v4::Builtin::Detector, Pos2::new(180.0, 120.0)),
+        ],
+        wires: vec![crate::panels::optics::model::Wire {
+            from: PortRef { instance: InstanceId(0), port: 0 },
+            to: PortRef { instance: InstanceId(1), port: 0 },
+            length_um: None,
+        }],
+        wire_settings: Default::default(),
+        next_id: 2,
+    };
     let old = v1::Project {
         next_id: 7,
         documents: vec![
@@ -210,4 +218,60 @@ fn version_3_files_gain_no_feeds() {
     let p = Project::from_bytes(&bytes).unwrap();
     let l = p.doc(DocId(1)).unwrap().layout();
     assert_eq!((l.components.len(), l.label(0), l.feeds.len()), (1, Some("pd"), 0));
+}
+
+#[test]
+fn version_4_waveguides_keep_their_spectra() {
+    // Format 4's rings and delay lines had one index: they upgrade with
+    // n_g = n_eff, so their spectra (away from the reference too) don't move.
+    let ring = v4::Builtin::AddDropRing { coupling: 0.05, length_um: 12.9, n_eff: 2.4, loss_db_per_cm: 3.0 };
+    let delay = v4::Builtin::DelayLine { length_um: 7.0, n_eff: 1.9 };
+    let old = v4::Project {
+        next_id: 2,
+        documents: vec![v4::Document {
+            id: DocId(1),
+            name: "Format 4".into(),
+            component: None,
+            cell_um: 10.0,
+            layout: v4::Layout4 {
+                components: vec![part(0, 0, OpticComponentKind::Laser {
+                    amplitude: 1.0, phase: 0.0, wavelength: 1530.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None,
+                })],
+                lines: Vec::new(),
+                instances: vec![
+                    v4::Instance { id: InstanceId(0), block: v4::BlockRef::Builtin(ring), cell: (2, 0) },
+                    v4::Instance { id: InstanceId(1), block: v4::BlockRef::Builtin(delay), cell: (2, 6) },
+                ],
+                wires: Vec::new(),
+                signals: Vec::new(),
+                next_instance: 2,
+                labels: Vec::new(),
+                feeds: Vec::new(),
+            },
+        }],
+    };
+    let mut bytes = file_format::encode(&old);
+    bytes[4..6].copy_from_slice(&4u16.to_le_bytes());
+    let p = Project::from_bytes(&bytes).unwrap();
+    let l = p.doc(DocId(1)).unwrap().layout();
+    assert_eq!(
+        l.instances[0].block,
+        BlockRef::Builtin(Builtin::AddDropRing { coupling: 0.05, length_um: 12.9, n_eff: 2.4, loss_db_per_cm: 3.0, n_g: 2.4, reference_nm: 1550.0 })
+    );
+    assert_eq!(
+        l.instances[1].block,
+        BlockRef::Builtin(Builtin::DelayLine { length_um: 7.0, n_eff: 1.9, n_g: 1.9, reference_nm: 1550.0, loss_db_per_cm: 0.0 })
+    );
+    // The laser at 1530 nm, 20 nm from the reference, sees the same ring as before.
+    let o = p.simulate(DocId(1), &Machine::default());
+    let expected = crate::photonics::blocks::AddDropRing {
+        coupling_in: 0.05, coupling_drop: 0.05, length_um: 12.9, n_eff: 2.4, loss_db_per_cm: 3.0, n_g: 2.4, reference_nm: 1234.0,
+    };
+    let mut c = crate::photonics::Circuit::new();
+    let ports = crate::photonics::Block::build(&expected, &mut c).unwrap();
+    let sol = c.simulate(1530.0, &[(ports.inputs[0], crate::photonics::C64::ONE)]).unwrap();
+    for k in 0..2 {
+        let want = sol.output_field(ports.outputs[k]).norm_sqr();
+        assert!((o.port_power[&(InstanceId(0), k)] - want).abs() < 1e-9, "port {k}");
+    }
 }
