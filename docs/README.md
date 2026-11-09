@@ -29,6 +29,8 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [AI assistants (MCP)](ai.md) | Using Shine from Claude and other MCP clients; notes for LLMs |
 | [Rust library](library.md) | Using the `photonics` crate without the editor |
 | [Development](development.md) | Building, testing, keeping these docs current, releases |
+| [Roadmap](roadmap.md) | What's being built for 0.1.0 and what comes after |
+| [Changelog](changelog.md) | What changed in each version |
 
 On the website, **Search** at the top of every docs page (Ctrl+K) searches all of them.
 

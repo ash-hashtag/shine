@@ -16,3 +16,12 @@
   border-radius: 0.5rem;
   box-shadow: var(--sl-shadow-md);
 }
+
+/* Checklists (the roadmap) without bullets next to their boxes. */
+.sl-markdown-content ul.contains-task-list {
+  padding-inline-start: 0;
+}
+
+.sl-markdown-content li.task-list-item {
+  list-style: none;
+}
