@@ -1,0 +1,18 @@
+/* Starlight in Shine's colours: the teal accent of the main site. */
+:root {
+  --sl-color-accent-low: #0e2f2d;
+  --sl-color-accent: #2a9d96;
+  --sl-color-accent-high: #a8e6e1;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #cdeeed;
+  --sl-color-accent: #0b6e69;
+  --sl-color-accent-high: #084e4a;
+}
+
+.sl-markdown-content img {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  box-shadow: var(--sl-shadow-md);
+}

@@ -21,10 +21,10 @@ Wayland or X11 at runtime).
 ## The website and browser build
 
 `web/` is an Astro site: the home page, the section pages (`/features`, `/library`,
-`/ai`), these docs at `/docs`, `/llms.txt`, and `/app` (the editor compiled to
-WebAssembly). It uses pnpm. `pnpm run build` also runs [Pagefind](https://pagefind.app),
-which indexes the docs (only the `data-pagefind-body` part of each docs page) for the
-search box in the docs sidebar; search isn't available under `pnpm dev`.
+`/ai`), these docs at `/docs` (rendered by [Starlight](https://starlight.astro.build)
+straight from `docs/*.md`, with Pagefind search built in), `/llms.txt`, and `/app` (the
+editor compiled to WebAssembly). It uses pnpm. Search works in built sites, not under
+`pnpm dev`.
 
 ```sh
 scripts/build-web.sh                 # WebAssembly + site into web/dist

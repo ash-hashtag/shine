@@ -1,0 +1,43 @@
+---
+// Starlight's header icons, with links back to the rest of the site.
+import Default from "@astrojs/starlight/components/SocialIcons.astro";
+
+const base = import.meta.env.BASE_URL;
+const links = [
+  { href: `${base}features/`, label: "Features" },
+  { href: `${base}library/`, label: "Library" },
+  { href: `${base}ai/`, label: "AI" },
+  { href: `${base}app/`, label: "Open the app" },
+];
+---
+
+<nav class="docs-site-links" aria-label="Site">
+  {links.map((l) => <a href={l.href}>{l.label}</a>)}
+</nav>
+<Default />
+
+<style>
+  .docs-site-links {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-inline-end: 0.5rem;
+  }
+  .docs-site-links a {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    font-size: var(--sl-text-sm);
+  }
+  .docs-site-links a:hover {
+    color: var(--sl-color-white);
+  }
+  .docs-site-links a:last-child {
+    color: var(--sl-color-accent-high);
+    font-weight: 600;
+  }
+  @media (max-width: 72rem) {
+    .docs-site-links {
+      display: none;
+    }
+  }
+</style>

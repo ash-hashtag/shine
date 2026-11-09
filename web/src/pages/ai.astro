@@ -1,4 +1,5 @@
 ---
+import { Code } from "astro-expressive-code/components";
 import Section from "../layouts/Section.astro";
 
 const base = import.meta.env.BASE_URL;
@@ -31,7 +32,7 @@ const tools: [string, string][] = [
     <div class="wrap">
       <h2>Connect it</h2>
       <p>Download <code>shine-mcp</code> with a <a href="https://github.com/ash-hashtag/shine/releases">release</a>, then point your client at it:</p>
-        <pre><code>{mcp}</code></pre>
+        <Code code={mcp} lang="json" />
       <h2>Tools</h2>
       <div class="grid">
         {tools.map(([name, what]) => (

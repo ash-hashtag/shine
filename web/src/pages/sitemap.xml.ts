@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { docs, docPath } from "../docs";
+import { docCard, docFile, docPath, docs } from "../docs";
 import { inPublic, lastModified, newest } from "../git";
 
 interface Page {
@@ -48,11 +48,11 @@ export const GET: APIRoute = async ({ site }) => {
     home,
     ...sections,
     ...(await docs()).map((d) => {
-      const card = `og/${d.id}.webp`;
+      const card = docCard(d);
       return {
         path: docPath(d),
-        priority: d.id === "readme" ? "0.8" : "0.7",
-        modified: lastModified(`docs/${d.id === "readme" ? "README" : d.id}.md`),
+        priority: d.id === "docs" ? "0.8" : "0.7",
+        modified: lastModified(`docs/${docFile(d)}`),
         images: inPublic(card) ? [{ path: card, caption: d.data.title }] : [],
       };
     }),

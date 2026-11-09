@@ -30,7 +30,7 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [Rust library](library.md) | Using the `photonics` crate without the editor |
 | [Development](development.md) | Building, testing, keeping these docs current, releases |
 
-On the website, the search box at the top of the sidebar searches every page.
+On the website, **Search** at the top of every docs page (Ctrl+K) searches all of them.
 
 For language models, the whole documentation is also served as plain text at
 [`/llms.txt`](https://shine.lupyd.com/llms.txt) (an index) and
