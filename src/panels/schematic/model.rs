@@ -452,6 +452,8 @@ impl Builtin {
                 length_um: *length_um,
                 n_eff: *n_eff,
                 loss_db_per_cm: *loss_db_per_cm,
+                n_g: *n_eff,
+                reference_nm: crate::photonics::REFERENCE_NM,
             }
             .build(c)?,
             Self::AddDropRing {
@@ -465,6 +467,8 @@ impl Builtin {
                 length_um: *length_um,
                 n_eff: *n_eff,
                 loss_db_per_cm: *loss_db_per_cm,
+                n_g: *n_eff,
+                reference_nm: crate::photonics::REFERENCE_NM,
             }
             .build(c)?,
             Self::SplitterTree { levels } => SplitterTree { levels: *levels }.build(c)?,

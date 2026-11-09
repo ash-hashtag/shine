@@ -112,6 +112,8 @@ impl ChipExample for RingNotch {
             length_um: self.length_um,
             n_eff: 2.4,
             loss_db_per_cm: self.loss_db_per_cm,
+            n_g: 2.4,
+            reference_nm: 1550.0,
         };
         let (c, p) = build(&ring)?;
         let fsr = ring.fsr_nm(1550.0);

@@ -55,21 +55,60 @@ pub fn matrix(rows: usize, cols: usize, data: &[C64]) -> Matrix {
     Matrix::from_fn(rows, cols, |i, j| data[i * cols + j])
 }
 
+/// Speed of light in vacuum, m/s.
+pub const SPEED_OF_LIGHT: f64 = 299_792_458.0;
+
+/// Default reference wavelength for dispersion: the telecom C band.
+pub const REFERENCE_NM: f64 = 1550.0;
+
+/// Effective index at `wavelength_nm`, to first order around `reference_nm`
+/// where it is `n_eff` and the group index is `n_g`:
+/// `n_eff(λ) = n_eff − (n_g − n_eff)·(λ − λ₀)/λ₀`. With `n_g = n_eff` the
+/// index is constant.
+pub fn effective_index(n_eff: f64, n_g: f64, reference_nm: f64, wavelength_nm: f64) -> f64 {
+    n_eff - (n_g - n_eff) * (wavelength_nm - reference_nm) / reference_nm
+}
+
 /// A straight section of waveguide (or free space with `n_eff = 1`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Waveguide {
     pub length_um: f64,
+    /// Effective index at [`Self::reference_nm`].
     pub n_eff: f64,
     pub loss_db_per_cm: f64,
+    /// Group index: sets how the phase changes with wavelength, and so ring
+    /// spacing (FSR = λ²/(n_g·L)) and delay (n_g·L/c).
+    pub n_g: f64,
+    pub reference_nm: f64,
 }
 
 impl Waveguide {
+    /// A waveguide without extra dispersion (`n_g = n_eff`).
     pub fn new(length_um: f64, n_eff: f64) -> Self {
         Self {
             length_um,
             n_eff,
             loss_db_per_cm: 0.0,
+            n_g: n_eff,
+            reference_nm: REFERENCE_NM,
         }
+    }
+
+    /// Sets the group index, with `n_eff` holding at `reference_nm`.
+    pub fn with_group_index(mut self, n_g: f64, reference_nm: f64) -> Self {
+        self.n_g = n_g;
+        self.reference_nm = reference_nm;
+        self
+    }
+
+    /// Effective index at `wavelength_nm`.
+    pub fn index_at(&self, wavelength_nm: f64) -> f64 {
+        effective_index(self.n_eff, self.n_g, self.reference_nm, wavelength_nm)
+    }
+
+    /// Time light takes to cross it, in picoseconds.
+    pub fn group_delay_ps(&self) -> f64 {
+        self.n_g * self.length_um * 1e-6 / SPEED_OF_LIGHT * 1e12
     }
 
     pub fn free_space(length_um: f64) -> Self {
@@ -85,7 +124,7 @@ impl Waveguide {
         let loss_db = self.loss_db_per_cm * self.length_um * 1e-4;
         C64::from_polar(
             db_to_amplitude(loss_db),
-            propagation_phase(self.length_um, self.n_eff, wavelength_nm),
+            propagation_phase(self.length_um, self.index_at(wavelength_nm), wavelength_nm),
         )
     }
 }
@@ -566,6 +605,27 @@ mod tests {
     fn waveguide_is_dispersive() {
         let wg = Waveguide::new(100.0, 2.0);
         assert!(!close(wg.transmission(1550.0), wg.transmission(1551.0)));
+    }
+
+    #[test]
+    fn group_index_sets_the_group_delay() {
+        // The group delay is dφ/dω; with n_g it must come out as n_g·L/c,
+        // whatever n_eff is.
+        let wg = Waveguide::new(1000.0, 2.4).with_group_index(4.2, 1550.0);
+        assert_eq!(wg.index_at(1550.0), 2.4, "n_eff holds at the reference");
+        assert!(wg.index_at(1560.0) < 2.4, "normal dispersion: index falls with λ");
+        let omega = |nm: f64| 2.0 * PI * SPEED_OF_LIGHT / (nm * 1e-9);
+        let phase = |nm: f64| propagation_phase(wg.length_um, wg.index_at(nm), nm);
+        let (a, b) = (1549.99, 1550.01);
+        let tau_ps = (phase(a) - phase(b)) / (omega(a) - omega(b)) * 1e12;
+        assert!((tau_ps - wg.group_delay_ps()).abs() / wg.group_delay_ps() < 1e-6, "{tau_ps} vs {}", wg.group_delay_ps());
+        assert!((wg.group_delay_ps() - 4.2 * 1e-3 / SPEED_OF_LIGHT * 1e12).abs() < 1e-9, "1 mm at n_g 4.2 ≈ 14 ps");
+        // Without a group index, nothing changes from a constant index.
+        let plain = Waveguide::new(1000.0, 2.4);
+        for nm in [1500.0, 1550.0, 1600.0] {
+            assert!(close(plain.transmission(nm), C64::from_polar(1.0, propagation_phase(1000.0, 2.4, nm))));
+        }
+        assert_eq!(effective_index(2.4, 2.4, 1550.0, 1300.0), 2.4);
     }
 
     #[test]

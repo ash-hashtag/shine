@@ -105,13 +105,19 @@ pub struct AllPassRing {
     /// Power coupling between bus and ring.
     pub coupling: f64,
     pub length_um: f64,
+    /// Effective index at [`Self::reference_nm`].
     pub n_eff: f64,
     pub loss_db_per_cm: f64,
+    /// Group index (see [`Waveguide::n_g`]).
+    pub n_g: f64,
+    pub reference_nm: f64,
 }
 
 impl AllPassRing {
     fn ring(&self) -> Waveguide {
-        Waveguide::new(self.length_um, self.n_eff).with_loss(self.loss_db_per_cm)
+        Waveguide::new(self.length_um, self.n_eff)
+            .with_loss(self.loss_db_per_cm)
+            .with_group_index(self.n_g, self.reference_nm)
     }
 
     /// Closed-form through-port field, `(t - a e^{i phi}) / (1 - t a e^{i phi})`.
@@ -121,9 +127,9 @@ impl AllPassRing {
         (t - e) / (1.0 - t * e)
     }
 
-    /// Free spectral range in nm near `wavelength_nm` (no group-index dispersion).
+    /// Free spectral range in nm near `wavelength_nm`: λ²/(n_g·L).
     pub fn fsr_nm(&self, wavelength_nm: f64) -> f64 {
-        wavelength_nm * wavelength_nm / (self.n_eff * self.length_um * 1000.0)
+        wavelength_nm * wavelength_nm / (self.n_g * self.length_um * 1000.0)
     }
 }
 
@@ -146,8 +152,12 @@ pub struct AddDropRing {
     pub coupling_in: f64,
     pub coupling_drop: f64,
     pub length_um: f64,
+    /// Effective index at [`Self::reference_nm`].
     pub n_eff: f64,
     pub loss_db_per_cm: f64,
+    /// Group index (see [`Waveguide::n_g`]).
+    pub n_g: f64,
+    pub reference_nm: f64,
 }
 
 impl AddDropRing {
@@ -159,14 +169,19 @@ impl AddDropRing {
             length_um: resonant_length_um(wavelength_nm, n_eff, order),
             n_eff,
             loss_db_per_cm: 0.0,
+            n_g: n_eff,
+            reference_nm: wavelength_nm,
         }
     }
 }
 
 impl Block for AddDropRing {
     fn build(&self, c: &mut Circuit) -> Result<Ports, CircuitError> {
-        let half =
-            || Waveguide::new(self.length_um / 2.0, self.n_eff).with_loss(self.loss_db_per_cm);
+        let half = || {
+            Waveguide::new(self.length_um / 2.0, self.n_eff)
+                .with_loss(self.loss_db_per_cm)
+                .with_group_index(self.n_g, self.reference_nm)
+        };
         let bus_in = c.add(DirectionalCoupler::new(self.coupling_in));
         let bus_drop = c.add(DirectionalCoupler::new(self.coupling_drop));
         let upper = c.add(half());
@@ -401,6 +416,8 @@ mod tests {
             length_um: 30.0,
             n_eff: 2.4,
             loss_db_per_cm: 20.0,
+            n_g: 2.4,
+            reference_nm: 1550.0,
         };
         let (c, p) = built(&ring);
         for wl in [1549.0, 1550.0, 1550.3, 1551.7] {
@@ -412,6 +429,42 @@ mod tests {
             1550.0 * 1550.0 / (2.4 * 30_000.0),
             1e-12,
         );
+    }
+
+    #[test]
+    fn ring_resonances_are_spaced_by_the_group_index() {
+        // A silicon-like ring (n_eff 2.4, n_g 4.2): simulated through-port
+        // dips near 1550 nm sit λ²/(n_g·L) apart, not λ²/(n_eff·L).
+        let ring = AllPassRing {
+            coupling: 0.05,
+            length_um: 50.0,
+            n_eff: 2.4,
+            loss_db_per_cm: 0.0,
+            n_g: 4.2,
+            reference_nm: 1550.0,
+        };
+        let (c, p) = built(&ring);
+        // Lossless all-pass rings pass all power; the phase wraps fastest at
+        // resonance. With a little loss, resonances become dips to find.
+        let lossy = AllPassRing { loss_db_per_cm: 30.0, ..ring.clone() };
+        let (cl, pl) = built(&lossy);
+        let wls: Vec<f64> = (0..20001).map(|k| 1540.0 + 20.0 * k as f64 / 20000.0).collect();
+        let power: Vec<f64> = wls
+            .iter()
+            .map(|&wl| cl.simulate(wl, &[(pl.inputs[0], C64::ONE)]).unwrap().output_field(pl.outputs[0]).norm_sqr())
+            .collect();
+        let dips: Vec<f64> = (1..wls.len() - 1)
+            .filter(|&k| power[k] < power[k - 1] && power[k] < power[k + 1] && power[k] < 0.9)
+            .map(|k| wls[k])
+            .collect();
+        assert!(dips.len() >= 2, "{dips:?}");
+        let near = dips.windows(2).min_by(|a, b| ((a[0] + a[1]) / 2.0 - 1550.0).abs().total_cmp(&((b[0] + b[1]) / 2.0 - 1550.0).abs())).unwrap();
+        let fsr = near[1] - near[0];
+        assert!((fsr - ring.fsr_nm(1550.0)).abs() / ring.fsr_nm(1550.0) < 0.01, "FSR {fsr} vs {}", ring.fsr_nm(1550.0));
+        assert!((ring.fsr_nm(1550.0) - 1550.0 * 1550.0 / (4.2 * 50_000.0)).abs() < 1e-12);
+        // The lossless ring is still all-pass.
+        let t = c.simulate(1550.0, &[(p.inputs[0], C64::ONE)]).unwrap().output_field(p.outputs[0]).norm_sqr();
+        assert!((t - 1.0).abs() < 1e-9);
     }
 
     #[test]
