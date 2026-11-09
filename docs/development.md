@@ -36,6 +36,12 @@ A test also checks that the bundled fonts can draw every character in the UI's t
 nothing shows as an empty box on machines without the right system fonts. Line coverage
 is measured with `cargo llvm-cov --lib`.
 
+## Performance
+
+`cargo run --release --example sweep_bench` times editor sweeps on a few designs (the WDM
+link, a ring's parameter, a 16-mode optical DFT); `--example matmul` times the engine on a
+large MZI mesh. Run them before and after a change that could affect speed.
+
 ## The website and browser build
 
 `web/` is an Astro site: the home page, the section pages (`/features`, `/library`,

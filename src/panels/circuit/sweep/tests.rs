@@ -206,3 +206,23 @@ fn an_editor_ring_with_a_group_index_has_real_resonance_spacing() {
     let fsr_neff = 1550.0 * 1550.0 / (2.4 * length_nm);
     assert!(peaks.windows(2).all(|w| (w[1] - w[0] - fsr_ng).abs() < (w[1] - w[0] - fsr_neff).abs()));
 }
+
+#[test]
+fn parallel_points_match_one_by_one_simulations() {
+    // Points are simulated in parallel; each must equal a simulation of the
+    // design with that value set, in order, and repeated runs agree.
+    let mut p = Project::new();
+    let id = examples::wdm_link(&mut p);
+    let layout = p.doc(id).unwrap().layout().clone();
+    let laser = layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Laser { .. })).unwrap();
+    let spec = SweepSpec { kind: SweepKind::Wavelength { laser }, start: 1528.0, stop: 1532.0, points: 9 };
+    let r = run(&layout, 10.0, &p, &Machine::default(), Some(id), &spec, &no_names);
+    assert_eq!(r, run(&layout, 10.0, &p, &Machine::default(), Some(id), &spec, &no_names), "deterministic");
+    for (k, &x) in r.xs.iter().enumerate() {
+        let mut l = layout.clone();
+        set(&mut l, Item::Part(laser), "wavelength", x);
+        let o = simulate(&l, 10.0, &p, &Machine::default(), Some(id), &Options::default());
+        let (_, detector) = o.detector_power[0];
+        assert_eq!(r.series[0].power[k], detector, "point {k} at {x} nm");
+    }
+}

@@ -37,7 +37,7 @@ pub struct ChipResult {
     pub notes: Vec<String>,
 }
 
-pub trait ChipExample: Send {
+pub trait ChipExample: Send + Sync {
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
     /// Parameter widgets; returns whether anything changed.

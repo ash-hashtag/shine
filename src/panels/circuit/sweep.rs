@@ -254,11 +254,11 @@ pub fn values(start: f64, stop: f64, points: usize) -> Vec<f64> {
 pub fn run(
     layout: &Layout,
     cell_um: f64,
-    docs: &dyn Documents,
+    docs: &(dyn Documents + Sync),
     machine: &Machine,
     root: Option<DocId>,
     spec: &SweepSpec,
-    name_of_box: &dyn Fn(InstanceId) -> String,
+    name_of_box: &(dyn Fn(InstanceId) -> String + Sync),
 ) -> SweepResult {
     let (item, param, x_label) = match &spec.kind {
         SweepKind::Wavelength { laser } => (Item::Part(*laser), "wavelength", "Wavelength (nm)".to_owned()),
@@ -272,15 +272,34 @@ pub fn run(
         result.error = Some("Nothing to sweep: pick a laser or a part with that parameter".into());
         return result;
     }
-    for x in values(spec.start, spec.stop, spec.points) {
+    // Each point is independent: simulate them in parallel (in order on the
+    // web, which has no threads), then assemble the curves in order.
+    let xs = values(spec.start, spec.stop, spec.points);
+    let points = crate::photonics::par::map(&xs, |&x| {
         let mut l = layout.clone();
         set(&mut l, item, param, x);
         let outcome = simulate(&l, cell_um, docs, machine, root, &Options::default());
         if let Some(e) = outcome.error {
-            result.error = Some(format!("At {x:.4}: {e}"));
-            break;
+            return Err(format!("At {x:.4}: {e}"));
         }
-        for (name, power, from_box) in outputs(&l, &outcome, name_of_box) {
+        let reference = match spec.kind {
+            SweepKind::Wavelength { laser } => match l.components[laser].kind {
+                OpticComponentKind::Laser { amplitude, .. } => (amplitude as f64).powi(2),
+                _ => 0.0,
+            },
+            SweepKind::Parameter { .. } => source_power(&l),
+        };
+        Ok((outputs(&l, &outcome, name_of_box), reference))
+    });
+    for (x, point) in xs.into_iter().zip(points) {
+        let (outputs, reference) = match point {
+            Ok(point) => point,
+            Err(e) => {
+                result.error = Some(e);
+                break;
+            }
+        };
+        for (name, power, from_box) in outputs {
             match result.series.iter_mut().find(|s| s.name == name) {
                 Some(s) => s.power.push(power),
                 None => {
@@ -292,13 +311,7 @@ pub fn run(
             }
         }
         result.xs.push(x);
-        result.reference.push(match spec.kind {
-            SweepKind::Wavelength { laser } => match l.components[laser].kind {
-                OpticComponentKind::Laser { amplitude, .. } => (amplitude as f64).powi(2),
-                _ => 0.0,
-            },
-            SweepKind::Parameter { .. } => source_power(&l),
-        });
+        result.reference.push(reference);
         for s in &mut result.series {
             s.power.resize(result.xs.len(), 0.0);
         }

@@ -36,6 +36,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Changed
 
+- Sweeps simulate their points in parallel on desktop: about 5× faster on a 12-core
+  machine (the WDM link's 1001-point spectrum takes 80 ms instead of 470 ms). In the
+  browser they run in order, as before.
 - A new MZI switch starts balanced (θ = π/2), so light in one input leaves both outputs.
 
 ### Fixed
