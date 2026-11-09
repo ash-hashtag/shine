@@ -12,6 +12,7 @@ sleep 1
 
 # name|query (see Workspace::apply_url_query)
 shots=(
+  "link|example=4-channel-wdm-optical-link"
   "adder|example=8-bit-photonic-adder"
   "full-adder|example=8-bit-photonic-adder&tab=full-adder"
   "accumulator|example=photonic-accumulator"
@@ -40,7 +41,7 @@ for entry in "${shots[@]}"; do
 done
 
 # Social preview card for Open Graph / Twitter.
-sed "s|SCREENSHOT|file://$(realpath "$out/adder.webp")|" "$(dirname "$0")/og-card.html" > "$tmp/og-card.html"
+sed "s|SCREENSHOT|file://$(realpath "$out/link.webp")|" "$(dirname "$0")/og-card.html" > "$tmp/og-card.html"
 chromium --headless=new --no-sandbox --hide-scrollbars --force-color-profile=srgb \
   --allow-file-access-from-files --window-size=1200,630 \
   --screenshot="$tmp/og.png" "file://$tmp/og-card.html" 2>/dev/null

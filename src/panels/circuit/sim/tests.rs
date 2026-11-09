@@ -358,3 +358,41 @@ fn helpers() {
     assert_eq!(o.wire_power(3), 0.0);
     assert_eq!(o.reading(0), None);
 }
+
+#[test]
+fn wdm_link_carries_every_value_on_separate_wavelengths() {
+    let mut p = Project::new();
+    let id = examples::wdm_link(&mut p);
+    let layout = p.doc(id).unwrap().layout().clone();
+    let display = Item::Box(layout.instances.iter().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::Display { .. }))).unwrap().id);
+    let detectors: Vec<usize> =
+        (0..layout.components.len()).filter(|&i| matches!(layout.components[i].kind, OpticComponentKind::Detector { .. })).collect();
+    assert_eq!(detectors.len(), 4);
+    for value in 0..16u64 {
+        let mut l = layout.clone();
+        l.instances[0].block = number(4, value);
+        let o = run_with(&l, &p, &Machine::default(), Some(id));
+        assert_eq!(shown(&o, &l, display, 4), value, "sent {value:04b}");
+        if value.count_ones() == 1 {
+            // One channel lit: it arrives almost whole, the others stay dark.
+            let lit = value.leading_zeros() as usize - 60;
+            for (k, &d) in detectors.iter().enumerate() {
+                let power = o.reading(d).unwrap();
+                if k == lit {
+                    assert!(power > 0.9, "channel {k} received {power}");
+                } else {
+                    assert!(power < 0.01, "crosstalk {power} on channel {k}");
+                }
+            }
+        }
+    }
+    // Detuning the receiver's ring for a channel loses that bit.
+    let mut l = layout.clone();
+    l.instances[0].block = number(4, 0b1111);
+    let receiver_ring = l.instances.iter().position(|i| i.cell == (24, 4)).unwrap();
+    if let BlockRef::Builtin(Builtin::AddDropRing { length_um, .. }) = &mut l.instances[receiver_ring].block {
+        *length_um *= 1.002;
+    }
+    let o = run_with(&l, &p, &Machine::default(), Some(id));
+    assert_eq!(shown(&o, &l, display, 4), 0b0111, "the first channel is no longer dropped");
+}

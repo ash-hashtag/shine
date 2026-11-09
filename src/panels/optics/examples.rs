@@ -361,6 +361,61 @@ pub fn cascaded_interferometers(project: &mut Project) -> DocId {
     project.add_layout("Cascaded interferometers", l, 10.0)
 }
 
+/// Channel wavelengths of the WDM link, 10 nm apart in the telecom C band.
+pub const WDM_CHANNELS_NM: [f64; 4] = [1530.0, 1540.0, 1550.0, 1560.0];
+
+/// An add–drop ring resonant at `nm` (20th order, n_eff 2.4).
+fn channel_ring(nm: f64) -> Builtin {
+    Builtin::AddDropRing {
+        coupling: 0.05,
+        length_um: 20.0 * nm / 1000.0 / 2.4,
+        n_eff: 2.4,
+        loss_db_per_cm: 2.0,
+    }
+}
+
+/// Four bits sent over one waveguide on four wavelengths, the way silicon
+/// photonic transceivers move data between servers.
+///
+/// Transmitter: each bit switches a laser at its own wavelength, and a ring
+/// resonator tuned to that wavelength adds it to the shared bus. Receiver:
+/// rings tuned to the same wavelengths drop each colour onto its own
+/// threshold detector, which gives the bit back.
+pub fn wdm_link(project: &mut Project) -> DocId {
+    let mut l = Layout::default();
+    let data = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 4, value: 0b1011 }), (3, 0)));
+    let mut bus: Option<PortRef> = None;
+    for (k, &nm) in WDM_CHANNELS_NM.iter().enumerate() {
+        let x = 4 + 4 * k as i32;
+        let ring = l.add_instance(BlockRef::Builtin(channel_ring(nm)), (x, 4));
+        // The laser shines into the ring's add port (its lower input).
+        l.components.push(at(x - 1, 5, OpticComponentKind::Laser {
+            amplitude: 1.0,
+            phase: 0.0,
+            wavelength: nm as f32,
+            dir: Vec2::new(1.0, 0.0),
+        }));
+        let laser = l.components.len() - 1;
+        signal(&mut l, (data, k), (Item::Part(laser), 0));
+        if let Some(through) = bus {
+            l.connect_optical(through, PortRef { instance: ring, port: 0 });
+        }
+        bus = Some(PortRef { instance: ring, port: 0 });
+    }
+    let received = Item::Box(l.add_instance(BlockRef::Builtin(Builtin::Display { bits: 4 }), (26, 9)));
+    for (k, &nm) in WDM_CHANNELS_NM.iter().enumerate() {
+        let x = 24 + 5 * k as i32;
+        let ring = l.add_instance(BlockRef::Builtin(channel_ring(nm)), (x, 4));
+        l.connect_optical(bus.expect("transmitter built"), PortRef { instance: ring, port: 0 });
+        bus = Some(PortRef { instance: ring, port: 0 });
+        // The drop port's light leaves the box's right edge into a detector.
+        l.components.push(at(x + 2, 5, OpticComponentKind::Detector { threshold: 0.5 }));
+        let detector = l.components.len() - 1;
+        signal(&mut l, (Item::Part(detector), 0), (received, k));
+    }
+    project.add_layout("4-channel WDM optical link", l, 10.0)
+}
+
 pub struct Demo {
     pub name: &'static str,
     pub description: &'static str,
@@ -371,8 +426,13 @@ pub struct Demo {
 pub fn demos() -> Vec<Demo> {
     vec![
         Demo {
+            name: "4-channel WDM optical link",
+            description: "What photonic chips do in data centres today: four bits travel down one waveguide on four colours of light. Each bit switches a laser at its own wavelength (1530–1560 nm); ring resonators tuned to those wavelengths add them to the shared waveguide, and identical rings at the receiver pick each colour off onto a detector that turns it back into a bit. Real transceivers run each wavelength at 25–100 Gb/s. Click the input bits, or select a ring and detune it to see the channel drop out.",
+            build: wdm_link,
+        },
+        Demo {
             name: "8-bit photonic adder",
-            description: "Adds two 8-bit numbers with light. Each full adder is an interferometer (sum) and a thresholded detector (carry); carries ripple from right to left. Click the input bits and watch the result change. Open a full adder with Tab to see its optics.",
+            description: "Adds two 8-bit numbers in an electro-optic teaching model. Each full adder computes its sum bit by interference (the input bits drive phase shifters) and its carry with a thresholded detector; carries ripple from right to left through electronics. Research chips keep the carry in light and detect only at the end, and in practice photonics is used for data links and linear algebra rather than digital arithmetic. Click the input bits; open a full adder with Tab to see its optics.",
             build: eight_bit_adder,
         },
         Demo {

@@ -19,7 +19,7 @@ const keys: [string, string][] = [
 
 const title = "Shine — photonic circuit simulator";
 const description =
-  "Design optical circuits from beam splitters to an 8-bit photonic adder, reuse them as components, and simulate light and electronics together — in the browser, from Rust, or through an AI assistant.";
+  "Design optical circuits from beam splitters to wavelength-multiplexed data links, reuse them as components, and simulate light and electronics together — in the browser, from Rust, or through an AI assistant.";
 
 // schema.org description for search engines.
 const site = Astro.site;
@@ -35,7 +35,8 @@ const structuredData = {
     "Free-space optics with exact interference",
     "Reusable components connected by waveguides and signal wires",
     "Mixed-signal simulation: detectors, registers, clock and function cells",
-    "An 8-bit adder and an accumulator computed with light",
+    "A 4-channel WDM optical link with ring-resonator multiplexing",
+    "An electro-optic 8-bit adder and accumulator",
     "MZI mesh programming for optical matrix multiplication",
     "Wavelength sweeps of rings, interleavers and WDM demultiplexers",
     "Model Context Protocol server for AI assistants",
@@ -43,7 +44,7 @@ const structuredData = {
   ...(site && {
     url: new URL(base, site).href,
     image: new URL(`${base}screenshots/og.webp`, site).href,
-    screenshot: ["adder", "full-adder", "accumulator", "components", "free-space", "dft", "wdm"].map((n) => new URL(`${base}screenshots/${n}.webp`, site).href),
+    screenshot: ["link", "adder", "full-adder", "accumulator", "components", "free-space", "dft", "wdm"].map((n) => new URL(`${base}screenshots/${n}.webp`, site).href),
   }),
 };
 
@@ -88,23 +89,23 @@ const mcp = `{
     <div class="wrap hero">
       <h1>Design photonic circuits and watch the light.</h1>
       <p class="lead">
-        Shine is a simulator for optical circuits, from beam splitters on a bench to a chip that
-        adds numbers with light. It solves interference, resonances and feedback loops exactly,
+        Shine is a simulator for optical circuits, from beam splitters on a bench to the
+        multi-wavelength links inside data centres. It solves interference, resonances and feedback loops exactly,
         runs the electronics around them, lets you turn any design into a reusable component,
         and runs right here in your browser.
       </p>
       <div class="actions">
         <a class="button primary" href={app}>Open the app</a>
-        <a class="button" href={`${app}?example=8-bit-photonic-adder`}>Try the 8-bit adder</a>
+        <a class="button" href={`${app}?example=4-channel-wdm-optical-link`}>Try a WDM link</a>
       </div>
       <img
         class="shot"
         fetchpriority="high"
         decoding="async"
-        src={shot("adder")}
+        src={shot("link")}
         width="1400"
         height="900"
-        alt="An 8-bit photonic adder in Shine: two number inputs, 100 and 55, feed eight full-adder components whose sums light up a display showing 155."
+        alt="A four-channel WDM optical link in Shine: bits switch lasers at four wavelengths, ring resonators combine them on one waveguide and separate them at the receiver, and the display shows the number sent."
       />
     </div>
 
@@ -118,12 +119,33 @@ const mcp = `{
 
         <div class="feature">
           <div class="text">
-            <h3>Arithmetic with light</h3>
+            <h3>What photonic chips do today</h3>
             <p>
-              A full adder in Shine is built from parts you can inspect: an interferometer whose
-              phase shifters are driven by the input bits computes the sum, and a thresholded
-              detector counting lit lasers computes the carry. Eight of them, carries chained,
-              make an 8-bit adder.
+              Data centres move data between servers on light. A silicon-photonic transceiver
+              puts several wavelengths on one waveguide, each carrying its own bit stream. In
+              Shine's version, four bits switch lasers at 1530–1560&nbsp;nm, ring resonators add
+              each colour to a shared waveguide, and matching rings at the receiver drop each one
+              onto a detector that turns it back into a bit.
+            </p>
+            <ul>
+              <li>Click the input bits and watch them arrive.</li>
+              <li>Detune a receiver ring and its channel disappears.</li>
+            </ul>
+            <a href={`${app}?example=4-channel-wdm-optical-link`}>Open the WDM link →</a>
+          </div>
+          <img class="shot" src={shot("link")} width="1400" height="900" loading="lazy" decoding="async"
+            alt="A four-channel WDM link: four lasers switched by the bits of 11 are added to one waveguide by ring resonators, and four receiver rings drop them onto detectors; the display shows 11." />
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Logic with light, as a teaching model</h3>
+            <p>
+              A full adder built from parts you can inspect: input bits drive phase shifters in an
+              interferometer whose interference gives the sum, and a thresholded detector gives
+              the carry. Eight of them make an 8-bit adder. It shows how light and electronics hand
+              off, not how arithmetic is done in practice: research chips keep the carry in light,
+              and photonics earns its place in links and linear algebra.
             </p>
             <ul>
               <li>Click a bit of either number and watch the result change.</li>
