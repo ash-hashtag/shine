@@ -445,9 +445,7 @@ impl OpticsPanel {
                 &self.view,
                 &o.beams,
                 pointer,
-                &palette,
-                self.prefs.channel_strands,
-                self.prefs.beam_arrows,
+                &render::BeamStyle { palette: &palette, strands: self.prefs.channel_strands, arrows: self.prefs.beam_arrows },
             );
             for &(i, power) in o.detector_power.iter().filter(|_| self.prefs.show_readings) {
                 let Some(c) = self.layout.components.get(i) else { continue };

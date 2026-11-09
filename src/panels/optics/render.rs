@@ -297,18 +297,24 @@ pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     p.distance(a + v * t)
 }
 
+/// How beams are drawn.
+pub struct BeamStyle<'a> {
+    pub palette: &'a crate::panels::prefs::Palette,
+    /// Several channels on one segment side by side.
+    pub strands: bool,
+    pub arrows: bool,
+}
+
 /// Draw beams; returns labels of beams under `hover` (screen space).
-/// Several channels on one segment are drawn side by side when `strands`.
 pub fn draw_beams(
     painter: &Painter,
     canvas: Rect,
     view: &View,
     beams: &[Beam],
     hover: Option<Pos2>,
-    palette: &crate::panels::prefs::Palette,
-    strands: bool,
-    arrows: bool,
+    style: &BeamStyle,
 ) -> Vec<String> {
+    let BeamStyle { palette, strands, arrows } = *style;
     let key = |b: &Beam| {
         let r = |v: f32| (v * 4.0).round() as i32;
         (r(b.start.x), r(b.start.y), r(b.end.x), r(b.end.y))
@@ -428,6 +434,7 @@ mod tests {
             color: None,
         }];
         let palette = crate::panels::prefs::Palette::new(&Default::default(), [532.0, 1550.0]);
+        let style = BeamStyle { palette: &palette, strands: true, arrows: true };
         ctx.run_ui(Default::default(), |ui| {
             let painter = ui.painter_at(canvas);
             assert_eq!(
@@ -437,9 +444,7 @@ mod tests {
                     &view,
                     &beams,
                     Some(Pos2::new(50.0, 102.0)),
-                    &palette,
-                    true,
-                    true
+                    &style
                 )
                 .len(),
                 1
@@ -451,17 +456,15 @@ mod tests {
                     &view,
                     &beams,
                     Some(Pos2::new(50.0, 150.0)),
-                    &palette,
-                    true,
-                    true
+                    &style
                 )
                 .is_empty()
             );
-            assert!(draw_beams(&painter, canvas, &view, &beams, None, &palette, false, false).is_empty());
+            assert!(draw_beams(&painter, canvas, &view, &beams, None, &BeamStyle { palette: &palette, strands: false, arrows: false }).is_empty());
             // Two channels on one segment are drawn side by side.
             let mut two = beams.to_vec();
             two.push(Beam { wavelength_nm: 1550.0, ..beams[0].clone() });
-            assert_eq!(draw_beams(&painter, canvas, &view, &two, Some(Pos2::new(50.0, 101.0)), &palette, true, true).len(), 2);
+            assert_eq!(draw_beams(&painter, canvas, &view, &two, Some(Pos2::new(50.0, 101.0)), &style).len(), 2);
             draw_grid(&painter, canvas, &view, &CanvasTheme::light());
             draw_grid(
                 &painter,
