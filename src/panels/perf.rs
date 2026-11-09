@@ -5,6 +5,8 @@ use std::collections::VecDeque;
 
 /// Frames kept for the graph.
 const HISTORY: usize = 600;
+/// Seconds of history the graph shows.
+const GRAPH_SECONDS: f64 = 10.0;
 /// A pause longer than this means the app was idle (it only draws when
 /// something changes), not that a frame was slow.
 const IDLE_GAP_S: f64 = 0.25;
@@ -101,8 +103,14 @@ impl FrameStats {
     pub fn graph_ui(&self, ui: &mut egui::Ui) {
         use egui_plot::{HLine, Legend, Line, Plot, PlotPoints};
         let now = self.frames.back().map_or(0.0, |f| f.at);
+        // The last few seconds only, so an old spike doesn't set the scale.
         let points = |value: fn(&Frame) -> Option<f64>| -> PlotPoints<'static> {
-            self.frames.iter().filter_map(|f| Some([f.at - now, value(f)?])).collect::<Vec<_>>().into()
+            self.frames
+                .iter()
+                .filter(|f| now - f.at <= GRAPH_SECONDS)
+                .filter_map(|f| Some([f.at - now, value(f)?]))
+                .collect::<Vec<_>>()
+                .into()
         };
         ui.horizontal(|ui| {
             ui.monospace(self.summary());
@@ -113,10 +121,10 @@ impl FrameStats {
         });
         Plot::new("performance_graph")
             .height(170.0)
-            .legend(Legend::default())
+            .legend(Legend::default().position(egui_plot::Corner::LeftTop))
             .include_y(0.0)
             .include_y(40.0)
-            .include_x(-10.0)
+            .include_x(-GRAPH_SECONDS)
             .include_x(0.0)
             .allow_drag(false)
             .allow_zoom(false)
