@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub const MAGIC: [u8; 4] = *b"SHNE";
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 pub const EXTENSION: &str = "shine";
 const HEADER: usize = MAGIC.len() + 2;
 

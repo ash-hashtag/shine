@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use egui::{Pos2, Rect, Vec2};
 
 use super::model::{
-    BlockRef, GRID, Instance, Item, Layout, OpticComponentKind, PlacedComponent, PortCounts, SignalWire, Terminal, Wire,
+    BlockRef, Feed, GRID, Instance, Item, Layout, OpticComponentKind, PlacedComponent, PortCounts, PortRef, SignalWire, Terminal, Wire,
     box_geometry, cell_of, snap,
 };
 pub use crate::panels::history::History;
@@ -246,6 +246,15 @@ impl Editor {
             })
             .collect();
         layout.wires.extend(wires);
+        let feeds: Vec<Feed> = layout
+            .feeds
+            .iter()
+            .filter_map(|f| match item_map.get(&Item::Part(f.laser))? {
+                Item::Part(laser) => Some(Feed { laser: *laser, to: PortRef { instance: box_id(f.to.instance)?, port: f.to.port } }),
+                Item::Box(_) => None,
+            })
+            .collect();
+        layout.feeds.extend(feeds);
 
         self.clear_selection();
         for i in first_part..layout.components.len() {

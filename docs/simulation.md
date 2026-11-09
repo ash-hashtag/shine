@@ -45,7 +45,8 @@ as an error instead of guessed.
 
 A component box is simulated from its layout every time, nested as deep as you like;
 there's no cached approximation. A beam enters a box only on the row of a light input,
-travelling right; unconnected light outputs leave the box as beams to the right.
+travelling right; unconnected light outputs leave the box as beams to the right. A laser
+wired to a box input with a waveguide puts its light straight into that input.
 
 ## Colours
 

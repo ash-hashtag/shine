@@ -16,7 +16,7 @@ right edge = out); **signal terminals** are square (top edge = in, bottom edge =
 
 | Part | What it does | Signal terminals |
 |---|---|---|
-| **Laser** | Source with power (in mW or dBm; 1 mW by default), phase, wavelength (with presets from violet to the telecom C band), a *source* and an optional colour. Points right; R rotates it in 90° steps. Its light is a beam: to feed a box, drag the laser's pin onto the box's light input and it is aimed there. *Own* source (the default): its light never interferes with other lasers, as with real separate lasers. *Shared A–H*: lasers on the same letter are phase-locked, like light split from one laser, and interfere; the letter shows next to the laser. | in: *amplitude*, multiplies the amplitude (0 switches it off, 1 leaves it on) |
+| **Laser** | Source with power (in mW or dBm; 1 mW by default), phase, wavelength (with presets from violet to the telecom C band), a *source* and an optional colour. Points right; R rotates it in 90° steps. Unwired, its light leaves as a beam the way it faces; to feed a box, drag from its light output (the round port on the side it faces) to the box's light input. *Own* source (the default): its light never interferes with other lasers, as with real separate lasers. *Shared A–H*: lasers on the same letter are phase-locked, like light split from one laser, and interfere; the letter shows next to the laser. | in: *amplitude*, multiplies the amplitude (0 switches it off, 1 leaves it on) |
 | **Detector** | Photodiode: absorbs light from any direction and reads its power in mW or dBm. As a bit (comparator) it outputs 1 at or above its threshold in mW. | out: *power* (mW) |
 | **Threshold detector** | A detector whose *bit* option is on: outputs 1 when the power reaches the threshold, else 0. Any detector can be switched between the two in the inspector. | out: *power* (as 0/1) |
 
@@ -67,7 +67,7 @@ On-chip building blocks, drawn as boxes and connected with waveguides.
 | **Phase shifter** | 1 in, 1 out | phase |
 | **Attenuator** | 1 in, 1 out | loss in dB |
 | **Delay line** | 1 in, 1 out | length (µm), effective index; phase depends on wavelength |
-| **MZI switch** | 2 in, 2 out | θ (internal: π = bar, 0 = cross), φ (input phase) |
+| **MZI switch** | 2 in, 2 out | θ (internal: π = bar, 0 = cross, π/2 = half to each output, the default), φ (input phase) |
 | **Y-splitter** | 1 in, 2 out | — (equal split) |
 | **Y-combiner** | 2 in, 1 out | — (only the in-phase part is guided) |
 | **Crossing** | 2 in, 2 out | — (no coupling) |

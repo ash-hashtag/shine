@@ -81,7 +81,7 @@ pub enum MenuChoice {
 /// A selected or hovered connection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WireRef {
-    /// Index into [`Layout::wires`].
+    /// Index into [`Layout::wires`], then on into [`Layout::feeds`].
     Waveguide(usize),
     /// Index into [`Layout::signals`].
     Signal(usize),
@@ -498,6 +498,9 @@ impl OpticsPanel {
             WireRef::Waveguide(w) if w < self.layout.wires.len() => {
                 self.layout.wires.remove(w);
             }
+            WireRef::Waveguide(w) if w - self.layout.wires.len() < self.layout.feeds.len() => {
+                self.layout.feeds.remove(w - self.layout.wires.len());
+            }
             WireRef::Signal(w) if w < self.layout.signals.len() => {
                 self.layout.signals.remove(w);
             }
@@ -685,9 +688,12 @@ impl OpticsPanel {
             })
         };
         let wires: Vec<_> = layout.wires.iter().filter(|w| light_fits(&w.from, true) && light_fits(&w.to, false)).cloned().collect();
-        if signals.len() != self.layout.signals.len() || wires.len() != self.layout.wires.len() {
+        let is_laser = |i: usize| matches!(layout.components.get(i).map(|c| c.kind), Some(model::OpticComponentKind::Laser { .. }));
+        let feeds: Vec<_> = layout.feeds.iter().filter(|f| is_laser(f.laser) && light_fits(&f.to, false)).copied().collect();
+        if signals.len() != self.layout.signals.len() || wires.len() != self.layout.wires.len() || feeds.len() != self.layout.feeds.len() {
             self.layout.signals = signals;
             self.layout.wires = wires;
+            self.layout.feeds = feeds;
             self.selected_wire = None;
         }
     }
@@ -786,7 +792,7 @@ impl OpticsPanel {
         }
         if let Drag::Connect(from) = self.drag {
             return match from {
-                Hit::LightOut(_) | Hit::LightIn(_) => "Drop on a light port to connect with a waveguide".to_owned(),
+                Hit::LightOut(_) | Hit::LightIn(_) | Hit::LaserOut(_) => "Drop on a light port to connect with a waveguide".to_owned(),
                 _ => "Drop on a signal terminal to connect".to_owned(),
             };
         }

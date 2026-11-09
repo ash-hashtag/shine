@@ -1295,43 +1295,85 @@ fn inspector_shows_real_units() {
 }
 
 #[test]
-fn dragging_a_laser_to_a_light_input_aims_it() {
-    // A free-space laser's light is a beam: dragging its pin onto a box's
-    // light input turns it and moves it next to the input, rather than
-    // offering a converter.
+fn lasers_wire_into_boxes_with_waveguides() {
+    // A free-space laser has a light output: dragging it (or, by mistake, its
+    // signal pin) onto a box's light input connects a waveguide, without
+    // moving anything, and its light goes through the box.
     let mut panel = OpticsPanel::default();
-    let mzi = add_box(&mut panel, Builtin::Mzi { theta: 0.0, phi: 0.0 }, (6, 3));
+    let mzi = add_box(&mut panel, Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }, (6, 3));
     panel.layout.components.push(model::PlacedComponent {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(0.0, -1.0), source: 0, color: None },
         pos: cell_center(0, 8),
     });
     let mut h = Harness::new(&mut panel);
-    let pin = scr(&panel, panel.terminal_pos(Terminal { item: Item::Part(0), port: 0 }, false).unwrap());
+    let world = |panel: &OpticsPanel, s: Pos2| panel.view.to_world(panel.canvas_rect().unwrap(), s);
+    let out = scr(&panel, model::laser_light_out(cell_center(0, 8), Vec2::new(0.0, -1.0)));
+    assert_eq!(panel.hit(world(&panel, out)), Hit::LaserOut(0));
     let input = PortRef { instance: mzi, port: 0 };
     let into = scr(&panel, panel.light_port_pos(input, false).unwrap());
-    assert!(bridge::mismatch_hint(panel.hit(panel.view.to_world(panel.canvas_rect().unwrap(), pin)), Hit::LightIn(input)).is_some());
-    h.drag(pin, into, &mut panel, PointerButton::Primary);
-    assert!(panel.bridge.is_none(), "no converter offered");
-    assert!(panel.layout.wires.is_empty() && panel.layout.signals.is_empty());
-    let laser = panel.layout.components[0];
-    assert_eq!(cell_of(laser.pos), (5, 3));
-    assert!(matches!(laser.kind, OpticComponentKind::Laser { dir, .. } if dir == Vec2::new(1.0, 0.0)));
-    // The light now goes through the MZI.
+    h.drag(out, into, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.feeds, vec![model::Feed { laser: 0, to: input }]);
+    assert_eq!(cell_of(panel.layout.components[0].pos), (0, 8), "the laser stays put");
+    assert!(panel.bridge.is_none());
+
+    // The light goes through the MZI: half out of each output, no beam.
     h.frame(&mut panel, Vec::new());
     let o = panel.outcome().expect("simulated");
-    let total: f64 = (0..2).map(|k| o.port_power.get(&(mzi, k)).copied().unwrap_or(0.0)).sum();
-    assert!((total - 1.0).abs() < 1e-9, "{total}");
+    assert!(o.error.is_none(), "{:?}", o.error);
+    for k in 0..2 {
+        assert!((o.port_power[&(mzi, k)] - 0.5).abs() < 1e-9, "{:?}", o.port_power);
+    }
+    assert!(o.beams.iter().all(|b| b.start.y < 200.0), "no beam from the laser: {:?}", o.beams.iter().map(|b| b.start).collect::<Vec<_>>());
+    // The waveguide can be hovered, shows its power, and is deleted like any other.
+    assert_eq!(panel.waveguide_count(), 1);
+    let path = panel.waveguide_points(0).unwrap();
+    assert_eq!(panel.hit(path[12]), Hit::Waveguide(0));
+    assert!(panel.hover_text(Hit::Waveguide(0)).unwrap().contains("power 1.0000"));
+    assert!(panel.hover_text(Hit::LaserOut(0)).unwrap().contains("Wired"));
+    panel.delete_wire(WireRef::Waveguide(0));
+    assert!(panel.layout.feeds.is_empty());
 
-    // With a clear line along the input's row, it only turns.
-    panel.layout.components[0].pos = cell_center(1, 4);
-    panel.aim_laser(0, PortRef { instance: mzi, port: 1 }).unwrap();
-    assert_eq!(cell_of(panel.layout.components[0].pos), (1, 4));
-    // With no room next to the input, it says so and leaves things alone.
-    panel.layout.components.push(model::PlacedComponent { kind: model::DETECTOR, pos: cell_center(5, 3) });
-    panel.layout.components[0].pos = cell_center(0, 8);
-    assert!(panel.aim_laser(0, input).unwrap_err().contains("no room"));
-    assert_eq!(cell_of(panel.layout.components[0].pos), (0, 8));
-    // Dropping onto the laser's body from the input works too.
+    // Dragging the signal pin onto the input connects the light too.
+    let pin = scr(&panel, panel.terminal_pos(Terminal { item: Item::Part(0), port: 0 }, false).unwrap());
+    h.drag(pin, into, &mut panel, PointerButton::Primary);
+    assert_eq!(panel.layout.feed_of(0), Some(input));
+    assert!(panel.layout.signals.is_empty() && panel.bridge.is_none());
     assert_eq!(panel.laser_to_input(Hit::LightIn(input), Hit::Part(0)), Some((0, input)));
-    assert_eq!(panel.laser_to_input(Hit::LightIn(input), Hit::Part(1)), None, "not a laser");
+
+    // A box-to-box waveguide into the same input replaces it, and the other
+    // way round; deleting the box or the laser drops it.
+    let y = add_box(&mut panel, Builtin::YSplitter, (0, 0));
+    panel.layout.connect_optical(PortRef { instance: y, port: 0 }, input);
+    assert!(panel.layout.feeds.is_empty());
+    panel.layout.connect_feed(0, input);
+    assert!(panel.layout.wires.is_empty() && panel.layout.feeds.len() == 1);
+    panel.layout.components.insert(0, model::PlacedComponent { kind: model::DETECTOR, pos: cell_center(-3, 0) });
+    panel.layout.feeds[0].laser = 1;
+    panel.layout.remove_parts(&[0]);
+    assert_eq!(panel.layout.feed_of(0), Some(input), "indices shift with removals");
+    panel.layout.remove_instances(&[mzi]);
+    assert!(panel.layout.feeds.is_empty());
+}
+
+#[test]
+fn duplicating_a_laser_and_box_copies_their_waveguide() {
+    let mut panel = OpticsPanel::default();
+    let mzi = add_box(&mut panel, Builtin::Mzi { theta: 1.0, phi: 0.0 }, (6, 3));
+    panel.layout.components.push(model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(2, 3),
+    });
+    panel.layout.connect_feed(0, PortRef { instance: mzi, port: 0 });
+    panel.editor.selection.select_only(0);
+    panel.editor.boxes.select_only(0);
+    assert!(panel.editor.duplicate_selected(&mut panel.layout, cell_center(2, 10)));
+    assert_eq!(panel.layout.feeds.len(), 2);
+    assert_eq!(panel.layout.feeds[1].laser, 1);
+    assert_ne!(panel.layout.feeds[1].to.instance, mzi);
+    // Pruning keeps valid waveguides and drops those to ports that went away.
+    panel.prune_connections();
+    assert_eq!(panel.layout.feeds.len(), 2);
+    panel.layout.instances[0].block = BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 0 });
+    panel.prune_connections();
+    assert_eq!(panel.layout.feeds.len(), 1);
 }

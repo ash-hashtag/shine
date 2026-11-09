@@ -182,5 +182,32 @@ fn version_2_lasers_keep_interfering() {
     assert!(matches!(l.components[0].kind, OpticComponentKind::Laser { source: 1, color: None, .. }), "on shared source A");
     assert_eq!(l.components[1].kind, OpticComponentKind::Detector { threshold: 0.5 });
     assert_eq!(l.label(2), Some("q"));
-    assert_eq!(file_format::version(&p.to_bytes()), Ok(3));
+    assert_eq!(file_format::version(&p.to_bytes()), Ok(file_format::VERSION));
+}
+
+#[test]
+fn version_3_files_gain_no_feeds() {
+    let old = v3::Project {
+        next_id: 2,
+        documents: vec![v3::Document {
+            id: DocId(1),
+            name: "Format 3".into(),
+            component: None,
+            cell_um: 10.0,
+            layout: v3::Layout3 {
+                components: vec![part(0, 0, DETECTOR)],
+                lines: Vec::new(),
+                instances: Vec::new(),
+                wires: Vec::new(),
+                signals: Vec::new(),
+                next_instance: 0,
+                labels: vec![(0, "pd".into())],
+            },
+        }],
+    };
+    let mut bytes = file_format::encode(&old);
+    bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
+    let p = Project::from_bytes(&bytes).unwrap();
+    let l = p.doc(DocId(1)).unwrap().layout();
+    assert_eq!((l.components.len(), l.label(0), l.feeds.len()), (1, Some("pd"), 0));
 }

@@ -24,11 +24,18 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - Sweep plots in mW, dBm, or dB relative to the input power, with readouts for every
   curve: peak, minimum, insertion loss and extinction ratio.
 
+- Lasers have a light output: drag it to a box's light input (an MZI, a ring…) to wire
+  them with a waveguide, without moving the laser. Projects are now format 4; older
+  files open as before.
+
+### Changed
+
+- A new MZI switch starts balanced (θ = π/2), so light in one input leaves both outputs.
+
 ### Fixed
 
-- Dragging a free-space laser's pin onto a box's light input (an MZI, say) warned about
-  connecting a signal to light and offered to insert another laser. It now aims the laser
-  at that input: the laser turns to face it and moves next to it if needed.
+- Dragging a laser's signal pin onto a box's light input warned about connecting a signal
+  to light and offered to insert another laser; it now connects the laser's light.
 
 ## 0.1.0 (2026-11-09)
 

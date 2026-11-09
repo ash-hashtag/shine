@@ -145,8 +145,9 @@ impl Builtin {
                 length_um: 10.0,
                 n_eff: 2.4,
             },
+            // Balanced: light in one input leaves both outputs, half each.
             Self::Mzi {
-                theta: std::f64::consts::PI,
+                theta: std::f64::consts::FRAC_PI_2,
                 phi: 0.0,
             },
             Self::YSplitter,
@@ -265,7 +266,7 @@ impl Builtin {
             Self::Mzi { .. } => (
                 "MZI switch",
                 "MZI",
-                "Mach–Zehnder interferometer. θ = π is the bar state, θ = 0 the cross state.",
+                "Mach–Zehnder interferometer. θ = π is the bar state, θ = 0 the cross state, π/2 splits the light evenly between both outputs (the default).",
                 Elements,
             ),
             Self::YSplitter => (

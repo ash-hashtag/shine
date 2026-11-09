@@ -457,7 +457,9 @@ impl Optics<'_> {
                         self.colors.entry(id).or_insert(color);
                     }
                     let n = c.add(Laser::new(a, wavelength as f64).with_phase(phase as f64).with_source(id));
-                    (Some(n), vec![(0, direction_index(dir))], false)
+                    // A laser wired into a box shines there, not as a beam.
+                    let beam = if layout.feed_of(i).is_some() { Vec::new() } else { vec![(0, direction_index(dir))] };
+                    (Some(n), beam, false)
                 }
                 OpticComponentKind::Detector { .. } => {
                     let n = c.add(Detector::with_inputs(DIRECTIONS));
@@ -567,6 +569,18 @@ impl Optics<'_> {
             }
             wired_inputs.insert((wire.to.instance, wire.to.port));
             wired_outputs.insert((wire.from.instance, wire.from.port));
+            wire_sources.push(from);
+        }
+        // Waveguides from lasers, numbered after the box-to-box ones.
+        for feed in &layout.feeds {
+            let from = nodes.get(feed.laser).copied().flatten().map(|n| n.output(0)).ok_or("A laser waveguide starts at a part that isn't a laser")?;
+            let to = instance_ports
+                .get(&feed.to.instance)
+                .and_then(|p| p.inputs.get(feed.to.port))
+                .copied()
+                .ok_or("A laser waveguide ends at a port that no longer exists")?;
+            c.connect(from, to).map_err(|e| e.to_string())?;
+            wired_inputs.insert((feed.to.instance, feed.to.port));
             wire_sources.push(from);
         }
 

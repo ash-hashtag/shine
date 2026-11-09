@@ -277,6 +277,21 @@ pub fn part_signal_out(pos: Pos2) -> Pos2 {
     pos + Vec2::new(0.0, GRID / 2.0)
 }
 
+/// Where a laser's light output sits: the middle of the edge it faces (a
+/// little right of the signal pin when it faces up).
+pub fn laser_light_out(pos: Pos2, dir: Vec2) -> Pos2 {
+    let edge = pos + dir * (GRID / 2.0);
+    if dir.y < -0.5 && dir.x.abs() < 0.5 { edge + Vec2::new(GRID * 0.3, 0.0) } else { edge }
+}
+
+/// A waveguide from a free-space laser (by part index) into a box's light
+/// input: the laser's light goes in there instead of out as a beam.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Feed {
+    pub laser: usize,
+    pub to: PortRef,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Layout {
     pub components: Vec<PlacedComponent>,
@@ -288,6 +303,8 @@ pub struct Layout {
     pub next_instance: u32,
     /// Names of port and pin parts (by part index), shown on the component's box.
     pub labels: Vec<(usize, String)>,
+    /// Waveguides from lasers into box inputs.
+    pub feeds: Vec<Feed>,
 }
 
 impl Layout {
@@ -354,11 +371,25 @@ impl Layout {
     /// waveguide each, so wires on either end are replaced.
     pub fn connect_optical(&mut self, from: PortRef, to: PortRef) {
         self.wires.retain(|w| w.from != from && w.to != to);
+        self.feeds.retain(|f| f.to != to);
         self.wires.push(Wire {
             from,
             to,
             length_um: None,
         });
+    }
+
+    /// Connect a laser to a box's light input with a waveguide. A laser feeds
+    /// one input and an input takes one waveguide, so others are replaced.
+    pub fn connect_feed(&mut self, laser: usize, to: PortRef) {
+        self.wires.retain(|w| w.to != to);
+        self.feeds.retain(|f| f.laser != laser && f.to != to);
+        self.feeds.push(Feed { laser, to });
+    }
+
+    /// The input a laser feeds, if any.
+    pub fn feed_of(&self, laser: usize) -> Option<PortRef> {
+        self.feeds.iter().find(|f| f.laser == laser).map(|f| f.to)
     }
 
     /// Remove primitives by index, with their signal wires; later indices shift down.
@@ -388,12 +419,20 @@ impl Layout {
                 })
             })
             .collect();
+        self.feeds = std::mem::take(&mut self.feeds)
+            .into_iter()
+            .filter_map(|f| match remap(Item::Part(f.laser))? {
+                Item::Part(laser) => Some(Feed { laser, ..f }),
+                Item::Box(_) => None,
+            })
+            .collect();
     }
 
     /// Remove instances, with every waveguide and signal wire touching them.
     pub fn remove_instances(&mut self, ids: &[InstanceId]) {
         self.instances.retain(|i| !ids.contains(&i.id));
         self.wires.retain(|w| !ids.contains(&w.from.instance) && !ids.contains(&w.to.instance));
+        self.feeds.retain(|f| !ids.contains(&f.to.instance));
         let touches = |t: &Terminal| matches!(t.item, Item::Box(id) if ids.contains(&id));
         self.signals.retain(|w| !touches(&w.from) && !touches(&w.to));
     }

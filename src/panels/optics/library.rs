@@ -54,7 +54,7 @@ pub const SECTIONS: [&str; 7] = [
 pub fn part_description(kind: &OpticComponentKind) -> &'static str {
     match kind {
         OpticComponentKind::Laser { .. } => {
-            "Coherent source. Its light leaves as a beam the way it faces; drag its pin onto a box's light input to aim it there. Wire a signal to its top to switch it: the amplitude is multiplied by the signal."
+            "Coherent source. Its light leaves as a beam the way it faces, or drag from its light output to a box's light input to wire it with a waveguide. Wire a signal to its top to switch it: the amplitude is multiplied by the signal."
         }
         OpticComponentKind::Detector { threshold } if *threshold > 0.0 => {
             "Photodiode with a comparator: outputs 1 when the power reaches the threshold, else 0."

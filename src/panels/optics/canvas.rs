@@ -23,6 +23,8 @@ pub enum Hit {
     SignalIn(Terminal),
     LightOut(PortRef),
     LightIn(PortRef),
+    /// A laser's light output (by part index).
+    LaserOut(usize),
     Part(usize),
     /// Index into [`model::Layout::instances`].
     Box(usize),
@@ -33,14 +35,20 @@ pub enum Hit {
 
 impl Hit {
     fn is_port(self) -> bool {
-        matches!(self, Hit::SignalOut(_) | Hit::SignalIn(_) | Hit::LightOut(_) | Hit::LightIn(_))
+        matches!(self, Hit::SignalOut(_) | Hit::SignalIn(_) | Hit::LightOut(_) | Hit::LightIn(_) | Hit::LaserOut(_))
     }
 }
 
 /// Points along a waveguide from an output (right edge) to an input (left edge).
 pub fn waveguide_path(a: Pos2, b: Pos2) -> Vec<Pos2> {
+    waveguide_path_from(a, Vec2::new(1.0, 0.0), b)
+}
+
+/// Points along a waveguide leaving `a` in direction `dir`, into an input
+/// (left edge) at `b`.
+pub fn waveguide_path_from(a: Pos2, dir: Vec2, b: Pos2) -> Vec<Pos2> {
     let dx = ((b.x - a.x).abs() / 2.0).max(GRID);
-    let (c1, c2) = (a + Vec2::new(dx, 0.0), b - Vec2::new(dx, 0.0));
+    let (c1, c2) = (a + dir * dx, b - Vec2::new(dx, 0.0));
     (0..=24)
         .map(|k| {
             let t = k as f32 / 24.0;
@@ -90,6 +98,9 @@ impl OpticsPanel {
             for k in 0..c.kind.signal_outputs().len() {
                 out.push((Hit::SignalOut(Terminal { item: Item::Part(i), port: k }), part_signal_out(c.pos)));
             }
+            if let OpticComponentKind::Laser { dir, .. } = c.kind {
+                out.push((Hit::LaserOut(i), model::laser_light_out(c.pos, dir)));
+            }
         }
         for inst in &self.layout.instances {
             let g = self.geometry(inst);
@@ -103,9 +114,22 @@ impl OpticsPanel {
         out
     }
 
+    /// Waveguides between boxes, then those from lasers ([`Layout::feeds`]):
+    /// both are numbered together, as in [`Outcome::wire_fields`].
+    pub fn waveguide_count(&self) -> usize {
+        self.layout.wires.len() + self.layout.feeds.len()
+    }
+
     pub fn waveguide_points(&self, w: usize) -> Option<Vec<Pos2>> {
-        let wire = self.layout.wires.get(w)?;
-        Some(waveguide_path(self.light_port_pos(wire.from, true)?, self.light_port_pos(wire.to, false)?))
+        match self.layout.wires.get(w) {
+            Some(wire) => Some(waveguide_path(self.light_port_pos(wire.from, true)?, self.light_port_pos(wire.to, false)?)),
+            None => {
+                let feed = self.layout.feeds.get(w - self.layout.wires.len())?;
+                let c = self.layout.components.get(feed.laser)?;
+                let OpticComponentKind::Laser { dir, .. } = c.kind else { return None };
+                Some(waveguide_path_from(model::laser_light_out(c.pos, dir), dir, self.light_port_pos(feed.to, false)?))
+            }
+        }
     }
 
     pub fn signal_points(&self, w: usize) -> Option<Vec<Pos2>> {
@@ -173,7 +197,7 @@ impl OpticsPanel {
                 return Hit::Signal(w);
             }
         }
-        for w in 0..self.layout.wires.len() {
+        for w in 0..self.waveguide_count() {
             if self.waveguide_points(w).is_some_and(|path| near_path(world, &path, wire_tolerance)) {
                 return Hit::Waveguide(w);
             }
@@ -242,6 +266,13 @@ impl OpticsPanel {
                     None => {}
                 }
                 Some(text + "\n\nDrag to connect")
+            }
+            Hit::LaserOut(i) => {
+                let text = match self.layout.feed_of(i) {
+                    Some(_) => "Laser · light out\nWired to a box: its light goes through the waveguide instead of out as a beam",
+                    None => "Laser · light out\nNot wired: the light leaves as a beam the way the laser faces",
+                };
+                Some(format!("{text}\n\nDrag to a box's light input to connect with a waveguide"))
             }
             Hit::LightIn(p) | Hit::LightOut(p) => {
                 let output = matches!(hit, Hit::LightOut(_));
@@ -398,7 +429,7 @@ impl OpticsPanel {
         );
 
         // Waveguides, one coloured strand per lit channel.
-        for w in 0..self.layout.wires.len() {
+        for w in 0..self.waveguide_count() {
             let Some(path) = self.waveguide_points(w) else { continue };
             let base = theme.major_line.gamma_multiply(1.6);
             let mut lit: Vec<(f64, Color32)> = outcome
@@ -542,8 +573,18 @@ impl OpticsPanel {
                     }
                     Hit::LightIn(p) | Hit::LightOut(p) => {
                         let output = matches!(hit, Hit::LightOut(_));
-                        let connected = self.layout.wires.iter().any(|w| if output { w.from == p } else { w.to == p });
+                        let connected = self.layout.wires.iter().any(|w| if output { w.from == p } else { w.to == p })
+                            || (!output && self.layout.feeds.iter().any(|f| f.to == p));
                         draw_light_port(&painter, screen, output || connected, is_hovered, zoom, theme);
+                    }
+                    // Shown when wired, hovered, or while drawing a waveguide.
+                    Hit::LaserOut(i)
+                        if is_hovered
+                            || self.layout.feed_of(i).is_some()
+                            || matches!(self.drag, Drag::Connect(Hit::LightIn(_)))
+                            || matches!(hovered, Hit::Part(j) if j == i) =>
+                    {
+                        draw_light_port(&painter, screen, true, is_hovered, zoom, theme);
                     }
                     _ => {}
                 }
@@ -557,19 +598,25 @@ impl OpticsPanel {
                 Hit::SignalIn(t) => self.terminal_pos(t, false),
                 Hit::LightOut(p) => self.light_port_pos(p, true),
                 Hit::LightIn(p) => self.light_port_pos(p, false),
+                Hit::LaserOut(i) => self.ports().into_iter().find(|(h, _)| *h == Hit::LaserOut(i)).map(|(_, at)| at),
                 _ => None,
             };
             if let Some(start) = start {
+                let laser_dir = |i: usize| match self.layout.components.get(i).map(|c| c.kind) {
+                    Some(OpticComponentKind::Laser { dir, .. }) => dir,
+                    _ => Vec2::new(1.0, 0.0),
+                };
                 let (path, color, width) = match from {
                     Hit::SignalOut(_) => (render::signal_route(start, world, 1.0), render::SIGNAL_HIGH, 1.5),
                     Hit::SignalIn(_) => (render::signal_route(world, start, 1.0), render::SIGNAL_HIGH, 1.5),
                     Hit::LightOut(_) => (waveguide_path(start, world), theme.active, 3.0),
+                    Hit::LaserOut(i) => (waveguide_path_from(start, laser_dir(i), world), theme.active, 3.0),
                     _ => (waveguide_path(world, start), theme.active, 3.0),
                 };
                 // Over a port of the other kind: warn and say what fixes it.
-                // A laser's pin onto a light input aims the laser instead.
-                let aim = self.laser_to_input(from, hovered).is_some();
-                let hint = if aim { None } else { super::bridge::mismatch_hint(from, hovered) };
+                // A laser (even its pin) onto a light input connects its light.
+                let feed = self.laser_to_input(from, hovered).is_some();
+                let hint = if feed { None } else { super::bridge::mismatch_hint(from, hovered) };
                 let color = if hint.is_some() { ui.visuals().warn_fg_color } else { color };
                 painter.add(Shape::line(path.into_iter().map(to_screen).collect(), Stroke::new(width, color.gamma_multiply(0.7))));
                 let tip = match hint {
@@ -577,7 +624,7 @@ impl OpticsPanel {
                         let more = if super::bridge::needed(from, hovered).is_some() { " — drop to add one" } else { "" };
                         Some((format!("⚠ {hint}{more}"), ui.visuals().warn_fg_color))
                     }
-                    None if aim => Some(("Drop to aim this laser's beam into the input".to_owned(), theme.active)),
+                    None if feed => Some(("Drop to connect this laser's light to the input".to_owned(), theme.active)),
                     None => None,
                 };
                 if let (Some((text, tip_color)), Some(screen)) = (tip, pointer) {
@@ -640,10 +687,7 @@ impl OpticsPanel {
     /// Finish drawing a wire from `from` by dropping it on `to`.
     fn connect(&mut self, from: Hit, to: Hit) {
         if let Some((laser, light)) = self.laser_to_input(from, to) {
-            match self.aim_laser(laser, light) {
-                Ok(()) => self.notify("Laser aimed at the input: its beam goes in there"),
-                Err(e) => self.notify(format!("Can't aim the laser: {e}")),
-            }
+            self.layout.connect_feed(laser, light);
             return;
         }
         if let Some(bridge) = super::bridge::needed(from, to) {
@@ -657,13 +701,13 @@ impl OpticsPanel {
             (Hit::LightOut(a), Hit::LightIn(b)) | (Hit::LightIn(b), Hit::LightOut(a)) => {
                 self.layout.connect_optical(a, b);
             }
-            (Hit::SignalOut(_) | Hit::SignalIn(_), Hit::LightIn(_) | Hit::LightOut(_))
-            | (Hit::LightIn(_) | Hit::LightOut(_), Hit::SignalIn(_) | Hit::SignalOut(_)) => {
+            (Hit::SignalOut(_) | Hit::SignalIn(_), Hit::LightIn(_) | Hit::LightOut(_) | Hit::LaserOut(_))
+            | (Hit::LightIn(_) | Hit::LightOut(_) | Hit::LaserOut(_), Hit::SignalIn(_) | Hit::SignalOut(_)) => {
                 self.notify(
                     "Light and signals don't connect: light → signal goes through a detector, signal → light through a laser wired to the signal",
                 );
             }
-            (Hit::SignalOut(_), Hit::SignalOut(_)) | (Hit::LightOut(_), Hit::LightOut(_)) => {
+            (Hit::SignalOut(_), Hit::SignalOut(_)) | (Hit::LightOut(_) | Hit::LaserOut(_), Hit::LightOut(_) | Hit::LaserOut(_)) => {
                 self.notify("Connect an output to an input");
             }
             (Hit::SignalIn(_), Hit::SignalIn(_)) | (Hit::LightIn(_), Hit::LightIn(_)) => {
