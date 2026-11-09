@@ -46,6 +46,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Changed
 
+- Big designs simulate much faster: 16 Full adders take 11 ms instead of 145 ms. Each
+  feedback loop is solved only for the light sources that reach it, and without the
+  linear-algebra library starting threads inside work that already runs in parallel.
 - Dragging stays smooth in big designs: when a simulation takes more than about 8 ms, it
   re-runs ten times a second during a drag instead of on every move, and again on
   release.

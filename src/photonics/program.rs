@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use faer::linalg::solvers::{PartialPivLu, Solve};
+use faer::linalg::solvers::PartialPivLu;
 use faer::{Mat, MatRef};
 use pulp::{Arch, Simd, WithSimd};
 
@@ -160,6 +160,18 @@ pub struct SolveBlock {
     lu: PartialPivLu<C64>,
 }
 
+impl SolveBlock {
+    /// Solve `A x = rhs` in place for every column. Single-threaded: the
+    /// blocks are small and the callers already run in parallel (wavelengths,
+    /// chunks of lanes, sweep points); faer's own threads would fight them.
+    fn solve(&self, rhs: faer::MatMut<'_, C64>) {
+        use faer::linalg::lu::partial_pivoting::solve;
+        let n = self.unknowns.len();
+        let mut buffer = faer::dyn_stack::MemBuffer::new(solve::solve_in_place_scratch::<usize, C64>(n, rhs.ncols(), faer::Par::Seq));
+        solve::solve_in_place(self.lu.L(), self.lu.U(), self.lu.P(), rhs, faer::Par::Seq, faer::dyn_stack::MemStack::new(&mut buffer));
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Step {
     Rows(Range<u32>),
@@ -176,6 +188,7 @@ pub struct Program {
 }
 
 impl Program {
+
     pub(crate) fn compile(circuit: &Circuit, wavelength_nm: f64) -> Result<Self, CircuitError> {
         let layout = Layout::new(circuit);
         let mut program = Program {
@@ -523,19 +536,37 @@ impl WithSimd for Execute<'_> {
                 }
                 Step::Solve(b) => {
                     let block = program.block(*b);
-                    let mut rhs = Mat::<C64>::zeros(block.unknowns.len(), lanes);
+                    let n = block.unknowns.len();
+                    let mut rhs = Mat::<C64>::zeros(n, lanes);
                     for row in program.rows(block.rows.clone()) {
                         eval(row, state, &mut acc_re, &mut acc_im);
                         for l in 0..lanes {
                             rhs[(row.target as usize, l)] = C64::new(acc_re[l], acc_im[l]);
                         }
                     }
-                    block.lu.solve_in_place(rhs.as_mut());
+                    // Only lanes with light reaching this loop need solving: a
+                    // zero right-hand side has a zero solution. With many
+                    // independent sources, most lanes are dark in most loops.
+                    let lit: Vec<usize> = (0..lanes).filter(|&l| (0..n).any(|i| rhs[(i, l)] != C64::ZERO)).collect();
+                    let solved = if lit.len() == lanes {
+                        block.solve(rhs.as_mut());
+                        rhs
+                    } else {
+                        let mut some = Mat::<C64>::from_fn(n, lit.len(), |i, k| rhs[(i, lit[k])]);
+                        block.solve(some.as_mut());
+                        let mut all = Mat::<C64>::zeros(n, lanes);
+                        for (k, &l) in lit.iter().enumerate() {
+                            for i in 0..n {
+                                all[(i, l)] = some[(i, k)];
+                            }
+                        }
+                        all
+                    };
                     for (i, &slot) in block.unknowns.iter().enumerate() {
                         let (re, im) = state.slot_mut(slot as usize);
                         for l in 0..lanes {
-                            re[l] = rhs[(i, l)].re;
-                            im[l] = rhs[(i, l)].im;
+                            re[l] = solved[(i, l)].re;
+                            im[l] = solved[(i, l)].im;
                         }
                     }
                 }

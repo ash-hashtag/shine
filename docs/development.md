@@ -42,7 +42,8 @@ is measured with `cargo llvm-cov --lib`.
 link, a ring's parameter, a 16-mode optical DFT); `--example matmul` times the engine on a
 large MZI mesh. `--example frame_bench [n]` times editor frames while dragging a box,
 with one, three and six copies of example component n (0 full adder, 1 Mach–Zehnder…).
-Run them before and after a change that could affect speed.
+`--example scale_bench` times one simulation of 1 to 32 Full adders, to show how the time
+grows with a design's size. Run them before and after a change that could affect speed.
 
 ## The website and browser build
 

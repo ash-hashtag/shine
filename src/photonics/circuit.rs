@@ -409,6 +409,41 @@ mod tests {
     }
 
     #[test]
+    fn separate_loops_lit_by_separate_sources_solve_as_one_batch() {
+        // Several rings, each fed by its own independent laser: in each ring's
+        // solve only its own source's lane is lit. Solving them all in one
+        // batch must equal solving each source alone.
+        let mut c = Circuit::new();
+        let mut rings = Vec::new();
+        for k in 0..6u32 {
+            let laser = c.add(Laser::new(1.0 + k as f64 * 0.1, 1550.0).with_source(100 + k));
+            let ring = c.add_block(&blocks::AllPassRing {
+                coupling: 0.05 + 0.02 * k as f64,
+                length_um: 30.0 + k as f64,
+                n_eff: 2.4,
+                loss_db_per_cm: 10.0,
+                n_g: 4.2,
+                reference_nm: 1550.0,
+            }).unwrap();
+            c.connect(laser.output(0), ring.inputs[0]).unwrap();
+            rings.push(ring.outputs[0]);
+        }
+        let together = c.simulate_sources().unwrap();
+        assert_eq!(together.len(), 6, "one solution per source");
+        for (k, sol) in together.iter().enumerate() {
+            assert_eq!(sol.source(), Some(100 + k as u32));
+            // Alone: the same circuit with only this laser on.
+            let program = c.compile(1550.0).unwrap();
+            let alone = program.run_sources(&[100 + k as u32]).unwrap().remove(0);
+            for (j, &out) in rings.iter().enumerate() {
+                let (a, b) = (sol.output_field(out), alone.output_field(out));
+                assert!((a - b).norm() < 1e-12, "source {k}, ring {j}: {a} vs {b}");
+                assert_eq!(a == C64::ZERO, j != k, "only its own ring is lit");
+            }
+        }
+    }
+
+    #[test]
     fn sources_drive_and_sweep() {
         let mut c = Circuit::new();
         let red = c.add(Laser::new(2.0, 650.0));
