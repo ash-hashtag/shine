@@ -67,7 +67,7 @@ On-chip building blocks, drawn as boxes and connected with waveguides.
 | **Phase shifter** | 1 in, 1 out | phase |
 | **Attenuator** | 1 in, 1 out | loss in dB |
 | **Delay line** | 1 in, 1 out | length (µm), effective and group index at a wavelength, loss (dB/cm); the inspector shows its delay |
-| **MZI switch** | 2 in, 2 out | θ (internal: π = bar, 0 = cross, π/2 = half to each output, the default), φ (input phase) |
+| **MZI switch** | 2 in, 2 out | θ (internal: π = bar, all of in1 to out1; 0 = cross, all to out2; π/2 = half to each, the default), φ (input phase); the inspector shows the split |
 | **Y-splitter** | 1 in, 2 out | — (equal split) |
 | **Y-combiner** | 2 in, 1 out | — (only the in-phase part is guided) |
 | **Crossing** | 2 in, 2 out | — (no coupling) |

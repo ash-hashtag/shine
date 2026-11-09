@@ -1108,8 +1108,17 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 ui.end_row();
             }
             Builtin::Mzi { theta, phi } => {
-                row(ui, "θ (internal)", &mut |ui| ui.add(egui::Slider::new(theta, 0.0..=tau).suffix(" rad")));
+                row(ui, "θ (internal)", &mut |ui| {
+                    ui.add(egui::Slider::new(theta, 0.0..=tau).suffix(" rad"))
+                        .on_hover_text("π: in1 → out1 (bar). 0: in1 → out2 (cross). π/2: half to each.")
+                });
                 row(ui, "φ (input)", &mut |ui| ui.add(egui::Slider::new(phi, 0.0..=tau).suffix(" rad")));
+                // Where light from in1 goes, so a switch at π doesn't look broken.
+                let s = crate::photonics::Component::s_matrix(&crate::photonics::Mzi::new(*theta, *phi), crate::photonics::REFERENCE_NM);
+                let (bar, cross) = (s[(0, 0)].norm_sqr() * 100.0, s[(1, 0)].norm_sqr() * 100.0);
+                ui.label("");
+                ui.label(RichText::new(format!("in1 → out1 {bar:.0}%, out2 {cross:.0}%")).small().weak());
+                ui.end_row();
             }
             Builtin::Ring { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm }
             | Builtin::AddDropRing { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm } => {

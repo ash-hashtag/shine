@@ -153,7 +153,8 @@ fn a_laser_dragged_from_the_library_and_wired_to_an_mzi_lights_both_outputs() {
     for k in 0..2 {
         assert!((o.port_power[&(mzi, k)] - 0.5).abs() < 1e-9, "out{} gets half: {:?}", k + 1, o.port_power);
     }
-    // The inspector shows the outputs with units.
+    // The inspector says where the light goes, and shows the outputs with units.
+    assert!(h.query_by_label("in1 → out1 50%, out2 50%").is_some(), "split readout");
     assert!(h.query_all_by_label("500 µW").count() >= 2, "both outputs read 500 µW");
 }
 
@@ -347,4 +348,15 @@ fn function_cells_are_edited_in_their_inspector() {
     h.event(egui::Event::PointerButton { pos: remove, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
     h.run_steps(2);
     assert_eq!(outputs(&h), (before.0 + 1, before.1));
+}
+
+#[test]
+fn an_mzi_at_pi_says_it_sends_everything_to_out1() {
+    // θ = π is the bar state: all of in1 leaves out1. The inspector says so,
+    // so a dark out2 doesn't look like a fault.
+    let mut h = app();
+    active_mut(&mut h).layout.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: std::f64::consts::PI, phi: 0.0 }), (2, 2));
+    active_mut(&mut h).editor.boxes.select_only(0);
+    h.run_steps(2);
+    assert!(h.query_by_label("in1 → out1 100%, out2 0%").is_some());
 }
