@@ -1,7 +1,7 @@
 ---
 title: Projects and files
 description: Saving and opening projects, the .shine binary format, desktop and browser builds, and logging.
-order: 10
+order: 11
 ---
 
 # Projects and files
@@ -55,6 +55,9 @@ line options:
 |---|---|
 | `--log-file <path>` or `SHINE_LOG_FILE` | also write the log to a file (appended) |
 | `--log-level <filter>`, `SHINE_LOG` or `RUST_LOG` | log filter, e.g. `debug` or `shine=trace` |
+
+`shine simulate PROJECT.shine` simulates a project without opening a window; see
+[Command line](command-line.md).
 
 Logs always go to stderr. The Windows release opens no console window, so use `--log-file` there.
 

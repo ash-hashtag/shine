@@ -9,6 +9,23 @@ use shine::logging::{self, LogConfig};
 const APP_ID: &str = "Shine";
 
 fn main() -> eframe::Result {
+    // Command-line use: no window, nothing but the output.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("simulate") => std::process::exit(shine::cli::main(&args[1..])),
+        Some("--version" | "-V") => {
+            println!("shine {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("--help" | "-h") => {
+            println!(
+                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [--log-file PATH] [--log-level FILTER]   open the editor\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine --version",
+                env!("CARGO_PKG_VERSION")
+            );
+            return Ok(());
+        }
+        _ => {}
+    }
     let _log_guard = match logging::init(&LogConfig::from_env()) {
         Ok(guard) => Some(guard),
         Err(e) => {

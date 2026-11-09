@@ -1,7 +1,7 @@
 ---
 title: Development
 description: Building from source, running tests, keeping the documentation and screenshots current, and how releases are made.
-order: 13
+order: 14
 ---
 
 # Development

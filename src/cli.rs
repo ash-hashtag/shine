@@ -1,0 +1,327 @@
+//! `shine simulate`: simulate a saved project from the command line, for
+//! scripts and CI. Prints every reading, or a sweep as CSV.
+
+use std::fmt::Write as _;
+
+use crate::panels::circuit::sim::{self, Machine, Options};
+use crate::panels::circuit::sweep::{self, SweepKind, SweepSpec};
+use crate::panels::optics::model::{BlockRef, Builtin, Item, Layout, OpticComponentKind, cell_of};
+use crate::panels::optics::{input_number, output_number};
+use crate::panels::project::{DocId, Project};
+use crate::panels::units;
+
+pub const USAGE: &str = "\
+Usage: shine simulate PROJECT.shine [options]
+
+Simulates a saved project and prints every reading (detectors, output ports,
+displays, registers), or a sweep as CSV.
+
+Options:
+  --doc NAME                      the document to simulate (default: the first one
+                                  that isn't a component)
+  --wavelength FROM:TO[:POINTS]   sweep a laser's wavelength in nm (default 201 points)
+  --laser ITEM                    the laser to tune (default: the first)
+  --sweep ITEM.PARAM=FROM:TO[:POINTS]
+                                  sweep a parameter, e.g. --sweep 'Phase shifter.phase=0:6.28'
+  --box-outputs                   also include the light leaving boxes
+  --clock N                       tick the clock N times first (registers)
+  --csv                           readings as CSV (sweeps are always CSV)
+  --out FILE                      write to FILE instead of standard output
+  -h, --help                      this help
+
+ITEM is a part's label (e.g. a port's name), a block or part name when it's unique
+(e.g. 'Add–drop ring'), or a grid cell, e.g. 24,4.
+
+Exit status: 0 on success, 1 if the simulation failed, 2 for a usage error.";
+
+/// What went wrong, and the exit status for it.
+#[derive(Debug, PartialEq)]
+pub enum Failure {
+    /// Bad arguments or a missing file: exit 2.
+    Usage(String),
+    /// The design didn't simulate: exit 1.
+    Simulation(String),
+}
+
+impl Failure {
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Failure::Usage(_) => 2,
+            Failure::Simulation(_) => 1,
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Args {
+    pub project: String,
+    pub doc: Option<String>,
+    pub wavelength: Option<(f64, f64, usize)>,
+    pub laser: Option<String>,
+    pub sweep: Option<(String, String, f64, f64, usize)>,
+    pub box_outputs: bool,
+    pub clock: u64,
+    pub csv: bool,
+    pub out: Option<String>,
+    pub help: bool,
+}
+
+/// `FROM:TO[:POINTS]`.
+fn range(text: &str, default_points: usize) -> Result<(f64, f64, usize), String> {
+    let parts: Vec<&str> = text.split(':').collect();
+    let num = |s: &str| s.trim().parse::<f64>().map_err(|_| format!("“{s}” isn't a number (expected FROM:TO[:POINTS])"));
+    match parts.as_slice() {
+        [from, to] => Ok((num(from)?, num(to)?, default_points)),
+        [from, to, points] => {
+            let n: usize = points.trim().parse().map_err(|_| format!("“{points}” isn't a number of points"))?;
+            if !(2..=100_000).contains(&n) {
+                return Err("points must be between 2 and 100000".into());
+            }
+            Ok((num(from)?, num(to)?, n))
+        }
+        _ => Err(format!("“{text}”: expected FROM:TO[:POINTS]")),
+    }
+}
+
+/// Arguments after `simulate`.
+pub fn parse(args: &[String]) -> Result<Args, String> {
+    let mut a = Args::default();
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let (flag, inline) = match arg.split_once('=') {
+            Some((f, v)) if f.starts_with("--") && f != "--sweep" => (f, Some(v.to_owned())),
+            _ => (arg.as_str(), None),
+        };
+        let mut value = |name: &str| inline.clone().or_else(|| it.next().cloned()).ok_or(format!("{name} needs a value"));
+        match flag {
+            "-h" | "--help" => a.help = true,
+            "--doc" => a.doc = Some(value("--doc")?),
+            "--wavelength" => a.wavelength = Some(range(&value("--wavelength")?, 201)?),
+            "--laser" => a.laser = Some(value("--laser")?),
+            "--sweep" => {
+                let spec = value("--sweep")?;
+                let (target, span) = spec.split_once('=').ok_or("--sweep needs ITEM.PARAM=FROM:TO")?;
+                let (item, param) = target.rsplit_once('.').ok_or("--sweep needs ITEM.PARAM, e.g. 'Coupler.coupling'")?;
+                let (from, to, points) = range(span, 101)?;
+                a.sweep = Some((item.trim().to_owned(), param.trim().to_owned(), from, to, points));
+            }
+            "--box-outputs" => a.box_outputs = true,
+            "--clock" => a.clock = value("--clock")?.parse().map_err(|_| "--clock needs a number of ticks")?,
+            "--csv" => a.csv = true,
+            "--out" => a.out = Some(value("--out")?),
+            // Logging options belong to the binary.
+            "--log-file" | "--log-level" => {
+                if inline.is_none() {
+                    it.next();
+                }
+            }
+            f if f.starts_with('-') => return Err(format!("unknown option {f}")),
+            path if a.project.is_empty() => a.project = path.to_owned(),
+            extra => return Err(format!("unexpected argument “{extra}”")),
+        }
+    }
+    if a.project.is_empty() && !a.help {
+        return Err("which project? (shine simulate PROJECT.shine)".into());
+    }
+    if a.wavelength.is_some() && a.sweep.is_some() {
+        return Err("use either --wavelength or --sweep, not both".into());
+    }
+    Ok(a)
+}
+
+/// The part or box `spec` names in `layout`: a label, a unique name, or a cell `x,y`.
+pub fn find_item(layout: &Layout, project: &Project, spec: &str) -> Result<Item, String> {
+    let catalog = project.catalog();
+    if let Some((x, y)) = spec.split_once(',').and_then(|(x, y)| Some((x.trim().parse::<i32>().ok()?, y.trim().parse::<i32>().ok()?))) {
+        if let Some(i) = layout.components.iter().position(|c| cell_of(c.pos) == (x, y)) {
+            return Ok(Item::Part(i));
+        }
+        if let Some(inst) = layout.instances.iter().find(|i| i.cell == (x, y)) {
+            return Ok(Item::Box(inst.id));
+        }
+        return Err(format!("nothing at cell {x},{y}"));
+    }
+    if let Some(i) = (0..layout.components.len()).find(|&i| layout.label(i) == Some(spec)) {
+        return Ok(Item::Part(i));
+    }
+    let names: Vec<(Item, String)> = layout
+        .components
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (Item::Part(i), c.kind.name().to_owned()))
+        .chain(layout.instances.iter().map(|inst| (Item::Box(inst.id), catalog.display(&inst.block).name)))
+        .collect();
+    let matching: Vec<&(Item, String)> = names.iter().filter(|(_, n)| n.eq_ignore_ascii_case(spec)).collect();
+    match matching.as_slice() {
+        [(item, _)] => Ok(*item),
+        [] => {
+            let mut known: Vec<&str> = names.iter().map(|(_, n)| n.as_str()).collect();
+            known.sort_unstable();
+            known.dedup();
+            Err(format!("no part or block called “{spec}”; this design has: {}", known.join(", ")))
+        }
+        many => {
+            let cells: Vec<String> = many
+                .iter()
+                .map(|(item, _)| {
+                    let (x, y) = match *item {
+                        Item::Part(i) => cell_of(layout.components[i].pos),
+                        Item::Box(id) => layout.instance(id).map_or((0, 0), |i| i.cell),
+                    };
+                    format!("{x},{y}")
+                })
+                .collect();
+            Err(format!("{} things are called “{spec}”; name one by its cell: {}", many.len(), cells.join("  ")))
+        }
+    }
+}
+
+/// Run `shine simulate` with `args` (after `simulate`); returns the text to print.
+pub fn simulate(args: &Args) -> Result<String, Failure> {
+    if args.help {
+        return Ok(format!("{USAGE}\n"));
+    }
+    let bytes = std::fs::read(&args.project).map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
+    let project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
+    let id = choose_doc(&project, args.doc.as_deref()).map_err(Failure::Usage)?;
+    let doc = project.doc(id).expect("chosen");
+    let layout = doc.layout();
+    let cell_um = doc.panel().cell_um;
+    let catalog = project.catalog();
+    let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+
+    let mut machine = Machine::default();
+    for _ in 0..args.clock {
+        let o = sim::simulate(layout, cell_um, &project, &machine, Some(id), &Options::default());
+        sim::clock(layout, &project, &mut machine, &o);
+    }
+
+    let spec = if let Some((from, to, points)) = args.wavelength {
+        let laser = match &args.laser {
+            Some(spec) => match find_item(layout, &project, spec).map_err(Failure::Usage)? {
+                Item::Part(i) if matches!(layout.components[i].kind, OpticComponentKind::Laser { .. }) => i,
+                _ => return Err(Failure::Usage(format!("“{spec}” isn't a laser"))),
+            },
+            None => layout
+                .components
+                .iter()
+                .position(|c| matches!(c.kind, OpticComponentKind::Laser { .. }))
+                .ok_or(Failure::Usage("this design has no laser to tune".into()))?,
+        };
+        Some(SweepSpec { kind: SweepKind::Wavelength { laser }, start: from, stop: to, points })
+    } else if let Some((item, param, from, to, points)) = &args.sweep {
+        let item = find_item(layout, &project, item).map_err(Failure::Usage)?;
+        let available = sweep::params(layout, item);
+        let Some(p) = available.iter().find(|p| p.name == param) else {
+            let names: Vec<&str> = available.iter().map(|p| p.name).collect();
+            return Err(Failure::Usage(if names.is_empty() {
+                "that has no parameters to sweep".into()
+            } else {
+                format!("no parameter “{param}”; it has: {}", names.join(", "))
+            }));
+        };
+        Some(SweepSpec { kind: SweepKind::Parameter { item, param: p.name }, start: *from, stop: *to, points: *points })
+    } else {
+        None
+    };
+
+    if let Some(spec) = spec {
+        let mut result = sweep::run(layout, cell_um, &project, &machine, Some(id), &spec, &names);
+        if let Some(e) = result.error.take() {
+            return Err(Failure::Simulation(e));
+        }
+        let only_boxes = result.series.iter().all(|s| s.from_box);
+        if !args.box_outputs && !only_boxes {
+            result.series.retain(|s| !s.from_box);
+        }
+        return Ok(result.to_csv());
+    }
+
+    let o = sim::simulate(layout, cell_um, &project, &machine, Some(id), &Options::default());
+    if let Some(e) = &o.error {
+        return Err(Failure::Simulation(e.clone()));
+    }
+    // (name, value, unit, human-readable)
+    let mut rows: Vec<(String, f64, &str, String)> = Vec::new();
+    for (name, power, from_box) in sweep::outputs(layout, &o, &names) {
+        if !from_box || args.box_outputs {
+            rows.push((name, power, "mW", units::format_both(power, units::PowerUnit::MilliWatt)));
+        }
+    }
+    for inst in &layout.instances {
+        let at = format!("{},{}", inst.cell.0, inst.cell.1);
+        match &inst.block {
+            BlockRef::Builtin(Builtin::Display { bits }) => {
+                let n = input_number(layout, &o, inst.id, *bits as usize);
+                rows.push((format!("Display {at}"), n as f64, "", n.to_string()));
+            }
+            BlockRef::Builtin(Builtin::Register { bits }) => {
+                let n = output_number(&o, inst.id, *bits as usize);
+                rows.push((format!("Register {at}"), n as f64, "", n.to_string()));
+            }
+            _ => {}
+        }
+    }
+    let mut out = String::new();
+    if args.csv {
+        out += "\"reading\",\"value\",\"unit\"\n";
+        for (name, value, unit, _) in &rows {
+            let _ = writeln!(out, "\"{}\",{value},\"{unit}\"", name.replace('"', "\"\""));
+        }
+    } else {
+        let width = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
+        let _ = writeln!(out, "{} · {} · settled in {} rounds", doc.name, args.project, o.iterations);
+        for (name, _, _, shown) in &rows {
+            let _ = writeln!(out, "  {name:<width$}  {shown}");
+        }
+        if rows.is_empty() {
+            out += "  (no detectors, output ports, displays or registers)\n";
+        }
+    }
+    Ok(out)
+}
+
+/// `--doc NAME`, or the first document that isn't a component.
+fn choose_doc(project: &Project, name: Option<&str>) -> Result<DocId, String> {
+    match name {
+        Some(name) => project.find(name).ok_or_else(|| {
+            let names: Vec<&str> = project.documents.iter().map(|d| d.name.as_str()).collect();
+            format!("no document “{name}”; the project has: {}", names.join(", "))
+        }),
+        None => project
+            .documents
+            .iter()
+            .find(|d| d.component.is_none())
+            .or(project.documents.first())
+            .map(|d| d.id)
+            .ok_or_else(|| "the project is empty".into()),
+    }
+}
+
+/// `shine simulate …` from the binary: prints, writes `--out`, and gives the exit status.
+pub fn main(args: &[String]) -> i32 {
+    let result = parse(args).map_err(Failure::Usage).and_then(|a| {
+        let text = simulate(&a)?;
+        match &a.out {
+            Some(path) => std::fs::write(path, &text).map_err(|e| Failure::Usage(format!("can't write {path}: {e}"))),
+            None => {
+                print!("{text}");
+                Ok(())
+            }
+        }
+    });
+    match result {
+        Ok(()) => 0,
+        Err(f) => {
+            let (Failure::Usage(m) | Failure::Simulation(m)) = &f;
+            eprintln!("shine simulate: {m}");
+            if matches!(f, Failure::Usage(_)) {
+                eprintln!("Try: shine simulate --help");
+            }
+            f.exit_code()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,7 +1,7 @@
 ---
 title: Roadmap
 description: Where Shine is going, as goals and milestones rather than fixed versions or dates.
-order: 14
+order: 15
 ---
 
 # Roadmap
@@ -37,7 +37,7 @@ What a tool people rely on every day needs, before more features.
 - [x] **Crash reports**: a crash is logged with what's needed to fix it, and the next start
       says what happened
 - [x] **About and updates**: the version, what's new, and where to report problems
-- [ ] **Command-line simulation**: `shine simulate project.shine --sweep … --csv`, for
+- [x] **Command-line simulation**: `shine simulate project.shine --sweep … --csv`, for
       scripts and CI
 - [ ] **Export**: sweep data as CSV (done), readouts as CSV, plots and the canvas as images
 - [ ] **Sweep a component's exported parameters**

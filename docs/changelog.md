@@ -1,7 +1,7 @@
 ---
 title: Changelog
 description: What changed in each version of Shine.
-order: 15
+order: 16
 ---
 
 # Changelog
@@ -64,6 +64,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- `shine simulate PROJECT.shine`: readings, wavelength sweeps and parameter sweeps from
+  the command line, as text or CSV, with exit codes for scripts and CI.
 - Help → About Shine: the version, what's new in it, links to the docs and to report a
   problem, and on desktop a "Check for updates" against the latest GitHub release.
 - Crash reports: the desktop app writes a report (message, place, version, system,

@@ -9,6 +9,9 @@ pub mod web;
 #[cfg(all(feature = "gui", not(target_arch = "wasm32")))]
 pub mod crash;
 
+#[cfg(all(feature = "gui", not(target_arch = "wasm32")))]
+pub mod cli;
+
 #[cfg(feature = "gui")]
 pub mod mcp;
 

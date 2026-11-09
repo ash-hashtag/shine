@@ -215,7 +215,7 @@ pub fn source_power(layout: &Layout) -> f64 {
 
 /// Everything in a design worth plotting: detectors and output ports (by
 /// part), and every light output of top-level boxes.
-fn outputs(layout: &Layout, outcome: &Outcome, name_of_box: &dyn Fn(InstanceId) -> String) -> Vec<(String, f64, bool)> {
+pub fn outputs(layout: &Layout, outcome: &Outcome, name_of_box: &dyn Fn(InstanceId) -> String) -> Vec<(String, f64, bool)> {
     let mut out: Vec<(String, f64, bool)> = outcome
         .detector_power
         .iter()
