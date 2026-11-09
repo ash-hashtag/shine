@@ -56,7 +56,8 @@ Circuits are JSON: `blocks` (each with an `id`, a `type` from `list_blocks` and 
 
 - Call `list_blocks` first; parameter names and units come from there, not from memory.
 - Simulate before claiming a result, and quote the numbers returned.
-- Powers are normalised: a laser of amplitude 1 delivers power 1.
+- Powers are in mW (|E|²): a laser of amplitude 1 emits 1 mW, 0 dBm. Sweeps from
+  `sweep_wavelength` are relative to the injected power (1 = no loss).
 - Wavelengths are in nanometres, lengths in micrometres, phases in radians.
 - Saved projects open in the editor, where the circuit appears as boxes joined by
   waveguides; tell the user where you saved the file.

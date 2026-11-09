@@ -10,6 +10,7 @@ pub mod project;
 pub mod schematic;
 pub mod selection;
 pub mod ui_kit;
+pub mod units;
 pub mod workspace;
 
 /// Things a document editor asks its host (the workspace) to do.

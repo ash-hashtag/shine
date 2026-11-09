@@ -34,7 +34,7 @@ Pick a part (**Use selection**) and one of its parameters, and the range:
 
 | Part | Parameters |
 |---|---|
-| Laser | amplitude, phase, wavelength |
+| Laser | power (mW), phase, wavelength |
 | Beam splitter | reflectivity |
 | Phase shifter | phase |
 | Attenuator | transmission |
@@ -50,8 +50,24 @@ Every detector and output port is a curve, named by its label or its position. T
 outputs** to also plot the light leaving every block and component (`Add–drop ring 24,4
 out2`); they're shown anyway when a design has no detectors. Click a name in the legend to
 hide or show it.
-Tick **dB** for 10·log10 of the power, relative to a unit-amplitude laser. Scroll to zoom
-and drag to pan the plot; double-click resets it.
+The scale menu plots **Power (mW)**, **Power (dBm)**, or **Relative to input (dB)**: each
+output over the input power, which is the tuned laser's for a wavelength sweep and all
+lasers' for a parameter sweep. That's the transmission spectrum engineers quote. Scroll to
+zoom and drag to pan the plot; double-click resets it.
+
+## Readouts
+
+Under the plot, a table gives for every curve shown:
+
+| Readout | What it is |
+|---|---|
+| Peak | highest power, and the swept value where it occurs |
+| Minimum | lowest power, and where |
+| Insertion loss | input over peak power, in dB: what the best path loses |
+| Extinction | peak over minimum, in dB: how deep the switching or notch is |
+
+In the add–drop ring example, the drop port's insertion loss is about 0 dB at resonance,
+and the through port's extinction is over 20 dB.
 
 Each point is a full simulation: light and electronics settle together, and components are
 simulated through. Coarse sweeps (tens of points) are instant; thousands of points on a big
@@ -61,7 +77,7 @@ design take a few seconds.
 
 **Copy CSV** puts the data on the clipboard, ready to paste into a spreadsheet. **Save
 CSV…** writes a file (in the browser, it downloads). The first column is the swept value;
-then one power column per output.
+then one power column (mW) per output.
 
 A link can open a sweep directly: `?example=4-channel-wdm-optical-link&sweep` opens the
 example and runs a sweep of its first laser.

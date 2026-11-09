@@ -4,6 +4,8 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+pub use super::units::PowerUnit;
+
 /// Key the preferences are stored under.
 pub const STORAGE_KEY: &str = "shine.preferences";
 
@@ -41,6 +43,8 @@ pub struct Preferences {
     pub channel_strands: bool,
     pub beam_arrows: bool,
     pub show_readings: bool,
+    /// Unit for powers on the canvas and in the inspector.
+    pub power_unit: PowerUnit,
     pub show_port_names: bool,
     pub show_grid: bool,
     /// Wavelength of newly placed lasers.
@@ -61,6 +65,7 @@ impl Default for Preferences {
             channel_strands: true,
             beam_arrows: true,
             show_readings: true,
+            power_unit: PowerUnit::MilliWatt,
             show_port_names: true,
             show_grid: true,
             default_wavelength_nm: 650.0,

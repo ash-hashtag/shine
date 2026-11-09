@@ -12,7 +12,7 @@ use super::optics::input::{Action, SHORTCUTS};
 use super::optics::model::{self, BlockRef, Layout, OpticComponentKind, PlacedComponent, cell_center};
 use super::optics::{OpticsPanel, Placeable};
 use super::project::{Catalog, ComponentMeta, DocId, Project};
-use super::prefs::{LightColors, Preferences, Theme, WAVELENGTH_PRESETS};
+use super::prefs::{LightColors, PowerUnit, Preferences, Theme, WAVELENGTH_PRESETS};
 use super::{Request, ui_kit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1211,6 +1211,14 @@ impl Workspace {
                     ui.end_row();
                     ui.label("Readings");
                     ui.checkbox(&mut p.show_readings, "Show detector powers on the canvas");
+                    ui.end_row();
+                    ui.label("Power in");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut p.power_unit, PowerUnit::MilliWatt, "mW");
+                        ui.selectable_value(&mut p.power_unit, PowerUnit::Dbm, "dBm");
+                    })
+                    .response
+                    .on_hover_text("For readings and laser power. A laser of amplitude 1 emits 1 mW (0 dBm).");
                     ui.end_row();
                     ui.label("New lasers");
                     ui.horizontal(|ui| {

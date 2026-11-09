@@ -34,7 +34,7 @@ c.connect(join.output(0), pd.input(0))?;
 let power = c.simulate(1550.0, &[])?.detected_power(pd); // 1.0
 ```
 
-Conventions: fields are complex amplitudes with |E|² = power; wavelengths in nm,
+Conventions: fields are complex amplitudes with |E|² = power in mW; wavelengths in nm,
 lengths in µm; a lossless coupler is `[[t, ik], [ik, t]]`.
 
 ## Compile once, run many times

@@ -9,7 +9,7 @@ use super::{Drag, Hit, MenuChoice, OpticsPanel, Request, Tool, WireRef, input_nu
 use crate::panels::circuit::sim;
 use crate::panels::prefs::{Palette, WAVELENGTH_PRESETS, is_visible};
 use crate::panels::project::{BlockDisplay, Catalog};
-use crate::panels::ui_kit;
+use crate::panels::{ui_kit, units};
 
 /// Something the library can put on the grid.
 #[derive(Clone, Debug, PartialEq)]
@@ -631,7 +631,7 @@ impl OpticsPanel {
         }
         let mut changed = false;
         match &mut self.layout.instances[b].block {
-            BlockRef::Builtin(block) => changed = builtin_params_ui(ui, block),
+            BlockRef::Builtin(block) => changed = builtin_params_ui(ui, block, self.prefs.power_unit),
             BlockRef::Component(_) => {
                 if ui.button("Open definition").on_hover_text("Tab, or double-click the box").clicked() {
                     self.apply(super::input::Action::Inspect);
@@ -702,6 +702,7 @@ impl OpticsPanel {
 
     fn part_inspector(&mut self, ui: &mut Ui, i: usize) {
         let reading = self.detector_reading(i);
+        let unit = self.prefs.power_unit;
         let iface = sim::interface(&self.layout);
         let driver = self.layout.signal_source(Terminal { item: Item::Part(i), port: 0 });
         let output = self.outcome().map(|o| o.signal(Item::Part(i), 0));
@@ -719,8 +720,11 @@ impl OpticsPanel {
             let tau = std::f32::consts::TAU;
             match &mut component.kind {
                 OpticComponentKind::Laser { amplitude, phase, wavelength, source, color, .. } => {
-                    ui.label("Amplitude");
-                    ui.add(egui::Slider::new(amplitude, 0.0..=2.0));
+                    ui.label("Power");
+                    let mut a = *amplitude as f64;
+                    if units::power_editor(ui, &mut a, unit).changed() {
+                        *amplitude = a as f32;
+                    }
                     ui.end_row();
                     ui.label("Phase");
                     ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad"))
@@ -783,7 +787,10 @@ impl OpticsPanel {
                 }
                 OpticComponentKind::Attenuator { transmission } => {
                     ui.label("Transmission");
-                    ui.add(egui::Slider::new(transmission, 0.0..=1.0));
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Slider::new(transmission, 0.0..=1.0));
+                        ui.label(RichText::new(format!("{:.2} dB loss", units::loss_db(*transmission as f64))).small().weak());
+                    });
                     ui.end_row();
                 }
                 OpticComponentKind::Detector { threshold } => {
@@ -799,12 +806,13 @@ impl OpticsPanel {
                     ui.end_row();
                     if digital {
                         ui.label("Threshold");
-                        ui.add(egui::DragValue::new(threshold).range(0.001..=100.0).speed(0.01));
+                        ui.add(egui::DragValue::new(threshold).range(0.001..=100.0).speed(0.01).suffix(" mW"))
+                            .on_hover_text("Light at or above this power reads 1");
                         ui.end_row();
                     }
                     ui.label("Power");
                     match reading {
-                        Some(p) => ui.monospace(format!("{p:.4}")),
+                        Some(p) => ui.monospace(units::format_both(p, unit)),
                         None => ui.label(RichText::new("simulation off").weak()),
                     };
                     ui.end_row();
@@ -812,7 +820,7 @@ impl OpticsPanel {
                 OpticComponentKind::OutputPort => {
                     ui.label("Power");
                     match reading {
-                        Some(p) => ui.monospace(format!("{p:.4}")),
+                        Some(p) => ui.monospace(units::format_both(p, unit)),
                         None => ui.label(RichText::new("simulation off").weak()),
                     };
                     ui.end_row();
@@ -1010,7 +1018,8 @@ impl OpticsPanel {
                     self.editor.selection.select_only(i);
                 }
                 ui.add(egui::ProgressBar::new((power / scale) as f32).desired_width(70.0).desired_height(8.0));
-                ui.monospace(format!("{power:.4}"));
+                ui.monospace(units::format_power(power, self.prefs.power_unit))
+                    .on_hover_text(units::format_both(power, self.prefs.power_unit));
                 ui.end_row();
             }
         });
@@ -1033,7 +1042,7 @@ pub fn fmt_value(v: f64) -> String {
 }
 
 /// Parameter widgets for a built-in block; returns whether anything changed.
-pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
+pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUnit) -> bool {
     let mut changed = false;
     let tau = std::f64::consts::TAU;
     if let Builtin::FunctionCell { .. } = block {
@@ -1047,7 +1056,7 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
         };
         match block {
             Builtin::Laser { amplitude, phase, wavelength_nm } => {
-                row(ui, "Amplitude", &mut |ui| ui.add(egui::Slider::new(amplitude, 0.0..=2.0)));
+                row(ui, "Power", &mut |ui| units::power_editor(ui, amplitude, unit));
                 row(ui, "Phase", &mut |ui| ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad")));
                 row(ui, "Wavelength", &mut |ui| {
                     ui.add(egui::DragValue::new(wavelength_nm).range(200.0..=2000.0).speed(0.1).suffix(" nm"))
@@ -1063,7 +1072,11 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
                 row(ui, "Phase", &mut |ui| ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad")));
             }
             Builtin::Attenuator { loss_db } => {
-                row(ui, "Loss", &mut |ui| ui.add(egui::DragValue::new(loss_db).range(0.0..=100.0).speed(0.1).suffix(" dB")));
+                row(ui, "Loss", &mut |ui| {
+                    let t = units::from_db(-*loss_db);
+                    ui.add(egui::DragValue::new(loss_db).range(0.0..=100.0).speed(0.1).suffix(" dB"))
+                        .on_hover_text(format!("Passes {t:.3} of the power"))
+                });
             }
             Builtin::DelayLine { length_um, n_eff } => {
                 row(ui, "Length", &mut |ui| {

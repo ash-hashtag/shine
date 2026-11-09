@@ -48,10 +48,10 @@ In the inspector:
 
 - **Signal inputs**: how many `in1`, `in2`, … terminals it has.
 - **Light inputs**: how many light ports it has on the left; `p1`, `p2`, … are the
-  powers received there.
+  powers received there, in mW.
 - **Signal outputs**: one expression per `out` terminal.
 - **Light outputs**: one expression per light output; the value is the field
-  **amplitude** (power = amplitude²) at the cell's wavelength.
+  **amplitude** (power = amplitude² mW) at the cell's wavelength.
 
 A red `!` next to an expression means it doesn't parse; hover it for the reason.
 

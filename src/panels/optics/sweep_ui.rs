@@ -7,6 +7,29 @@ use super::model::{Item, OpticComponentKind, cell_of};
 use super::{OpticsPanel, Request};
 use crate::panels::circuit::sim::NoDocuments;
 use crate::panels::circuit::sweep::{self, SweepKind, SweepResult, SweepSpec};
+use crate::panels::units::{self, PowerUnit};
+
+/// The plot's y axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Scale {
+    /// Power in mW.
+    #[default]
+    Linear,
+    /// Power in dBm.
+    Dbm,
+    /// Power relative to the input, in dB (transmission, insertion loss).
+    Relative,
+}
+
+impl Scale {
+    fn label(self) -> &'static str {
+        match self {
+            Scale::Linear => "Power (mW)",
+            Scale::Dbm => "Power (dBm)",
+            Scale::Relative => "Relative to input (dB)",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SweepMode {
@@ -27,8 +50,9 @@ pub struct SweepState {
     pub start: f64,
     pub stop: f64,
     pub points: usize,
-    /// Plot in dB rather than linear power.
-    pub db: bool,
+    pub scale: Scale,
+    /// Show the peak, minimum, insertion loss and extinction table.
+    pub show_readouts: bool,
     /// Plot boxes' light outputs too (hidden by default when there are detectors).
     pub box_outputs: bool,
     pub result: Option<SweepResult>,
@@ -45,8 +69,9 @@ impl Default for SweepState {
             start: 1540.0,
             stop: 1560.0,
             points: 201,
-            db: false,
+            scale: Scale::Linear,
             box_outputs: false,
+            show_readouts: true,
             result: None,
         }
     }
@@ -247,7 +272,13 @@ impl OpticsPanel {
             if ui.add_enabled(ready, egui::Button::new(RichText::new("▶  Run sweep").strong())).clicked() {
                 run = true;
             }
-            ui.checkbox(&mut s.db, "dB").on_hover_text("10·log10 of the power, relative to a unit laser");
+            egui::ComboBox::from_id_salt("sweep_scale").selected_text(s.scale.label()).show_ui(ui, |ui| {
+                ui.selectable_value(&mut s.scale, Scale::Linear, Scale::Linear.label());
+                ui.selectable_value(&mut s.scale, Scale::Dbm, Scale::Dbm.label());
+                ui.selectable_value(&mut s.scale, Scale::Relative, Scale::Relative.label()).on_hover_text(
+                    "Output over input power: the tuned laser for a wavelength sweep, all lasers for a parameter sweep",
+                );
+            });
             ui.checkbox(&mut s.box_outputs, "Box outputs").on_hover_text("Also plot the light leaving every block and component");
         });
         let Some(result) = &s.result else {
@@ -260,26 +291,36 @@ impl OpticsPanel {
         if result.xs.is_empty() {
             return run;
         }
-        let db = s.db;
+        let scale = s.scale;
         // Box outputs are many; show them when asked, or when there's nothing else.
         let only_boxes = result.series.iter().all(|s| s.from_box);
         let shown: Vec<&sweep::Series> = result.series.iter().filter(|x| s.box_outputs || only_boxes || !x.from_box).collect();
+        let readouts: Vec<sweep::Readout> =
+            result.readouts().into_iter().filter(|r| shown.iter().any(|s| s.name == r.name)).collect();
+        let table = if s.show_readouts { (readouts.len() as f32 * 20.0 + 28.0).min(150.0) } else { 0.0 };
         Plot::new("sweep_plot")
-            .height((ui.available_height() - 36.0).max(200.0))
+            .height((ui.available_height() - 64.0 - table).max(180.0))
             .legend(Legend::default())
             .x_axis_label(result.x_label.clone())
-            .y_axis_label(if db { "Power (dB)" } else { "Power" })
+            .y_axis_label(scale.label())
             .show(ui, |p| {
                 for series in &shown {
-                    let points: Vec<[f64; 2]> = result
-                        .xs
-                        .iter()
-                        .zip(&series.power)
-                        .map(|(&x, &y)| [x, if db { sweep::db(y) } else { y }])
-                        .collect();
+                    let ys = match scale {
+                        Scale::Linear => series.power.clone(),
+                        Scale::Dbm => series.power.iter().map(|&y| sweep::db(y)).collect(),
+                        Scale::Relative => result.relative_db(series),
+                    };
+                    let points: Vec<[f64; 2]> = result.xs.iter().zip(ys).map(|(&x, y)| [x, y]).collect();
                     p.line(Line::new(series.name.clone(), points));
                 }
             });
+        let unit = self.prefs.power_unit;
+        let header = egui::CollapsingHeader::new("Readouts").id_salt("sweep_readouts").open(Some(s.show_readouts)).show(ui, |ui| {
+            readouts_table(ui, &readouts, unit);
+        });
+        if header.header_response.clicked() {
+            s.show_readouts = !s.show_readouts;
+        }
         ui.horizontal(|ui| {
             if ui.button("Copy CSV").on_hover_text("Paste into a spreadsheet").clicked() {
                 ui.ctx().copy_text(result.to_csv());
@@ -291,6 +332,35 @@ impl OpticsPanel {
         });
         run
     }
+}
+
+/// One row per curve: peak, minimum, insertion loss, extinction ratio.
+fn readouts_table(ui: &mut Ui, readouts: &[sweep::Readout], unit: PowerUnit) {
+    egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+        egui::Grid::new("sweep_readouts_grid").striped(true).num_columns(5).spacing([14.0, 2.0]).show(ui, |ui| {
+            ui.label(RichText::new("Output").strong());
+            ui.label(RichText::new("Peak").strong()).on_hover_text("Highest power, and where");
+            ui.label(RichText::new("Minimum").strong()).on_hover_text("Lowest power, and where");
+            ui.label(RichText::new("Insertion loss").strong())
+                .on_hover_text("Input power over the peak power, in dB: how much is lost on the best path");
+            ui.label(RichText::new("Extinction").strong()).on_hover_text("Peak over minimum, in dB");
+            ui.end_row();
+            for r in readouts {
+                ui.label(&r.name);
+                ui.label(RichText::new(format!("{} at {}", units::format_power(r.peak, unit), fmt_x(r.peak_at))).monospace());
+                ui.label(RichText::new(format!("{} at {}", units::format_power(r.min, unit), fmt_x(r.min_at))).monospace());
+                ui.label(RichText::new(r.insertion_loss_db.map_or_else(|| "–".into(), |d| format!("{d:.2} dB"))).monospace());
+                ui.label(RichText::new(format!("{:.1} dB", r.extinction_db)).monospace());
+                ui.end_row();
+            }
+        });
+    });
+}
+
+/// A swept value, short.
+fn fmt_x(x: f64) -> String {
+    let s = format!("{x:.4}");
+    s.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

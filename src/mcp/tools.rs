@@ -130,7 +130,7 @@ fn list_blocks(_: &Map<String, Value>) -> Result<Value, String> {
         .collect();
     Ok(json!({
         "blocks": blocks,
-        "units": {"wavelength": "nm", "length": "µm", "phase": "rad", "loss": "dB, dB/cm", "power": "|E|², laser amplitude 1 = power 1"},
+        "units": {"wavelength": "nm", "length": "µm", "phase": "rad", "loss": "dB, dB/cm", "power": "mW: |E|², a laser of amplitude 1 emits 1 mW (0 dBm)"},
     }))
 }
 

@@ -29,11 +29,12 @@ export function newest(paths: string[]): string | undefined {
   return paths.map(lastModified).filter((d): d is string => !!d).sort().at(-1);
 }
 
-/** The crate version from Cargo.toml, for structured data. */
+/** The released version, for structured data. */
 export function version(): string | undefined {
   try {
-    const toml = execFileSync("git", ["show", "HEAD:Cargo.toml"], { cwd: repo, encoding: "utf8" });
-    return toml.match(/^version = "([^"]+)"/m)?.[1];
+    // The newest release tag: Cargo.toml runs ahead while the next version is built.
+    const tag = execFileSync("git", ["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"], { cwd: repo, encoding: "utf8" });
+    return tag.trim().replace(/^v/, "") || undefined;
   } catch {
     return undefined;
   }

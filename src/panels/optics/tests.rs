@@ -4,6 +4,7 @@ use egui::{Event, Key, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButto
 
 use super::*;
 use crate::panels::circuit::sim::Outcome;
+use crate::panels::units::PowerUnit;
 use model::{cell_center, cell_of};
 
 struct Harness {
@@ -1239,9 +1240,14 @@ fn sweep_window_sets_up_runs_and_plots() {
     panel.run_sweep();
     let r = panel.sweep.result.clone().expect("ran");
     assert!(r.error.is_none() && r.series.len() == 2 && r.xs.len() == 101);
-    // The window renders the plot, in linear and dB.
-    h.frame(&mut panel, Vec::new());
-    panel.sweep.db = true;
+    // The window renders the plot on every scale, with and without readouts,
+    // in either power unit.
+    for scale in [sweep_ui::Scale::Linear, sweep_ui::Scale::Dbm, sweep_ui::Scale::Relative] {
+        panel.sweep.scale = scale;
+        panel.prefs.power_unit = if scale == sweep_ui::Scale::Dbm { PowerUnit::Dbm } else { PowerUnit::MilliWatt };
+        h.frame(&mut panel, Vec::new());
+    }
+    panel.sweep.show_readouts = false;
     h.frame(&mut panel, Vec::new());
     assert!(panel.sweep.open);
 
@@ -1265,4 +1271,25 @@ fn sweep_window_sets_up_runs_and_plots() {
     panel.embedded = true;
     panel.run_sweep();
     assert_eq!(panel.requests, vec![Request::RunSweep]);
+}
+
+#[test]
+fn inspector_shows_real_units() {
+    // Every part's inspector renders in mW and in dBm; selecting the laser
+    // shows its power editor and the detectors their readings.
+    let mut panel = OpticsPanel::default();
+    panel.set_layout(examples::mach_zehnder(), 10.0);
+    let mut h = Harness::new(&mut panel);
+    for unit in [PowerUnit::MilliWatt, PowerUnit::Dbm] {
+        panel.prefs.power_unit = unit;
+        for i in 0..panel.layout.components.len() {
+            panel.editor.selection.select_only(i);
+            h.frame(&mut panel, Vec::new());
+        }
+    }
+    let laser = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Laser { .. })).unwrap();
+    assert!(matches!(panel.layout.components[laser].kind, OpticComponentKind::Laser { amplitude, .. } if amplitude == 1.0), "drawing leaves it alone");
+    let detector = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Detector { .. })).unwrap();
+    let text = panel.hover_text(Hit::Part(detector)).unwrap();
+    assert!(text.contains("dBm") && text.contains("W"), "{text}");
 }

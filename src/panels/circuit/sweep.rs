@@ -40,8 +40,28 @@ pub struct SweepResult {
     pub x_label: String,
     pub xs: Vec<f64>,
     pub series: Vec<Series>,
+    /// Input power at each point, in mW: the tuned laser's for a wavelength
+    /// sweep, all top-level lasers' otherwise. Relative levels and
+    /// insertion loss are measured against it.
+    pub reference: Vec<f64>,
     /// The first point that failed to simulate, if any.
     pub error: Option<String>,
+}
+
+/// Figures of merit of one curve.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Readout {
+    pub name: String,
+    /// Highest power (mW) and where.
+    pub peak: f64,
+    pub peak_at: f64,
+    /// Lowest power (mW) and where.
+    pub min: f64,
+    pub min_at: f64,
+    /// Loss from the input to the peak, in dB (none without an input).
+    pub insertion_loss_db: Option<f64>,
+    /// Peak over minimum, in dB.
+    pub extinction_db: f64,
 }
 
 /// A sweepable parameter: name, unit, sensible range.
@@ -64,7 +84,7 @@ pub fn params(layout: &Layout, item: Item) -> Vec<Param> {
     match item {
         Item::Part(i) => match layout.components.get(i).map(|c| c.kind) {
             Some(OpticComponentKind::Laser { .. }) => {
-                vec![p("amplitude", "", 0.0, 2.0), p("phase", "rad", 0.0, TAU), p("wavelength", "nm", 400.0, 1700.0)]
+                vec![p("power", "mW", 0.0, 4.0), p("phase", "rad", 0.0, TAU), p("wavelength", "nm", 400.0, 1700.0)]
             }
             Some(OpticComponentKind::BeamSplitter { .. }) => vec![p("reflectivity", "", 0.0, 1.0)],
             Some(OpticComponentKind::PhaseShifter { .. }) => vec![p("phase", "rad", 0.0, TAU)],
@@ -73,7 +93,7 @@ pub fn params(layout: &Layout, item: Item) -> Vec<Param> {
         },
         Item::Box(id) => match layout.instance(id).map(|i| &i.block) {
             Some(BlockRef::Builtin(b)) => match b {
-                Builtin::Laser { .. } => vec![p("amplitude", "", 0.0, 2.0), p("phase", "rad", 0.0, TAU)],
+                Builtin::Laser { .. } => vec![p("power", "mW", 0.0, 4.0), p("phase", "rad", 0.0, TAU)],
                 Builtin::Coupler { .. } => vec![p("coupling", "", 0.0, 1.0)],
                 Builtin::PhaseShifter { .. } => vec![p("phase", "rad", 0.0, TAU)],
                 Builtin::Attenuator { .. } => vec![p("loss", "dB", 0.0, 30.0)],
@@ -121,7 +141,11 @@ fn visit(layout: &mut Layout, item: Item, param: &str, f: &mut dyn FnMut(&mut f6
         Item::Part(i) => {
             let Some(c) = layout.components.get_mut(i) else { return };
             match (&mut c.kind, param) {
-                (OpticComponentKind::Laser { amplitude, .. }, "amplitude") => f32_field(amplitude),
+                (OpticComponentKind::Laser { amplitude, .. }, "power") => {
+                    let mut a = *amplitude as f64;
+                    as_power(&mut a, f);
+                    *amplitude = a as f32;
+                }
                 (OpticComponentKind::Laser { phase, .. } | OpticComponentKind::PhaseShifter { phase }, "phase") => f32_field(phase),
                 (OpticComponentKind::Laser { wavelength, .. }, "wavelength") => f32_field(wavelength),
                 (OpticComponentKind::BeamSplitter { reflectivity, transparency, .. }, "reflectivity") => {
@@ -137,7 +161,7 @@ fn visit(layout: &mut Layout, item: Item, param: &str, f: &mut dyn FnMut(&mut f6
             let Some(inst) = layout.instances.iter_mut().find(|i| i.id == id) else { return };
             let BlockRef::Builtin(b) = &mut inst.block else { return };
             match (b, param) {
-                (Builtin::Laser { amplitude, .. }, "amplitude") => f(amplitude),
+                (Builtin::Laser { amplitude, .. }, "power") => as_power(amplitude, f),
                 (Builtin::Laser { phase, .. } | Builtin::PhaseShifter { phase }, "phase") => f(phase),
                 (Builtin::Coupler { coupling }, "coupling") => f(coupling),
                 (Builtin::Attenuator { loss_db }, "loss") => f(loss_db),
@@ -155,6 +179,27 @@ fn visit(layout: &mut Layout, item: Item, param: &str, f: &mut dyn FnMut(&mut f6
             }
         }
     }
+}
+
+/// Offers a field amplitude to `f` as its power in mW.
+fn as_power(amplitude: &mut f64, f: &mut dyn FnMut(&mut f64)) {
+    let mut mw = *amplitude * *amplitude;
+    f(&mut mw);
+    *amplitude = mw.max(0.0).sqrt();
+}
+
+/// Nominal power of a design's top-level lasers, in mW (before any signal
+/// switches them): the input that relative levels are measured against.
+pub fn source_power(layout: &Layout) -> f64 {
+    let parts = layout.components.iter().filter_map(|c| match c.kind {
+        OpticComponentKind::Laser { amplitude, .. } => Some((amplitude as f64).powi(2)),
+        _ => None,
+    });
+    let boxes = layout.instances.iter().filter_map(|i| match &i.block {
+        BlockRef::Builtin(Builtin::Laser { amplitude, .. }) => Some(amplitude * amplitude),
+        _ => None,
+    });
+    parts.chain(boxes).sum()
 }
 
 /// Everything in a design worth plotting: detectors and output ports (by
@@ -236,6 +281,13 @@ pub fn run(
             }
         }
         result.xs.push(x);
+        result.reference.push(match spec.kind {
+            SweepKind::Wavelength { laser } => match l.components[laser].kind {
+                OpticComponentKind::Laser { amplitude, .. } => (amplitude as f64).powi(2),
+                _ => 0.0,
+            },
+            SweepKind::Parameter { .. } => source_power(&l),
+        });
         for s in &mut result.series {
             s.power.resize(result.xs.len(), 0.0);
         }
@@ -244,11 +296,40 @@ pub fn run(
 }
 
 impl SweepResult {
-    /// The sweep as CSV: the x column, then one power column per output.
+    /// Peak, minimum, insertion loss and extinction ratio of each curve.
+    pub fn readouts(&self) -> Vec<Readout> {
+        self.series
+            .iter()
+            .filter(|s| !s.power.is_empty())
+            .map(|s| {
+                let at = |pick: fn(f64, f64) -> bool| {
+                    (0..s.power.len()).fold(0, |best, k| if pick(s.power[k], s.power[best]) { k } else { best })
+                };
+                let (hi, lo) = (at(|a, b| a > b), at(|a, b| a < b));
+                let input = self.reference.get(hi).copied().filter(|&r| r > 0.0);
+                Readout {
+                    name: s.name.clone(),
+                    peak: s.power[hi],
+                    peak_at: self.xs[hi],
+                    min: s.power[lo],
+                    min_at: self.xs[lo],
+                    insertion_loss_db: input.map(|r| db(r) - db(s.power[hi])),
+                    extinction_db: db(s.power[hi]) - db(s.power[lo]),
+                }
+            })
+            .collect()
+    }
+
+    /// Power relative to the input at each point, in dB.
+    pub fn relative_db(&self, series: &Series) -> Vec<f64> {
+        series.power.iter().zip(&self.reference).map(|(&p, &r)| if r > 0.0 { db(p / r) } else { DB_FLOOR }).collect()
+    }
+
+    /// The sweep as CSV: the x column, then one power column (mW) per output.
     pub fn to_csv(&self) -> String {
         let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let mut out = std::iter::once(quote(&self.x_label))
-            .chain(self.series.iter().map(|s| quote(&format!("{} power", s.name))))
+            .chain(self.series.iter().map(|s| quote(&format!("{} power (mW)", s.name))))
             .collect::<Vec<_>>()
             .join(",");
         out.push('\n');
@@ -263,10 +344,7 @@ impl SweepResult {
     }
 }
 
-/// Power in dB relative to 1 (a unit-amplitude laser); floored at -100 dB.
-pub fn db(power: f64) -> f64 {
-    (10.0 * power.max(1e-10).log10()).max(-100.0)
-}
+pub use crate::panels::units::{DB_FLOOR, db};
 
 #[cfg(test)]
 mod tests;

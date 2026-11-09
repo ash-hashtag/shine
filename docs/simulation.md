@@ -24,7 +24,14 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
   sources at one wavelength are solved together in one SIMD pass, so this stays fast.
   Built-in laser blocks and function-cell light share one source.
 
-Fields are normalised so |E|² is power: a laser of amplitude 1 delivers power 1.
+## Units
+
+Powers are in milliwatts: a field of amplitude *a* carries *a*² mW, so a laser of amplitude
+1 emits 1 mW (0 dBm). Lasers are set by their power, in mW or dBm; readings show mW (with
+µW, nW or W as fits) or dBm, chosen in **Edit → Preferences…**. Losses are in dB: an
+attenuator's transmission *T* is a loss of −10·log10 *T* dB (0.5 is 3.01 dB). Detector
+thresholds are in mW. Everything is linear in the light, so scaling every laser scales
+every reading by the same factor.
 
 ## Electronics: settled against the light
 

@@ -72,12 +72,16 @@ are `noindex`. Add new indexable pages to `web/src/pages/sitemap.xml.ts`, and th
 To release, once a version is final:
 
 ```sh
-# 1. set `version` in Cargo.toml (e.g. 0.2.0) and give it a section in
-#    docs/changelog.md ("## 0.2.0 (2027-01-15)"); move done items off the roadmap
+# 1. Cargo.toml's `version` is already the next one (e.g. 0.1.2) while it's built,
+#    and docs/changelog.md has its section ("## 0.1.2 (unreleased)"): date it
+#    ("## 0.1.2 (2026-11-20)") and tick it off on the roadmap
 # 2. commit, push, then tag that commit and push the tag
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.1.2
+git push origin v0.1.2
 ```
+
+Versions grow slowly: patch releases (0.1.1, 0.1.2…) carry each step, and the minor
+version changes only when the roadmap's line for it is complete.
 
 The workflow stops if the tag doesn't match the version in `Cargo.toml` or the changelog
 has no section for it, and uses that section as the release notes.

@@ -217,7 +217,7 @@ impl OpticsPanel {
                     text += &format!("\n\nNow {}: click to toggle and try this layout on its own", fmt_value(v));
                 }
                 if let Some(p) = self.detector_reading(i) {
-                    text += &format!("\n\nPower {p:.4}");
+                    text += &format!("\n\nPower {}", crate::panels::units::format_both(p, self.prefs.power_unit));
                 }
                 Some(text)
             }
@@ -452,7 +452,7 @@ impl OpticsPanel {
                 painter.text(
                     to_screen(c.pos) + Vec2::new(14.0, 10.0) * zoom,
                     Align2::LEFT_TOP,
-                    format!("{power:.3}"),
+                    crate::panels::units::format_power(power, self.prefs.power_unit),
                     FontId::monospace(10.0),
                     theme.text,
                 );

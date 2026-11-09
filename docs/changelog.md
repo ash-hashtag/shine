@@ -10,14 +10,19 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
-## Unreleased
+## 0.1.1 (unreleased)
 
 ### Added
 
 - Sweeps: plot every output of a design over a range of wavelengths (tune a laser) or of
-  one parameter of a part or block, in power or dB, and copy or save the data as CSV.
-  Open from the inspector, a part's right-click menu, Analysis → Sweep…, or `?sweep` in a
-  link. Each point is a full simulation, components and electronics included.
+  one parameter of a part or block, and copy or save the data as CSV. Open from the
+  inspector, a part's right-click menu, Analysis → Sweep…, or `?sweep` in a link. Each
+  point is a full simulation, components and electronics included.
+- Real units: powers in mW (a laser of amplitude 1 emits 1 mW, 0 dBm). Lasers are set by
+  their power in mW or dBm; readings show mW, µW, nW or W, or dBm (Edit → Preferences…).
+  Attenuators show their loss in dB; detector thresholds are in mW.
+- Sweep plots in mW, dBm, or dB relative to the input power, with readouts for every
+  curve: peak, minimum, insertion loss and extinction ratio.
 
 ## 0.1.0 (2026-11-09)
 

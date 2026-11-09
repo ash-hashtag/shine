@@ -84,6 +84,7 @@ sessions (a settings file on desktop, the browser's storage on the web):
 | Light colours | Real colours where visible (infrared and ultraviolet in distinct false colours), a distinct colour per wavelength, or one colour; use lasers' own colours |
 | Channels | Draw each wavelength on a waveguide or beam as its own strand |
 | Beams, readings | Direction arrows; detector powers on the canvas |
+| Power in | mW (with µW, nW or W as fits) or dBm, for readings and laser power |
 | New lasers | Their wavelength, typed or from presets |
 | Simulation | Live simulation for new documents; clock speed |
 
