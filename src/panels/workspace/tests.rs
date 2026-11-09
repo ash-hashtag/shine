@@ -406,8 +406,11 @@ fn project_files_round_trip_and_layouts_import() {
     other.incoming.lock().unwrap().push(("upload".into(), ws.project.to_bytes()));
     other.incoming.lock().unwrap().push(("junk".into(), vec![0xff, 0x00]));
     Harness::new().frame(&mut other, Vec::new());
-    assert_eq!(other.project.to_bytes(), ws.project.to_bytes());
     assert!(other.status.as_ref().unwrap().0.contains("Open failed"));
+    // The imported layout is unsaved, so the uploaded project waits for an answer.
+    assert!(other.pending_open.is_some());
+    other.resolve_unsaved(UnsavedChoice::Discard);
+    assert_eq!(other.project.to_bytes(), ws.project.to_bytes());
 
     assert!(other.open_path(&dir.join("missing.shine")).is_err());
     std::fs::write(dir.join("bad.json"), "{").unwrap();
@@ -714,4 +717,75 @@ fn slow_designs_resimulate_less_often_while_dragging() {
     panel(&mut ws, id).dragging_new = None;
     assert!(ws.refresh_simulation(), "released");
     assert!(!ws.refresh_simulation(), "and then up to date");
+}
+
+#[test]
+fn unsaved_changes_are_tracked_and_saves_are_atomic() {
+    let dir = std::env::temp_dir().join(format!("shine-unsaved-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("work.shine");
+    let mut ws = Workspace::default();
+    assert!(!ws.has_unsaved_changes(), "a fresh workspace has nothing to lose");
+    assert_eq!(ws.file_name(), "Unsaved project");
+    let id = ws.active.unwrap();
+    panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: crate::panels::optics::model::DETECTOR, pos: Pos2::new(20.0, 20.0) });
+    assert!(ws.has_unsaved_changes());
+
+    // Saving writes the file whole (no temporary left behind) and is clean.
+    std::fs::write(&path, b"old contents").unwrap();
+    ws.save_project_to(&path).unwrap();
+    assert!(!ws.has_unsaved_changes());
+    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHNE");
+    let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert_eq!(leftovers.len(), 1, "{leftovers:?}");
+    assert_eq!(ws.file_name(), "work.shine");
+    // A save that can't be written leaves the old state and says so.
+    assert!(ws.save_project_to(&dir.join("missing").join("x.shine")).is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn opening_a_project_asks_about_unsaved_changes() {
+    let mut other = Workspace::default();
+    demo(&mut other, ADDER);
+    let bytes = other.project.to_bytes();
+
+    // Nothing to lose: opens at once, and counts as saved.
+    let mut ws = Workspace::default();
+    ws.request_open("adder".into(), bytes.clone(), None);
+    assert!(ws.pending_open.is_none());
+    assert!(!ws.has_unsaved_changes());
+    let opened = ws.project.fingerprint();
+
+    // With changes it waits; Cancel keeps everything.
+    let id = ws.active.unwrap();
+    panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: crate::panels::optics::model::DETECTOR, pos: Pos2::new(900.0, 900.0) });
+    let changed = ws.project.fingerprint();
+    ws.request_open("again".into(), bytes.clone(), None);
+    assert!(ws.pending_open.is_some());
+    ws.resolve_unsaved(UnsavedChoice::Cancel);
+    assert!(ws.pending_open.is_none());
+    assert_eq!(ws.project.fingerprint(), changed, "cancel keeps the changes");
+
+    // Open without saving replaces the project.
+    ws.request_open("again".into(), bytes.clone(), None);
+    ws.resolve_unsaved(UnsavedChoice::Discard);
+    assert_eq!(ws.project.fingerprint(), opened);
+    assert!(!ws.has_unsaved_changes());
+
+    // Importing an old JSON layout adds a document, so it never asks.
+    let id = ws.active.unwrap();
+    panel(&mut ws, id).layout.components.clear();
+    let docs = ws.project.documents.len();
+    ws.request_open("old".into(), br#"{"version": 1, "cell_um": 2.5, "components": [], "lines": []}"#.to_vec(), None);
+    assert!(ws.pending_open.is_none());
+    assert_eq!(ws.project.documents.len(), docs + 1);
+
+    // The dialog draws, and its buttons answer it.
+    let mut h = Harness::new();
+    ws.request_open("again".into(), bytes, None);
+    assert!(ws.pending_open.is_some());
+    h.frame(&mut ws, Vec::new());
+    h.key(&mut ws, Key::Escape);
+    assert!(ws.pending_open.is_none(), "Escape cancels");
 }

@@ -64,6 +64,12 @@ pub struct Workspace {
     pub show_preferences: bool,
     /// How long frames take, for the status bar.
     pub stats: FrameStats,
+    /// The project's fingerprint when it was last saved or opened.
+    saved_fingerprint: u64,
+    /// A project waiting to be opened until the user decides about unsaved changes.
+    pub pending_open: Option<PendingOpen>,
+    /// Window title last set (desktop).
+    title: String,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
     ctx: Option<egui::Context>,
@@ -88,13 +94,34 @@ impl Default for Workspace {
             prefs: Preferences::default(),
             show_preferences: false,
             stats: FrameStats::default(),
+            saved_fingerprint: 0,
+            pending_open: None,
+            title: String::new(),
             applied_theme: None,
             ctx: None,
             time: 0.0,
         };
         ws.new_layout();
+        ws.mark_saved();
         ws
     }
+}
+
+/// A project file to open once the user has decided what to do with unsaved
+/// changes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PendingOpen {
+    pub name: String,
+    pub bytes: Vec<u8>,
+    pub path: Option<std::path::PathBuf>,
+}
+
+/// What to do with unsaved changes before opening another project.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnsavedChoice {
+    Save,
+    Discard,
+    Cancel,
 }
 
 impl Workspace {
@@ -193,10 +220,77 @@ impl Workspace {
 
     // ---- files ------------------------------------------------------------
 
+    /// Save to `path`. The file is written next to it under a temporary name
+    /// and then renamed over it, so a failed save never leaves a damaged file.
     pub fn save_project_to(&mut self, path: &Path) -> Result<(), String> {
-        std::fs::write(path, self.project.to_bytes()).map_err(|e| e.to_string())?;
+        let mut temporary = path.as_os_str().to_owned();
+        temporary.push(".saving");
+        let temporary = std::path::PathBuf::from(temporary);
+        let written = std::fs::write(&temporary, self.project.to_bytes()).and_then(|()| std::fs::rename(&temporary, path));
+        if let Err(e) = written {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(e.to_string());
+        }
         self.project.path = Some(path.to_owned());
+        self.mark_saved();
         Ok(())
+    }
+
+    /// Whether the project has changed since it was last saved or opened.
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.project.fingerprint() != self.saved_fingerprint
+    }
+
+    /// The project as it is now counts as saved.
+    pub fn mark_saved(&mut self) {
+        self.saved_fingerprint = self.project.fingerprint();
+    }
+
+    /// Open a file the user picked: a project replaces the current one, so
+    /// with unsaved changes it waits for [`Self::resolve_unsaved`]; an old
+    /// JSON layout is added as a document.
+    pub fn request_open(&mut self, name: String, bytes: Vec<u8>, path: Option<std::path::PathBuf>) {
+        let pending = PendingOpen { name, bytes, path };
+        if Project::is_project(&pending.bytes) && self.has_unsaved_changes() {
+            self.pending_open = Some(pending);
+        } else {
+            self.finish_open(pending);
+        }
+    }
+
+    /// The user's answer about unsaved changes before opening a project.
+    pub fn resolve_unsaved(&mut self, choice: UnsavedChoice) {
+        let Some(pending) = self.pending_open.take() else { return };
+        match choice {
+            UnsavedChoice::Cancel => {}
+            UnsavedChoice::Discard => self.finish_open(pending),
+            UnsavedChoice::Save => {
+                self.save(false);
+                // Saving can be cancelled or fail: then nothing is lost.
+                if self.has_unsaved_changes() && !cfg!(target_arch = "wasm32") {
+                    self.notify("Not saved, so the other project wasn't opened");
+                } else {
+                    self.finish_open(pending);
+                }
+            }
+        }
+    }
+
+    fn finish_open(&mut self, pending: PendingOpen) {
+        let is_project = Project::is_project(&pending.bytes);
+        match self.open_bytes(&pending.name, &pending.bytes) {
+            Ok(()) => {
+                if is_project {
+                    self.project.path = pending.path;
+                    self.mark_saved();
+                }
+                self.notify(format!("Opened {}", pending.name));
+            }
+            Err(e) => {
+                tracing::error!("Failed to open {}: {e}", pending.name);
+                self.notify(format!("Open failed: {e}"));
+            }
+        }
     }
 
     /// Open a project, or import a JSON layout from an earlier version.
@@ -209,6 +303,7 @@ impl Workspace {
         self.open_bytes(&name, &bytes)?;
         if Project::is_project(&bytes) {
             self.project.path = Some(path.to_owned());
+            self.mark_saved();
         }
         Ok(())
     }
@@ -321,10 +416,7 @@ impl Workspace {
         let files: Vec<(String, Vec<u8>)> =
             std::mem::take(&mut *self.incoming.lock().expect("not poisoned"));
         for (name, bytes) in files {
-            match self.open_bytes(&name, &bytes) {
-                Ok(()) => self.notify(format!("Opened {name}")),
-                Err(e) => self.notify(format!("Open failed: {e}")),
-            }
+            self.request_open(name, bytes, None);
         }
     }
 
@@ -355,7 +447,10 @@ impl Workspace {
     fn save(&mut self, _choose_path: bool) {
         let name = format!("project.{}", file_format::EXTENSION);
         match crate::web::download(&name, &self.project.to_bytes()) {
-            Ok(()) => self.notify(format!("Downloaded {name}")),
+            Ok(()) => {
+                self.mark_saved();
+                self.notify(format!("Downloaded {name}"));
+            }
             Err(e) => self.notify(format!("Download failed: {e}")),
         }
     }
@@ -371,8 +466,11 @@ impl Workspace {
         else {
             return;
         };
-        match self.open_path(&path) {
-            Ok(()) => self.notify(format!("Opened {}", path.display())),
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let name = path.file_stem().map_or_else(|| "Layout".into(), |s| s.to_string_lossy().into_owned());
+                self.request_open(name, bytes, Some(path));
+            }
             Err(e) => {
                 tracing::error!("Failed to open {}: {e}", path.display());
                 self.notify(format!("Open failed: {e}"));
@@ -634,14 +732,11 @@ impl Workspace {
                             .on_hover_text("CPU time of the last frame, drawing included, and the share spent simulating (smoothed)");
                         ui.separator();
                     }
-                    let file = self
-                        .project
-                        .path
-                        .as_ref()
-                        .and_then(|p| p.file_name())
-                        .map(|f| f.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Unsaved project".into());
-                    ui.label(egui::RichText::new(file).small().weak());
+                    ui.label(egui::RichText::new(self.file_name()).small().weak());
+                    if self.has_unsaved_changes() {
+                        ui.label(egui::RichText::new("● unsaved changes").small().color(ui.visuals().warn_fg_color))
+                            .on_hover_text("Changed since it was last saved or opened (File → Save)");
+                    }
                 });
             });
         });
@@ -1112,7 +1207,63 @@ impl Workspace {
         });
     }
 
+    /// The project's file name, or "Unsaved project".
+    pub fn file_name(&self) -> String {
+        self.project
+            .path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map_or_else(|| "Unsaved project".into(), |f| f.to_string_lossy().into_owned())
+    }
+
+    /// Asks what to do with unsaved changes before another project replaces
+    /// this one.
+    fn unsaved_dialog(&mut self, ctx: &egui::Context) {
+        let Some(pending) = &self.pending_open else { return };
+        let question = format!("Save the changes to “{}” before opening “{}”?", self.file_name(), pending.name);
+        let mut choice = None;
+        let modal = egui::Modal::new(egui::Id::unique("unsaved_dialog")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.heading("Unsaved changes");
+            ui.add_space(6.0);
+            ui.label(question);
+            ui.label(egui::RichText::new("Opening a project replaces the one that's open.").small().weak());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button(if cfg!(target_arch = "wasm32") { "Download and open" } else { "Save and open" }).clicked() {
+                    choice = Some(UnsavedChoice::Save);
+                }
+                if ui.button("Open without saving").clicked() {
+                    choice = Some(UnsavedChoice::Discard);
+                }
+                if ui.button("Cancel").clicked() {
+                    choice = Some(UnsavedChoice::Cancel);
+                }
+            });
+        });
+        if modal.should_close() && choice.is_none() {
+            choice = Some(UnsavedChoice::Cancel);
+        }
+        if let Some(choice) = choice {
+            self.resolve_unsaved(choice);
+        }
+    }
+
+    /// The desktop window's title: the file, and a dot when it has unsaved changes.
+    fn update_title(&mut self, ctx: &egui::Context) {
+        let dot = if self.has_unsaved_changes() { " ●" } else { "" };
+        let title = format!("{}{dot} - Shine", self.file_name());
+        if title != self.title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = title;
+        }
+    }
+
     fn windows(&mut self, ctx: &egui::Context) {
+        self.unsaved_dialog(ctx);
+        if !cfg!(target_arch = "wasm32") {
+            self.update_title(ctx);
+        }
         let mut open = self.prefs.show_performance_graph;
         ui_kit::window(ctx, "Performance")
             .open(&mut open)

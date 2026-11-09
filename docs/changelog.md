@@ -64,6 +64,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Unsaved changes are shown in the status bar (and the desktop window title), and
+  opening another project asks before discarding them. Saves are atomic: a failed save
+  leaves the previous file intact.
 - The website has `favicon.ico` and WebP icon fallbacks for browsers and apps that don't
   use the SVG icon.
 - Powers just under a unit boundary read "1.00 mW", not "1000 µW".

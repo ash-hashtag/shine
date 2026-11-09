@@ -15,6 +15,12 @@ Save** writes the whole project to one `.shine` file; **File → Open** reads it
   choose again). Ctrl+S, Ctrl+O and Ctrl+N work too.
 - **Browser:** Save downloads the file; Open uploads one. Nothing is stored on a server.
 
+The status bar shows **● unsaved changes** when the project differs from the last save
+(on desktop the window title gets a dot too). Opening another project replaces the open
+one, so with unsaved changes Shine asks first: save (or download) and open, open without
+saving, or cancel. Saving writes the file under a temporary name and then renames it, so a
+save that fails part-way never damages the file you had.
+
 ## The `.shine` format
 
 A compact binary file: the 4 bytes `SHNE`, a 2-byte format version (little-endian), then
