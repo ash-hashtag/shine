@@ -6,12 +6,17 @@ order: 15
 
 # Roadmap
 
-Shine is **circuit first**: you connect components that behave as specified and see what
-the whole circuit does, instantly. That makes prototyping fast. Get the idea working with
-ideal parts, then add real numbers where they matter, and fix real problems once the
-design works. Realistic, physics-level simulation and turning a circuit into a chip that
-can be fabricated come later, as separate steps that build on a working circuit rather
-than slowing down the first one.
+Shine is **circuit first**: you build logic and circuits from components that behave as
+specified and see what the whole design does, instantly. It isn't a sketchpad to leave for
+"serious" tools: a design made in Shine is meant to become a real, top-of-the-line chip.
+
+The order matters. First the design works: its logic, its circuits, its numbers. Only
+when it heads for a real chip do real-world effects come in: reflections and cavities,
+noise, time-domain behaviour, polarisation, the foundry's rules. For each of those, Shine
+either does it well enough to rely on and keep up to date, or hands the design over
+cleanly, through standard formats, to the tools that specialise in it, so the way from a
+Shine design to a tapeout is always there. Keeping Shine simple is part of being
+competitive: every feature has to be one we can maintain.
 
 This is a list of goals and milestones, not a timeline. They're built one at a time, each
 tested and checked against expectations before the next. Items land in whichever release
@@ -62,9 +67,18 @@ want them.
 
 - [x] **Waveguide model**: group index (so ring spacing and delays match real devices) and
       propagation loss for delay lines and rings; connections stay ideal
-- [ ] **Validation page**: simulated results plotted against textbook formulas (rings,
-      MZI, Fabry–Pérot, couplers, the DFT mesh)
-- [ ] **Two polarisations** per port
+- [ ] **Validation page**: results side by side with textbook formulas (rings, MZI,
+      Fabry–Pérot, couplers, the DFT mesh) and with independent tools (PhotonForge, SAX);
+      a first comparison with PhotonForge agreed to 10⁻⁹
+- [ ] **Foundry libraries included**: the open kits' compact models (SiEPIC EBeam,
+      gdsfactory's generic kit) ready in the asset library, not only importable
+- [ ] **Optimisation**: let Shine find the parameters (couplings, lengths, phases) that
+      meet a target response
+
+## Milestone: design at scale
+
+- [ ] **Python API**: Shine's engine and project files from Python, so designs fit into
+      the scripts and flows engineers already use (gdsfactory, SAX, notebooks)
 
 ## Milestone: work with other tools
 
@@ -105,16 +119,24 @@ and feed it their components.
 - [ ] **Parameters for scripts**: values each box sets, as for components
 - [ ] **Scripts in the browser** (QuickJS built for WebAssembly)
 
-## Later: realistic simulation (separate)
+## Milestone: towards the chip
 
-- Physics-level models of components from their geometry and materials, kept separate
-  from the fast circuit simulator
-- Time-domain simulation: modulation, bandwidth, eye diagrams and noise
+When a working design heads for tapeout, the real world comes in. Each item is done in
+Shine where we can keep it reliable, and otherwise handed to specialised tools through the
+exports above.
 
-## Later: from circuit to chip
-
-- The first step is done through gdsfactory (above). Later: placement that respects each
-  kit's real sizes and rules, and drawing GDS or OASIS directly for the simplest cases
+- [x] **A route to tapeout**: the layout through gdsfactory and a foundry's kit
+- [ ] **Light both ways**: reflections, back-scatter and cavities on the chip, so foundry
+      models are used whole (today their reflections are dropped on import) and lasers and
+      Fabry–Pérot effects can be modelled
+- [ ] **Time domain**: modulation, bandwidth, bit patterns, eye diagrams and noise, for
+      transceivers and modulators
+- [ ] **Two polarisations** and more than one mode per port
+- [ ] **Temperature**: index and loss changing with temperature (heaters, drift)
+- [ ] **Foundry rules**: placement with each kit's real sizes, design-rule checks, and a
+      check that the layout matches the circuit
+- [ ] **Physics-level models** of components from their geometry, through tools that
+      specialise in it (FDTD, mode solvers) rather than built in
 
 ## Ideas
 
