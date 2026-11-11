@@ -27,6 +27,14 @@ Options:
                                   with --wavelength or --sweep: also vary a second
                                   parameter (default 21 points), giving a map as CSV
                                   (one row per point: x, y, each output's power)
+  --monte-carlo N                 simulate N copies under fabrication variation: each
+                                  sample's output powers as CSV (with --readouts: each
+                                  output's nominal, mean, σ, 5 % and 95 %, min and max)
+  --seed S                        Monte Carlo: the random seed (default 1)
+  --vary-neff X, --vary-coupling X, --vary-phase X, --vary-loss X
+                                  Monte Carlo: the variation's σ (index, relative
+                                  coupling, radians, relative loss; defaults 0.002,
+                                  0.03, 0.05, 0.1)
   --box-outputs                   also include the light leaving boxes
   --readouts                      with a sweep: each output's peak, minimum, insertion
                                   loss, extinction and resonances (FSR, width, Q) as CSV,
@@ -67,6 +75,9 @@ pub struct Args {
     pub laser: Option<String>,
     pub sweep: Option<(String, String, f64, f64, usize)>,
     pub sweep2: Option<(String, String, f64, f64, usize)>,
+    pub monte_carlo: Option<usize>,
+    pub seed: Option<u64>,
+    pub variation: crate::panels::circuit::monte_carlo::Variation,
     pub box_outputs: bool,
     pub readouts: bool,
     pub clock: u64,
@@ -121,6 +132,27 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 let (from, to, points) = range(span, 21)?;
                 a.sweep2 = Some((item.trim().to_owned(), param.trim().to_owned(), from, to, points));
             }
+            "--monte-carlo" => {
+                let n: usize = value("--monte-carlo")?.parse().map_err(|_| "--monte-carlo needs a number of samples")?;
+                if !(1..=1_000_000).contains(&n) {
+                    return Err("--monte-carlo takes 1 to 1000000 samples".into());
+                }
+                a.monte_carlo = Some(n);
+            }
+            "--seed" => a.seed = Some(value("--seed")?.parse().map_err(|_| "--seed needs a whole number")?),
+            "--vary-neff" | "--vary-coupling" | "--vary-phase" | "--vary-loss" => {
+                let name = flag.to_owned();
+                let x: f64 = value(&name)?.parse().map_err(|_| format!("{name} needs a number"))?;
+                if !(x >= 0.0 && x.is_finite()) {
+                    return Err(format!("{name} can't be negative"));
+                }
+                match name.as_str() {
+                    "--vary-neff" => a.variation.n_eff = x,
+                    "--vary-coupling" => a.variation.coupling = x,
+                    "--vary-phase" => a.variation.phase = x,
+                    _ => a.variation.loss = x,
+                }
+            }
             "--box-outputs" => a.box_outputs = true,
             "--readouts" => a.readouts = true,
             "--clock" => a.clock = value("--clock")?.parse().map_err(|_| "--clock needs a number of ticks")?,
@@ -142,6 +174,9 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
     }
     if a.wavelength.is_some() && a.sweep.is_some() {
         return Err("use either --wavelength or --sweep, not both".into());
+    }
+    if a.monte_carlo.is_some() && (a.wavelength.is_some() || a.sweep.is_some()) {
+        return Err("--monte-carlo varies the design at its own settings: leave out --wavelength and --sweep".into());
     }
     if a.sweep2.is_some() && a.wavelength.is_none() && a.sweep.is_none() {
         return Err("--sweep2 adds a second axis to --wavelength or --sweep".into());
@@ -244,6 +279,26 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     } else {
         None
     };
+
+    if let Some(samples) = args.monte_carlo {
+        let mut mc = crate::panels::circuit::monte_carlo::run(layout, cell_um, &project, &machine, Some(id), &args.variation, samples, args.seed.unwrap_or(1), &names);
+        if let Some(e) = mc.error.take() {
+            return Err(Failure::Simulation(e));
+        }
+        let only_boxes = mc.series.iter().all(|s| s.from_box);
+        if !args.box_outputs && !only_boxes {
+            mc.series.retain(|s| !s.from_box);
+        }
+        if !args.readouts {
+            return Ok(mc.to_csv());
+        }
+        let mut out = "\"output\",\"nominal (mW)\",\"mean (mW)\",\"σ (mW)\",\"5 % (mW)\",\"95 % (mW)\",\"min (mW)\",\"max (mW)\"\n".to_owned();
+        for s in &mc.series {
+            let st = s.stats();
+            let _ = writeln!(out, "\"{}\",{},{},{},{},{},{},{}", s.name.replace('"', "\"\""), s.nominal, st.mean, st.std, st.p5, st.p95, st.min, st.max);
+        }
+        return Ok(out);
+    }
 
     if let (Some(spec), Some((item, param, from, to, points))) = (&spec, &args.sweep2) {
         let item = find_item(layout, &project, item).map_err(Failure::Usage)?;

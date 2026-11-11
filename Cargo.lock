@@ -4475,6 +4475,8 @@ dependencies = [
  "png 0.18.1",
  "postcard",
  "pulp",
+ "rand 0.9.5",
+ "rand_distr 0.5.1",
  "rayon",
  "rfd",
  "rquickjs",

@@ -114,6 +114,27 @@ and press **Compute**.
 
 Lasers inside the design are off; signals inside are at the values they settle to.
 
+## Monte Carlo: fabrication variation
+
+A chip never comes out exactly as drawn. **Analysis → Monte Carlo…** simulates many
+copies of the design, each with every block's and part's parameters drawn around their
+values (normal distributions), and shows how each output spreads:
+
+| Variation | What it moves | Default σ |
+|---|---|---|
+| Effective index | delay lines and rings (width and thickness variation) | 0.002 |
+| Coupling | couplers, rings' couplings, beam splitters (relative) | 3 % |
+| Phase | phase shifters and MZIs (imbalance) | 0.05 rad |
+| Loss | attenuators and propagation loss (relative) | 10 % |
+
+Choose an output to see its **histogram** (the nominal value marked), mean, σ, the range
+nine in ten samples fall in (5–95 %), and the extremes. Set a **spec** (at least, and
+optionally at most, some power) to read the **yield**: the share of samples that meet it.
+A ring on resonance shows why this matters: a few thousandths of index variation move
+its resonance and fill in its dip, while a straight waveguide doesn't care. The same
+**seed** gives the same samples; **Copy CSV** gives every sample. Only the design's own
+blocks and parts vary, not those inside the components it uses.
+
 ## Exporting
 
 **Copy CSV** puts the data on the clipboard, ready to paste into a spreadsheet. **Save

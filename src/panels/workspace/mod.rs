@@ -29,7 +29,9 @@ mod export_window;
 mod files;
 pub use export_window::{ExportFormat, ExportWindow};
 mod library_window;
+mod monte_carlo_window;
 mod transmission_window;
+pub use monte_carlo_window::MonteCarloWindow;
 pub use transmission_window::{Quantity, TransmissionWindow};
 pub use library_window::LibraryWindow;
 pub use files::{DropTarget, FilePurpose, IncomingFile};
@@ -101,6 +103,8 @@ pub struct Workspace {
     pub export_window: ExportWindow,
     /// Analysis → Transmission….
     pub transmission_window: TransmissionWindow,
+    /// Analysis → Monte Carlo….
+    pub monte_carlo_window: MonteCarloWindow,
     /// The library asset being moved to another folder, with the folder typed so far.
     pub moving_asset: Option<(super::assets::AssetId, String)>,
     pub dialog: Option<DocumentDialog>,
@@ -155,6 +159,7 @@ impl Default for Workspace {
             library_window: LibraryWindow::default(),
             export_window: ExportWindow::default(),
             transmission_window: TransmissionWindow::default(),
+            monte_carlo_window: MonteCarloWindow::default(),
             dialog: None,
             status: None,
             incoming: Default::default(),
@@ -1339,6 +1344,13 @@ impl Workspace {
             {
                 self.open_transmission_window();
             }
+            if ui
+                .add_enabled(active.is_some(), egui::Button::new("Monte Carlo…"))
+                .on_hover_text("How the design holds up to fabrication variation: spread and yield")
+                .clicked()
+            {
+                self.open_monte_carlo_window();
+            }
         });
         ui.menu_button("Component", |ui| {
             let label = if is_component {
@@ -1588,6 +1600,7 @@ impl Workspace {
     fn windows(&mut self, ctx: &egui::Context) {
         self.export_window_ui(ctx);
         self.transmission_window_ui(ctx);
+        self.monte_carlo_window_ui(ctx);
         if self.about.open {
             self.about.ui(ctx);
         }

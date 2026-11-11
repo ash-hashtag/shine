@@ -59,6 +59,9 @@ ITEM can be:
 | `--laser ITEM` | the laser to tune |
 | `--sweep ITEM.PARAM=FROM:TO[:POINTS]` | sweep a parameter |
 | `--sweep2 ITEM.PARAM=FROM:TO[:POINTS]` | with `--wavelength` or `--sweep`: vary a second parameter too (default 21 points), for a map as CSV, a row per point |
+| `--monte-carlo N` | simulate N copies under fabrication variation: each sample's powers as CSV, or with `--readouts` each output's nominal, mean, σ, 5 %, 95 %, min and max |
+| `--seed S` | the Monte Carlo seed (default 1): the same seed, the same samples |
+| `--vary-neff X`, `--vary-coupling X`, `--vary-phase X`, `--vary-loss X` | the variation's σ (defaults 0.002, 0.03, 0.05 rad, 0.1) |
 | `--box-outputs` | include the light leaving boxes |
 | `--readouts` | with a sweep: each output's peak, minimum, insertion loss, extinction, and resonances (FSR, width, Q) as CSV, instead of the curves |
 | `--clock N` | tick the clock N times first, so registers hold values |

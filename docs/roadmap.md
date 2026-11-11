@@ -110,7 +110,10 @@ and feed it their components.
       window and with `shine simulate --sweep2`
 - [x] **S-matrix view**: how every input reaches every output, at a wavelength
       (Analysis → Transmission…)
-- [ ] **Monte Carlo**: how a design holds up to fabrication variation; histograms and yield
+- [x] **Monte Carlo**: how a design holds up to fabrication variation; histograms,
+      statistics and yield against a spec, in the editor and with `--monte-carlo`
+- [ ] **Monte Carlo inside components**, and of a sweep's readouts (how far a resonance
+      moves)
 
 ## Milestone: custom components
 

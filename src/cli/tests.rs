@@ -192,3 +192,18 @@ fn a_map_over_wavelength_and_a_rings_coupling() {
     assert!(parse(&["p.shine".into(), "--sweep2".into(), "R.coupling=0:1".into()]).is_err(), "needs a first axis");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn monte_carlo_from_the_command_line() {
+    let (dir, path) = saved("mc", examples::wdm_link);
+    let args = parse(&[path.clone(), "--monte-carlo".into(), "20".into(), "--seed".into(), "3".into()]).unwrap();
+    let csv = simulate(&args).unwrap();
+    assert_eq!(csv.lines().count(), 21, "a row per sample");
+    assert_eq!(simulate(&args).unwrap(), csv, "the same seed, the same samples");
+    let args = parse(&[path.clone(), "--monte-carlo=50".into(), "--readouts".into(), "--vary-neff".into(), "0.004".into()]).unwrap();
+    assert_eq!(args.variation.n_eff, 0.004);
+    let stats = simulate(&args).unwrap();
+    assert!(stats.starts_with("\"output\",\"nominal (mW)\",\"mean (mW)\""), "{stats}");
+    assert!(parse(&[path, "--monte-carlo".into(), "5".into(), "--wavelength".into(), "1500:1600".into()]).is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}

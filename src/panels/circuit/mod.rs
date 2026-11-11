@@ -1,6 +1,7 @@
 //! Mixed-signal circuits: optics plus the electronics around them.
 
 pub mod expr;
+pub mod monte_carlo;
 pub mod readings;
 pub mod sim;
 pub mod sweep;

@@ -648,6 +648,7 @@ fn every_control_is_named_for_screen_readers() {
     }
     h.state_mut().open_export_window(shine::panels::workspace::ExportFormat::Gdsfactory);
     h.state_mut().open_transmission_window();
+    h.state_mut().open_monte_carlo_window();
     active_mut(&mut h).show_browser = true;
     h.run_steps(4);
     missing.extend(unnamed_controls(&h, "windows"));
@@ -1343,4 +1344,20 @@ fn a_sweep_with_a_second_parameter_draws_a_map() {
     assert!(map.error.is_none(), "{:?}", map.error);
     assert_eq!((map.xs.len(), map.ys.len()), (101, 5));
     assert!(h.query_by_label_contains("Map of").is_some(), "the heatmap describes itself");
+}
+
+#[test]
+fn monte_carlo_shows_the_spread_and_yield() {
+    let mut h = app();
+    assert!(h.state_mut().open_example("4-channel-wdm-optical-link"));
+    h.run_steps(3);
+    click_menu(&mut h, "Analysis", "Monte Carlo…");
+    h.state_mut().monte_carlo_window.samples = 40;
+    h.get_by_label("▶  Run").click();
+    h.run_steps(3);
+    let mc = h.state().monte_carlo_window.result.clone().expect("ran");
+    assert!(mc.error.is_none(), "{:?}", mc.error);
+    assert!(mc.series.iter().all(|s| s.power.len() == 40));
+    assert!(h.query_by_label_contains("Yield").is_some(), "the yield against the spec");
+    assert!(h.query_by_label("Mean").is_some() && h.query_by_label("σ").is_some());
 }
