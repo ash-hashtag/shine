@@ -153,8 +153,8 @@ const open = async (query = "") => {
 };
 
 // Layout at 1400×900 and 100% zoom: the grid's cells are 40 points.
-const LASER_IN_LIBRARY = [75, 111];
-const WAVEGUIDE_FOLDER = [78, 295];
+const LASER_IN_LIBRARY = [75, 143];
+const WAVEGUIDE_FOLDER = [78, 263];
 const MZI_IN_LIBRARY = [90, 419];
 
 await test("a laser dragged onto the grid shines a beam", async () => {

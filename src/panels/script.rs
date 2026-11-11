@@ -28,17 +28,25 @@
 //! };
 //! ```
 
+use std::time::Duration;
+// The engine runs only in the desktop app (the browser build has no QuickJS).
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::photonics::{C64, Matrix};
 
 /// How long one call into a script may run.
 pub const TIME_LIMIT: Duration = Duration::from_millis(250);
 /// Memory a script's engine may use.
 pub const MEMORY_LIMIT: usize = 32 * 1024 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
 const STACK_LIMIT: usize = 512 * 1024;
 
 /// What a script declares.

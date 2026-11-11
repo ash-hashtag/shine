@@ -50,10 +50,10 @@ mod app {
         /// The asset library: a file next to the settings on desktop, the
         /// page's storage in the browser.
         fn load_library(&mut self, storage: Option<&dyn eframe::Storage>) {
-            use crate::panels::assets::{LIBRARY_FILE, Library, STORAGE_KEY};
+            use crate::panels::assets::{Library, STORAGE_KEY};
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(dir) = eframe::storage_dir(crate::APP_ID) {
-                self.workspace.library = Library::open_file(dir.join(LIBRARY_FILE));
+                self.workspace.library = Library::open_file(dir.join(crate::panels::assets::LIBRARY_FILE));
                 return;
             }
             let stored = storage.and_then(|s| s.get_string(STORAGE_KEY));
