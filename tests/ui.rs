@@ -1042,7 +1042,8 @@ fn the_library_window_browses_thousands_in_a_grid() {
     h.state_mut().library = big_library(3000, 12);
     click_menu(&mut h, "View", "Asset library…");
     h.run_steps(2);
-    assert!(h.query_by_label("3004 components").is_some(), "every asset, and the 4 examples");
+    // Every asset, the 4 examples and the 12 SiEPIC EBeam components.
+    assert!(h.query_by_label("3016 components").is_some(), "every asset, the examples and the foundry kit");
 
     // Only the visible rows are drawn, so a frame stays quick.
     let start = std::time::Instant::now();

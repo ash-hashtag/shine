@@ -9,7 +9,7 @@ use egui::{Rect, RichText, Sense, Ui, Vec2};
 use super::Workspace;
 use super::assets_ui::Dragged;
 use crate::panels::appearance::paint_badge;
-use crate::panels::assets::{AssetRef, AssetSummary, DEFAULT_FOLDER, EXAMPLES_FOLDER, ports_text};
+use crate::panels::assets::{AssetRef, AssetSummary, BUILT_IN_FOLDERS, DEFAULT_FOLDER, ports_text};
 use crate::panels::optics::model::BlockRef;
 use crate::panels::optics::{Placeable, Tool};
 use crate::panels::project::{Catalog, CatalogEntry, DocId};
@@ -51,6 +51,7 @@ pub enum Item {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AssetKey {
     Example(usize),
+    Kit(usize),
     Saved(u64),
 }
 
@@ -58,6 +59,7 @@ impl From<AssetRef> for AssetKey {
     fn from(a: AssetRef) -> Self {
         match a {
             AssetRef::Example(i) => AssetKey::Example(i),
+            AssetRef::Kit(i) => AssetKey::Kit(i),
             AssetRef::Saved(id) => AssetKey::Saved(id.0),
         }
     }
@@ -67,6 +69,7 @@ impl From<AssetKey> for AssetRef {
     fn from(a: AssetKey) -> Self {
         match a {
             AssetKey::Example(i) => AssetRef::Example(i),
+            AssetKey::Kit(i) => AssetRef::Kit(i),
             AssetKey::Saved(id) => AssetRef::Saved(crate::panels::assets::AssetId(id)),
         }
     }
@@ -265,8 +268,10 @@ impl Workspace {
         row(ui, Folder::Project, format!("This project  ({project})"));
         ui.add_space(4.0);
         ui.label(RichText::new("LIBRARY").small().strong().weak());
-        let examples = self.library.summaries().iter().filter(|a| a.folder == EXAMPLES_FOLDER).count();
-        row(ui, Folder::Named(EXAMPLES_FOLDER.into()), format!("{EXAMPLES_FOLDER}  ({examples})"));
+        for built_in in BUILT_IN_FOLDERS {
+            let n = self.library.summaries().iter().filter(|a| a.folder == built_in).count();
+            row(ui, Folder::Named(built_in.into()), format!("{built_in}  ({n})"));
+        }
         let mut folders = self.library.folder_counts();
         if !folders.iter().any(|(f, _)| f == DEFAULT_FOLDER) {
             folders.insert(0, (DEFAULT_FOLDER.to_owned(), 0));
@@ -362,7 +367,7 @@ impl Workspace {
                 match item {
                     Item::Project(id) => Dragged::Project(id),
                     Item::Asset(AssetKey::Saved(id)) => Dragged::Saved(crate::panels::assets::AssetId(id)),
-                    Item::Asset(AssetKey::Example(_)) => Dragged::Example,
+                    Item::Asset(AssetKey::Example(_) | AssetKey::Kit(_)) => Dragged::Example,
                 },
             );
         }

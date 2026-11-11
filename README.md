@@ -35,4 +35,6 @@ current, CI and releases.
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). The SiEPIC EBeam compact models in `library/siepic-ebeam` are from
+the [SiEPIC EBeam PDK](https://github.com/SiEPIC/SiEPIC_EBeam_PDK), under its MIT licence
+([library/siepic-ebeam/LICENSE.md](library/siepic-ebeam/LICENSE.md)).

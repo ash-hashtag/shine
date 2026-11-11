@@ -73,8 +73,10 @@ want them.
 - [x] **SAX comparison**: Shine's netlists solved in SAX agree to 10⁻¹⁰
       ([Validation](validation.md))
 - [ ] **More independent comparisons**: Lumerical INTERCONNECT
-- [ ] **Foundry libraries included**: the open kits' compact models (SiEPIC EBeam,
-      gdsfactory's generic kit) ready in the asset library, not only importable
+- [x] **A foundry library included**: the SiEPIC EBeam kit's compact models (MIT) in the
+      asset library, ready to place
+- [ ] **More foundry libraries**: other open kits whose model data is under a permissive
+      licence (gdsfactory's UBC and Cornerstone kits are MIT)
 - [x] **Optimisation**: Shine finds the parameter values (couplings, lengths, phases) that
       maximise, minimise or reach a target power at an output (Analysis → Optimise…,
       desktop)

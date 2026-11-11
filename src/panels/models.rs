@@ -262,16 +262,16 @@ impl ModelSpec {
         Self::from_full(stem, name, &frequencies, &matrices, inputs, &ports)
     }
 
-    /// A model from a file it recognises by name: `.sNp`, `.ts` or `.dat`.
+    /// A model from a file it recognises by name: `.sNp`, `.ts`, or
+    /// Lumerical's `.dat` or `.sparam` (the same format).
     pub fn from_file(name: &str, bytes: &[u8]) -> Result<Self, String> {
-        let lower = name.to_lowercase();
-        if lower.ends_with(".dat") {
+        if is_lumerical(name) {
             let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} isn't text"))?;
             Self::from_lumerical(name, text)
         } else if is_touchstone(name) {
             Self::from_touchstone(name, bytes)
         } else {
-            Err(format!("{name} isn't an S-parameter file (.sNp or .dat)"))
+            Err(format!("{name} isn't an S-parameter file (.sNp, .dat or .sparam)"))
         }
     }
 }
@@ -327,14 +327,21 @@ pub fn is_touchstone(name: &str) -> bool {
     lower.ends_with(".ts") || super::interop::touchstone::ports_of(&lower).is_some()
 }
 
+/// Whether a file name is a Lumerical INTERCONNECT S-parameter file.
+pub fn is_lumerical(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".dat") || lower.ends_with(".sparam")
+}
+
 /// Whether a file name is one [`ModelSpec::from_file`] reads.
 pub fn is_model_file(name: &str) -> bool {
-    is_touchstone(name) || name.to_lowercase().ends_with(".dat")
+    is_touchstone(name) || is_lumerical(name)
 }
 
 /// Which ports take light in: the split that carries the most power from
-/// inputs to outputs over all frequencies; on a tie, the lowest-numbered
-/// ports as inputs. More than 12 ports: the first half.
+/// inputs to outputs over all frequencies; on a tie (within 5%: a reciprocal
+/// part's two directions differ by that much in simulated or measured data,
+/// such as SiEPIC's Y-branch), the lowest-numbered ports as inputs. More than 12 ports: the first half.
 pub fn split_ports(s: &[Matrix]) -> Vec<usize> {
     let n = s.first().map_or(0, |m| m.nrows());
     if n > 12 {
@@ -353,13 +360,14 @@ pub fn split_ports(s: &[Matrix]) -> Vec<usize> {
             })
             .sum()
     };
+    const TIE: f64 = 0.05;
     let mut best: Option<(f64, u32)> = None;
     for mask in 1..(1u32 << n) - 1 {
         let p = power(mask);
         let better = match best {
             None => true,
             // Lower-numbered inputs win a tie: compare the masks bit by bit from port 1.
-            Some((bp, bm)) => p > bp * (1.0 + 1e-9) || ((p - bp).abs() <= bp * 1e-9 && mask.reverse_bits() > bm.reverse_bits()),
+            Some((bp, bm)) => p > bp * (1.0 + TIE) || ((p - bp).abs() <= bp * TIE && mask.reverse_bits() > bm.reverse_bits()),
         };
         if better {
             best = Some((p, mask));

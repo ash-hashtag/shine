@@ -6,7 +6,7 @@ use egui::{RichText, Ui};
 
 use super::Workspace;
 use crate::panels::appearance::paint_badge;
-use crate::panels::assets::{AssetId, AssetRef, AssetSummary, DEFAULT_FOLDER, EXAMPLES_FOLDER, ports_text};
+use crate::panels::assets::{AssetId, AssetRef, AssetSummary, BUILT_IN_FOLDERS, DEFAULT_FOLDER, EXAMPLES_FOLDER, ports_text};
 use crate::panels::optics::model::BlockRef;
 use crate::panels::optics::{Placeable, Tool};
 use crate::panels::project::{Catalog, CatalogEntry, DocId};
@@ -172,24 +172,24 @@ impl Workspace {
                 });
         }
 
-        // The library: Shine's examples, then the user's folders.
+        // The library: Shine's examples and foundry kit, then the user's folders.
         let summaries = self.library.summaries();
-        let mut folders = vec![EXAMPLES_FOLDER.to_owned()];
+        let mut folders: Vec<String> = BUILT_IN_FOLDERS.iter().map(|f| (*f).to_owned()).collect();
         folders.extend(self.library.folders());
         if self.library.is_empty() && !folders.iter().any(|f| f == DEFAULT_FOLDER) {
             // Somewhere to drop the first one.
             folders.push(DEFAULT_FOLDER.to_owned());
         }
-        let user_folders: Vec<String> = folders.iter().filter(|f| *f != EXAMPLES_FOLDER).cloned().collect();
+        let user_folders: Vec<String> = folders.iter().filter(|f| !BUILT_IN_FOLDERS.contains(&f.as_str())).cloned().collect();
         for folder in &folders {
             let rows: Vec<&AssetSummary> = summaries.iter().filter(|a| &a.folder == folder && a.matches(&search)).collect();
             found += rows.len();
             if rows.is_empty() && searching {
                 continue;
             }
-            let examples = folder == EXAMPLES_FOLDER;
+            let built_in = BUILT_IN_FOLDERS.contains(&folder.as_str());
             // With many folders, they start closed: the library window is for browsing.
-            let start_open = examples || user_folders.len() <= 6;
+            let start_open = folder == EXAMPLES_FOLDER || (!built_in && user_folders.len() <= 6);
             let mut draw = |ui: &mut Ui| {
                 egui::CollapsingHeader::new(RichText::new(format!("{folder}  ·  {}", rows.len())).strong())
                     .id_salt(("assets_folder", folder.as_str()))
@@ -209,7 +209,7 @@ impl Workspace {
                         }
                     });
             };
-            if examples {
+            if built_in {
                 draw(ui);
                 continue;
             }
@@ -263,7 +263,7 @@ impl Workspace {
         let response = ui_kit::item_row_sized(ui, selected, &e.name, 24.0, |p, r| paint_badge(p, r, &e.appearance, &e.name, &e.initials));
         let dragged = match a.asset {
             AssetRef::Saved(id) => Dragged::Saved(id),
-            AssetRef::Example(_) => Dragged::Example,
+            AssetRef::Example(_) | AssetRef::Kit(_) => Dragged::Example,
         };
         self.place_from_row(&response, item, dragged);
         if response.double_clicked() {

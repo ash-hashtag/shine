@@ -100,6 +100,12 @@ a file next to Shine's settings, in the browser in the page's storage. It has fo
 - **This project**: the open project's components.
 - **Examples**: the components that ship with Shine (Full adder, Mach–Zehnder
   interferometer, Fabry–Pérot filter, 1→4 splitter).
+- **SiEPIC EBeam**: real foundry components, the compact models of the open
+  [SiEPIC EBeam PDK](https://github.com/SiEPIC/SiEPIC_EBeam_PDK) for its nominal process
+  (220 nm silicon, 500 nm waveguides, TE, C band): a broadband 50:50 coupler, a Y-branch,
+  directional couplers from 0 to 30 µm long and three ring couplers. They are FDTD
+  simulations, so they have the real parts' loss, imbalance and wavelength dependence. They
+  ship with Shine under the kit's MIT licence (`library/siepic-ebeam` in the source).
 - Your own folders, *My components* to start with.
 
 Drag a component onto the grid (or click it, then the grid) to place it, and
@@ -159,15 +165,17 @@ same name gets a new name (*Full adder 2*).
 A component can be a black box known only by its S-parameters, measured or simulated
 elsewhere: a foundry kit's compact models, an FDTD simulation, a measurement. Shine reads
 **Touchstone** files (`.s2p`, `.s4p`…, version 1 or 2) and **Lumerical INTERCONNECT**
-files (`.dat`, as kits such as SiEPIC EBeam publish them). Bring them in like any
+files (`.dat` or `.sparam`, as kits such as SiEPIC EBeam publish them). Bring them in like any
 component: **Import files…** or **Import folder…** in the asset library, or drop them on
 the window (on the left panel to keep them, elsewhere to open one in a tab). A folder of
 them, a kit's models for example, becomes a library folder.
 
 Each file becomes a component with a pin for every port. Light in Shine runs one way, so
 its ports are split into inputs (left) and outputs (right): by the sides a Lumerical file
-gives, otherwise the split that carries the most light from inputs to outputs (a Y-branch's
-port 1 in, ports 2 and 3 out; a coupler's two sides). Between the file's wavelengths the
+gives, otherwise the split that carries the most light from inputs to outputs (a coupler's
+two sides). A part that passes light equally both ways (within 5%, as simulated and
+measured data of reciprocal parts do) has its lowest-numbered ports as inputs: a
+Y-branch's port 1 in, ports 2 and 3 out. Between the file's wavelengths the
 values are interpolated (magnitude and phase); outside them, the nearest one is used.
 Reflections and light running backwards aren't modelled. Its inspector shows the
 wavelength range and points. Touchstone files are read in the desktop app; Lumerical

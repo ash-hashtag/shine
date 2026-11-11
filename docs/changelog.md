@@ -27,6 +27,11 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- The SiEPIC EBeam kit's compact models ship with Shine, as the **SiEPIC EBeam** folder of
+  the asset library: a broadband 50:50 coupler, a Y-branch, seven directional couplers and
+  three ring couplers for its nominal process, under the kit's MIT licence. Lumerical
+  `.sparam` files are read like `.dat` files, and parts that pass light equally both ways
+  (within 5%) take their lowest-numbered ports as inputs.
 - A reference design: a 16×16 programmable photonic matrix processor (136 MZI cells, 1442
   parts) in the rectangular (Clements) arrangement, programmed as an optical Fourier
   transform; in File → Examples… and as `reference/photonic-matrix-processor.shine`. Tests
