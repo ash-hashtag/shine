@@ -58,6 +58,7 @@ ITEM can be:
 | `--wavelength FROM:TO[:POINTS]` | sweep a laser's wavelength (nm) |
 | `--laser ITEM` | the laser to tune |
 | `--sweep ITEM.PARAM=FROM:TO[:POINTS]` | sweep a parameter |
+| `--sweep2 ITEM.PARAM=FROM:TO[:POINTS]` | with `--wavelength` or `--sweep`: vary a second parameter too (default 21 points), for a map as CSV, a row per point |
 | `--box-outputs` | include the light leaving boxes |
 | `--readouts` | with a sweep: each output's peak, minimum, insertion loss, extinction, and resonances (FSR, width, Q) as CSV, instead of the curves |
 | `--clock N` | tick the clock N times first, so registers hold values |

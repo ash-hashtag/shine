@@ -80,10 +80,6 @@ const SERIES: [(u32, u32); 8] = [
     (0x6250d6, 0x9085e9),
     (0xe34948, 0xe66767),
 ];
-/// One-hue sequential ramp (blue 100 → 700), for magnitude.
-const RAMP: [u32; 13] = [
-    0xcde2fb, 0xb7d3f6, 0x9ec5f4, 0x86b6ef, 0x6da7ec, 0x5598e7, 0x3987e5, 0x2a78d6, 0x256abf, 0x1c5cab, 0x184f95, 0x104281, 0x0d366b,
-];
 /// The grid's range: below this much loss a path counts as dark.
 const FLOOR_DB: f64 = -40.0;
 
@@ -100,9 +96,7 @@ fn series(k: usize, dark: bool) -> Color32 {
 /// full transmission is the strongest step (the ramp reversed in dark mode).
 fn ramp(p: f64, dark: bool) -> Color32 {
     let db = if p > 0.0 { 10.0 * p.log10() } else { FLOOR_DB };
-    let t = ((db - FLOOR_DB) / -FLOOR_DB).clamp(0.0, 1.0);
-    let k = (t * (RAMP.len() - 1) as f64).round() as usize;
-    hex(if dark { RAMP[RAMP.len() - 1 - k] } else { RAMP[k] })
+    ui_kit::magnitude_color((db - FLOOR_DB) / -FLOOR_DB, dark)
 }
 
 fn db(p: f64) -> f64 {
@@ -321,9 +315,9 @@ mod tests {
 
     #[test]
     fn the_ramp_goes_light_to_dark_and_reverses_in_dark_mode() {
-        assert_eq!(ramp(0.0, false), hex(RAMP[0]));
-        assert_eq!(ramp(1.0, false), hex(RAMP[RAMP.len() - 1]));
-        assert_eq!(ramp(1e-9, true), hex(RAMP[RAMP.len() - 1]), "near zero recedes into the dark surface");
-        assert_eq!(ramp(1.0, true), hex(RAMP[0]));
+        assert_eq!(ramp(0.0, false), ui_kit::magnitude_color(0.0, false));
+        assert_eq!(ramp(1.0, false), ui_kit::magnitude_color(1.0, false));
+        assert_eq!(ramp(1e-9, true), ui_kit::magnitude_color(0.0, true), "near zero recedes into the dark surface");
+        assert_ne!(ui_kit::magnitude_color(0.0, true), ui_kit::magnitude_color(0.0, false));
     }
 }

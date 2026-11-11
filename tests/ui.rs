@@ -1310,3 +1310,37 @@ fn the_transmission_window_shows_the_s_matrix_and_paths() {
     assert!(header.contains("a → bar group delay (ps)") && header.contains("a → cross power (dB)"), "{header}");
     assert_eq!(csv.lines().count(), 2002, "a row per wavelength");
 }
+
+#[test]
+fn a_sweep_with_a_second_parameter_draws_a_map() {
+    let mut h = app();
+    let p = active_mut(&mut h);
+    p.layout.components.push(shine::panels::optics::model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    let coupler = p.layout.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (4, 0));
+    p.layout.connect_feed(0, PortRef { instance: coupler, port: 0 });
+    p.editor.boxes.select_only(0);
+    h.run_steps(2);
+    click_menu(&mut h, "Analysis", "Sweep…");
+    h.get_by_label("Use selection").click();
+    h.run_steps(2);
+    h.get_by_label("a second parameter (a map)").click();
+    h.run_steps(2);
+    // The laser's power along y.
+    active_mut(&mut h).sweep.vary = Some(shine::panels::circuit::sweep::Axis {
+        item: Item::Part(0),
+        param: "power".into(),
+        start: 1.0,
+        stop: 2.0,
+        points: 5,
+    });
+    h.run_steps(2);
+    h.get_by_label("▶  Run sweep").click();
+    h.run_steps(3);
+    let map = active(&h).sweep.map.clone().expect("a map");
+    assert!(map.error.is_none(), "{:?}", map.error);
+    assert_eq!((map.xs.len(), map.ys.len()), (101, 5));
+    assert!(h.query_by_label_contains("Map of").is_some(), "the heatmap describes itself");
+}

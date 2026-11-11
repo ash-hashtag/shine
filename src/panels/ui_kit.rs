@@ -288,6 +288,22 @@ pub fn slider<N: egui::emath::Numeric>(
     .inner
 }
 
+/// One-hue sequential ramp (blue, light to dark) for magnitudes: heatmaps
+/// and the S-matrix grid. Validated for colour-vision deficiency in light
+/// and dark mode (the dataviz reference palette's blue 100–700).
+const MAGNITUDE_RAMP: [u32; 13] = [
+    0xcde2fb, 0xb7d3f6, 0x9ec5f4, 0x86b6ef, 0x6da7ec, 0x5598e7, 0x3987e5, 0x2a78d6, 0x256abf, 0x1c5cab, 0x184f95, 0x104281, 0x0d366b,
+];
+
+/// The colour of a magnitude `t` from 0 (none) to 1 (most): near zero
+/// recedes toward the surface (light steps in light mode, dark in dark).
+pub fn magnitude_color(t: f64, dark: bool) -> Color32 {
+    let n = MAGNITUDE_RAMP.len();
+    let k = (t.clamp(0.0, 1.0) * (n - 1) as f64).round() as usize;
+    let c = if dark { MAGNITUDE_RAMP[n - 1 - k] } else { MAGNITUDE_RAMP[k] };
+    Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

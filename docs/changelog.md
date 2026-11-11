@@ -27,6 +27,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- Maps: a sweep can vary a second parameter (Also vary), drawing one output's power over
+  both as a heatmap; `shine simulate --sweep2` gives the same as CSV.
 - Analysis → Transmission…: a design's S-matrix at any wavelength, and the power, phase
   and group delay of its paths over the wavelengths, plotted and saved as CSV.
 - Resonance readouts on wavelength sweeps: free spectral range, width and Q of each

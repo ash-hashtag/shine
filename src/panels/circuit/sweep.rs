@@ -444,6 +444,106 @@ pub fn run(
     result
 }
 
+/// A second swept parameter: with a sweep along x, a map over (x, y).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Axis {
+    pub item: Item,
+    pub param: String,
+    pub start: f64,
+    pub stop: f64,
+    pub points: usize,
+}
+
+/// One output over a map: `power[row][column]`, rows along y, columns along x.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MapSeries {
+    pub name: String,
+    pub power: Vec<Vec<f64>>,
+    pub from_box: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MapResult {
+    pub x_label: String,
+    pub y_label: String,
+    pub xs: Vec<f64>,
+    pub ys: Vec<f64>,
+    pub series: Vec<MapSeries>,
+    pub error: Option<String>,
+}
+
+/// Sweep `spec` along x at each value of `y`: every point a full simulation.
+#[allow(clippy::too_many_arguments)]
+pub fn run_map(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &(dyn Documents + Sync),
+    machine: &Machine,
+    root: Option<DocId>,
+    spec: &SweepSpec,
+    y: &Axis,
+    name_of_box: &(dyn Fn(InstanceId) -> String + Sync),
+) -> MapResult {
+    let unit = params_in(layout, y.item, docs).iter().find(|p| p.name == y.param).map_or("", |p| p.unit);
+    let y_label = if unit.is_empty() { y.param.clone() } else { format!("{} ({unit})", y.param) };
+    let mut map = MapResult { y_label, ..MapResult::default() };
+    if get_in(layout, y.item, &y.param, docs).is_none() {
+        map.error = Some("Nothing to vary: pick a part or block with that parameter".into());
+        return map;
+    }
+    for value in values(y.start, y.stop, y.points.clamp(2, 1001)) {
+        let mut l = layout.clone();
+        set(&mut l, y.item, &y.param, value);
+        let row = run(&l, cell_um, docs, machine, root, spec, name_of_box);
+        map.x_label = row.x_label.clone();
+        if let Some(e) = row.error {
+            map.error = Some(format!("At {} = {value:.4}: {e}", y.param));
+            break;
+        }
+        map.xs = row.xs;
+        for s in row.series {
+            match map.series.iter_mut().find(|m| m.name == s.name) {
+                Some(m) => m.power.push(s.power),
+                None => {
+                    // An output that appeared mid-map starts with dark rows.
+                    let mut power = vec![vec![0.0; s.power.len()]; map.ys.len()];
+                    power.push(s.power);
+                    map.series.push(MapSeries { name: s.name, power, from_box: s.from_box });
+                }
+            }
+        }
+        map.ys.push(value);
+        let (rows, columns) = (map.ys.len(), map.xs.len());
+        for m in &mut map.series {
+            m.power.resize(rows, vec![0.0; columns]);
+        }
+    }
+    map
+}
+
+impl MapResult {
+    /// The map as CSV, one row per point: x, y, then each output's power (mW).
+    pub fn to_csv(&self) -> String {
+        let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+        let mut out = std::iter::once(quote(&self.x_label))
+            .chain(std::iter::once(quote(&self.y_label)))
+            .chain(self.series.iter().map(|s| quote(&format!("{} power (mW)", s.name))))
+            .collect::<Vec<_>>()
+            .join(",");
+        out.push('\n');
+        for (r, y) in self.ys.iter().enumerate() {
+            for (c, x) in self.xs.iter().enumerate() {
+                out += &format!("{x},{y}");
+                for s in &self.series {
+                    out += &format!(",{}", s.power[r][c]);
+                }
+                out.push('\n');
+            }
+        }
+        out
+    }
+}
+
 impl SweepResult {
     /// Whether the x axis is wavelength (so resonances can be measured).
     pub fn is_wavelength(&self) -> bool {

@@ -106,7 +106,8 @@ and feed it their components.
 - [x] **Readouts from the command line** (`shine simulate … --readouts`)
 - [x] **Phase and group delay** of every path between a design's ports, checked against
       a waveguide's n_g·L/c and a ring's resonant delay
-- [ ] **Two-parameter sweeps**: a map of an output over two parameters
+- [x] **Two-parameter sweeps**: a map of an output over two parameters, in the sweep
+      window and with `shine simulate --sweep2`
 - [x] **S-matrix view**: how every input reaches every output, at a wavelength
       (Analysis → Transmission…)
 - [ ] **Monte Carlo**: how a design holds up to fabrication variation; histograms and yield

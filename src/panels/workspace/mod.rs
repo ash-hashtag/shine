@@ -806,6 +806,14 @@ impl Workspace {
         let layout = &panel.layout;
         let names = |inst| layout.instance(inst).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
         let start = web_time::Instant::now();
+        if let Some(y) = panel.sweep_axis() {
+            let map = super::circuit::sweep::run_map(layout, panel.cell_um, &self.project, &panel.machine, Some(id), &spec, &y, &names);
+            tracing::debug!("Mapped {}×{} points in {:?}", map.xs.len(), map.ys.len(), start.elapsed());
+            if let Some(p) = self.active_panel() {
+                p.sweep.map = Some(map);
+            }
+            return;
+        }
         let result = super::circuit::sweep::run(layout, panel.cell_um, &self.project, &panel.machine, Some(id), &spec, &names);
         tracing::debug!("Swept {} points in {:?}", result.xs.len(), start.elapsed());
         if let Some(p) = self.active_panel() {

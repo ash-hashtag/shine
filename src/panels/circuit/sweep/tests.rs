@@ -297,3 +297,38 @@ fn spectra_without_clear_resonances_say_so() {
     let s = spectrum(&xs, &ys).unwrap();
     assert_eq!((s.resonances.len(), s.fsr_nm, s.fwhm_nm), (1, None, None));
 }
+
+#[test]
+fn a_map_of_a_couplers_output_over_two_parameters() {
+    // A laser into a directional coupler, then a phase shifter: map the bar
+    // detector over the coupling (x) and the laser power (y). Power in the
+    // bar arm is (1 − κ) × P everywhere.
+    let mut l = Layout::default();
+    l.components.push(PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    let dc = l.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (4, 0));
+    l.connect_feed(0, crate::panels::optics::model::PortRef { instance: dc, port: 0 });
+    let x = SweepSpec { kind: SweepKind::Parameter { item: Item::Box(dc), param: "coupling".into() }, start: 0.0, stop: 1.0, points: 11 };
+    let y = Axis { item: Item::Part(0), param: "power".into(), start: 1.0, stop: 4.0, points: 4 };
+    let map = run_map(&l, 10.0, &NoDocuments, &Machine::default(), None, &x, &y, &no_names);
+    assert!(map.error.is_none(), "{:?}", map.error);
+    assert_eq!((map.xs.len(), map.ys.len()), (11, 4));
+    let bar = map.series.iter().find(|s| s.name.ends_with(" out1")).expect("the coupler's bar output");
+    for (r, &yv) in map.ys.iter().enumerate() {
+        let input = sweep_power(&l, &y.param, yv);
+        for (c, &k) in map.xs.iter().enumerate() {
+            let expected = (1.0 - k) * input;
+            assert!((bar.power[r][c] - expected).abs() < 1e-9, "κ {k}, {} {yv}: {} vs {expected}", y.param, bar.power[r][c]);
+        }
+    }
+    assert_eq!(map.to_csv().lines().count(), 1 + 11 * 4);
+}
+
+/// The laser's power (mW) when its swept parameter is `v`.
+fn sweep_power(l: &Layout, param: &str, v: f64) -> f64 {
+    let mut copy = l.clone();
+    set(&mut copy, Item::Part(0), param, v);
+    source_power(&copy)
+}

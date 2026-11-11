@@ -58,6 +58,11 @@ pub struct SweepState {
     /// Plot boxes' light outputs too (hidden by default when there are detectors).
     pub box_outputs: bool,
     pub result: Option<SweepResult>,
+    /// A second parameter to vary: the sweep becomes a map.
+    pub vary: Option<sweep::Axis>,
+    pub map: Option<sweep::MapResult>,
+    /// The output the map shows, by name.
+    pub map_output: Option<String>,
 }
 
 impl Default for SweepState {
@@ -76,6 +81,9 @@ impl Default for SweepState {
             show_readouts: true,
             plot_rect: None,
             result: None,
+            vary: None,
+            map: None,
+            map_output: None,
         }
     }
 }
@@ -177,6 +185,11 @@ impl OpticsPanel {
         Some(SweepSpec { kind, start: s.start, stop: s.stop, points: s.points.clamp(2, 5001) })
     }
 
+    /// The second parameter, when the sweep is a map.
+    pub fn sweep_axis(&self) -> Option<sweep::Axis> {
+        self.sweep.vary.clone().filter(|a| !a.param.is_empty())
+    }
+
     /// Run the sweep: here for a standalone layout, by the host otherwise
     /// (components need the project).
     pub fn run_sweep(&mut self) {
@@ -188,6 +201,11 @@ impl OpticsPanel {
         let catalog = &self.catalog;
         let layout = &self.layout;
         let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+        if let Some(y) = self.sweep_axis() {
+            let map = sweep::run_map(layout, self.cell_um, &NoDocuments, &self.machine, None, &spec, &y, &names);
+            self.sweep.map = Some(map);
+            return;
+        }
         let result = sweep::run(layout, self.cell_um, &NoDocuments, &self.machine, None, &spec, &names);
         self.sweep.result = Some(result);
     }
@@ -221,6 +239,8 @@ impl OpticsPanel {
             .and_then(|b| self.layout.instances.get(b).map(|i| Item::Box(i.id)))
             .or(self.editor.selection.active().map(Item::Part));
         let params = self.sweep.target.map(|t| self.sweep_params(t)).unwrap_or_default();
+        let vary_name = self.sweep.vary.as_ref().map(|a| self.item_name(a.item));
+        let vary_params = self.sweep.vary.as_ref().map(|a| self.sweep_params(a.item)).unwrap_or_default();
         let usable = selection.filter(|&item| !self.sweep_params(item).is_empty());
         let first_of_usable = usable.map(|item| self.sweep_params(item).swap_remove(0));
         let mut run = false;
@@ -304,12 +324,64 @@ impl OpticsPanel {
             let label = ui.label("Points").id;
             ui.add(egui::DragValue::new(&mut s.points).range(2..=5001)).labelled_by(label);
             ui.end_row();
+            // A second parameter turns the sweep into a map.
+            ui.label("Also vary");
+            let mut on = s.vary.is_some();
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut on, "a second parameter (a map)").changed() {
+                    s.vary = on.then(|| sweep::Axis { item: s.target.unwrap_or(Item::Part(0)), param: String::new(), start: 0.0, stop: 1.0, points: 21 });
+                    if !on {
+                        s.map = None;
+                    }
+                }
+            });
+            ui.end_row();
+            if let Some(axis) = &mut s.vary {
+                ui.label("Then");
+                ui.horizontal(|ui| {
+                    ui.label(vary_name.as_deref().unwrap_or("none"));
+                    if ui
+                        .add_enabled(usable.is_some(), egui::Button::new("Use selection"))
+                        .on_disabled_hover_text("Select a part or block with numeric parameters")
+                        .clicked()
+                        && let (Some(item), Some(first)) = (usable, first_of_usable.clone())
+                    {
+                        *axis = sweep::Axis { item, param: first.name, start: first.min, stop: first.max, points: axis.points };
+                    }
+                });
+                ui.end_row();
+                let label = ui.label("Its parameter").id;
+                egui::ComboBox::from_id_salt("sweep_vary_param")
+                    .selected_text(if axis.param.is_empty() { "Choose…" } else { axis.param.as_str() })
+                    .show_ui(ui, |ui| {
+                        for p in &vary_params {
+                            if ui.selectable_label(axis.param == p.name, &p.name).clicked() {
+                                axis.param = p.name.clone();
+                                axis.start = p.min;
+                                axis.stop = p.max;
+                            }
+                        }
+                    })
+                    .response
+                    .labelled_by(label);
+                ui.end_row();
+                ui.label("From");
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut axis.start).speed(0.01)).accessible_name(format!("From {}", axis.param));
+                    ui.label("to");
+                    ui.add(egui::DragValue::new(&mut axis.stop).speed(0.01)).accessible_name(format!("To {}", axis.param));
+                });
+                ui.end_row();
+                let label = ui.label("Its points").id;
+                ui.add(egui::DragValue::new(&mut axis.points).range(2..=201)).labelled_by(label);
+                ui.end_row();
+            }
         });
         ui.horizontal(|ui| {
             let ready = match s.mode {
                 SweepMode::Wavelength => s.laser.is_some(),
                 SweepMode::Parameter => s.target.is_some() && !s.param.is_empty(),
-            };
+            } && s.vary.as_ref().is_none_or(|a| !a.param.is_empty());
             if ui.add_enabled(ready, egui::Button::new(RichText::new("▶  Run sweep").strong())).clicked() {
                 run = true;
             }
@@ -322,6 +394,10 @@ impl OpticsPanel {
             });
             ui.checkbox(&mut s.box_outputs, "Box outputs").on_hover_text("Also plot the light leaving every block and component");
         });
+        if s.vary.is_some() {
+            map_ui(ui, s, self.prefs.power_unit);
+            return run;
+        }
         let Some(result) = &s.result else {
             ui.label(RichText::new("Each point is a full simulation, light and electronics.").small().weak());
             return run;
@@ -400,6 +476,103 @@ impl OpticsPanel {
 }
 
 /// One row per curve: peak, minimum, insertion loss, extinction ratio.
+/// A map: one output's power over the two swept values, as a heatmap.
+fn map_ui(ui: &mut Ui, s: &mut SweepState, unit: PowerUnit) {
+    let Some(map) = &s.map else {
+        ui.label(RichText::new("Each point is a full simulation, light and electronics.").small().weak());
+        return;
+    };
+    if let Some(e) = &map.error {
+        ui.colored_label(ui.visuals().error_fg_color, e);
+    }
+    if map.xs.is_empty() || map.ys.is_empty() || map.series.is_empty() {
+        return;
+    }
+    let only_boxes = map.series.iter().all(|m| m.from_box);
+    let shown: Vec<&sweep::MapSeries> = map.series.iter().filter(|m| s.box_outputs || only_boxes || !m.from_box).collect();
+    let chosen = s.map_output.as_ref().and_then(|n| shown.iter().position(|m| &m.name == n)).unwrap_or(0);
+    let Some(series) = shown.get(chosen) else { return };
+    let mut csv = false;
+    let mut save = false;
+    ui.horizontal(|ui| {
+        let l = ui.label("Show").id;
+        egui::ComboBox::from_id_salt("sweep_map_output")
+            .selected_text(series.name.as_str())
+            .show_ui(ui, |ui| {
+                for m in &shown {
+                    if ui.selectable_label(m.name == series.name, &m.name).clicked() {
+                        s.map_output = Some(m.name.clone());
+                    }
+                }
+            })
+            .response
+            .labelled_by(l);
+        csv = ui.button("Copy CSV").clicked();
+        save = ui.button("Save CSV…").clicked();
+    });
+    // Shade by power relative to this output's peak, in dB (40 dB of range).
+    let peak = series.power.iter().flatten().fold(0.0f64, |a, &b| a.max(b));
+    let shade = |p: f64| if peak > 0.0 && p > 0.0 { (1.0 + 10.0 * (p / peak).log10() / 40.0).clamp(0.0, 1.0) } else { 0.0 };
+    let dark = ui.visuals().dark_mode;
+    let (x0, x1) = (map.xs[0], *map.xs.last().expect("non-empty"));
+    let (y0, y1) = (map.ys[0], *map.ys.last().expect("non-empty"));
+    let height = (ui.available_height() - 40.0).max(160.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
+    let plot = egui::Rect::from_min_max(rect.min + egui::vec2(56.0, 4.0), rect.max - egui::vec2(8.0, 30.0));
+    let (columns, rows) = (map.xs.len(), map.ys.len());
+    let cell = egui::vec2(plot.width() / columns as f32, plot.height() / rows as f32);
+    let painter = ui.painter_at(rect);
+    for (r, row) in series.power.iter().enumerate() {
+        for (c, &p) in row.iter().enumerate() {
+            // y grows upwards.
+            let min = egui::pos2(plot.left() + c as f32 * cell.x, plot.bottom() - (r + 1) as f32 * cell.y);
+            painter.rect_filled(egui::Rect::from_min_size(min, cell + egui::vec2(0.5, 0.5)), 0.0, crate::panels::ui_kit::magnitude_color(shade(p), dark));
+        }
+    }
+    let ink = ui.visuals().text_color();
+    let weak = ui.visuals().weak_text_color();
+    let small = egui::FontId::proportional(11.0);
+    painter.rect_stroke(plot, 0.0, egui::Stroke::new(1.0, weak), egui::StrokeKind::Outside);
+    painter.text(egui::pos2(plot.left(), plot.bottom() + 4.0), egui::Align2::LEFT_TOP, fmt_x(x0), small.clone(), weak);
+    painter.text(egui::pos2(plot.right(), plot.bottom() + 4.0), egui::Align2::RIGHT_TOP, fmt_x(x1), small.clone(), weak);
+    painter.text(egui::pos2(plot.center().x, plot.bottom() + 16.0), egui::Align2::CENTER_TOP, &map.x_label, small.clone(), ink);
+    painter.text(egui::pos2(plot.left() - 4.0, plot.bottom()), egui::Align2::RIGHT_BOTTOM, fmt_x(y0), small.clone(), weak);
+    painter.text(egui::pos2(plot.left() - 4.0, plot.top()), egui::Align2::RIGHT_TOP, fmt_x(y1), small.clone(), weak);
+    painter.text(egui::pos2(rect.left(), plot.center().y), egui::Align2::LEFT_CENTER, &map.y_label, small, ink);
+    let description = format!(
+        "Map of {} over {} ({} to {}) and {} ({} to {}); peak {}",
+        series.name,
+        map.x_label,
+        fmt_x(x0),
+        fmt_x(x1),
+        map.y_label,
+        fmt_x(y0),
+        fmt_x(y1),
+        units::format_power(peak, unit)
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &description));
+    // The value under the pointer.
+    if let Some(at) = response.hover_pos().filter(|p| plot.contains(*p)) {
+        let c = (((at.x - plot.left()) / cell.x) as usize).min(columns - 1);
+        let r = (((plot.bottom() - at.y) / cell.y) as usize).min(rows - 1);
+        let p = series.power[r][c];
+        response.on_hover_text_at_pointer(format!(
+            "{}: {}\n{}: {}\n{}",
+            map.x_label,
+            fmt_x(map.xs[c]),
+            map.y_label,
+            fmt_x(map.ys[r]),
+            units::format_both(p, unit)
+        ));
+    }
+    if csv {
+        ui.ctx().copy_text(map.to_csv());
+    }
+    if save {
+        let _ = crate::panels::export::save("sweep-map.csv", "CSV", "csv", map.to_csv().as_bytes());
+    }
+}
+
 fn readouts_table(ui: &mut Ui, readouts: &[sweep::Readout], unit: PowerUnit) {
     // Resonance columns only when some curve has resonances.
     let spectral = readouts.iter().any(|r| r.spectrum.is_some());

@@ -175,3 +175,20 @@ fn a_wavelength_sweep_reports_the_rings_resonances() {
     assert!(q > 100.0, "a ring's Q: {row}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn a_map_over_wavelength_and_a_rings_coupling() {
+    let (dir, path) = saved("map", examples::wdm_link);
+    let args = parse(&[path.clone(), "--wavelength".into(), "1530:1560:31".into(), "--sweep2".into(), "Add–drop ring.coupling=0.01:0.2:5".into()]);
+    // Several rings share the name: the error says which cells to use.
+    let err = args.and_then(|a| simulate(&a).map_err(|f| format!("{f:?}"))).unwrap_err();
+    assert!(err.contains("cell"), "{err}");
+    let args = parse(&[path, "--wavelength".into(), "1530:1560:31".into(), "--sweep2".into(), "4,4.coupling=0.01:0.2:5".into()]).unwrap();
+    let csv = simulate(&args).unwrap();
+    let mut lines = csv.lines();
+    let header = lines.next().unwrap();
+    assert!(header.starts_with("\"Wavelength (nm)\",\"coupling\""), "{header}");
+    assert_eq!(lines.count(), 31 * 5, "a row per point");
+    assert!(parse(&["p.shine".into(), "--sweep2".into(), "R.coupling=0:1".into()]).is_err(), "needs a first axis");
+    std::fs::remove_dir_all(&dir).ok();
+}

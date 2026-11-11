@@ -23,6 +23,10 @@ Options:
   --laser ITEM                    the laser to tune (default: the first)
   --sweep ITEM.PARAM=FROM:TO[:POINTS]
                                   sweep a parameter, e.g. --sweep 'Phase shifter.phase=0:6.28'
+  --sweep2 ITEM.PARAM=FROM:TO[:POINTS]
+                                  with --wavelength or --sweep: also vary a second
+                                  parameter (default 21 points), giving a map as CSV
+                                  (one row per point: x, y, each output's power)
   --box-outputs                   also include the light leaving boxes
   --readouts                      with a sweep: each output's peak, minimum, insertion
                                   loss, extinction and resonances (FSR, width, Q) as CSV,
@@ -62,6 +66,7 @@ pub struct Args {
     pub wavelength: Option<(f64, f64, usize)>,
     pub laser: Option<String>,
     pub sweep: Option<(String, String, f64, f64, usize)>,
+    pub sweep2: Option<(String, String, f64, f64, usize)>,
     pub box_outputs: bool,
     pub readouts: bool,
     pub clock: u64,
@@ -93,7 +98,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") && f != "--sweep" => (f, Some(v.to_owned())),
+            Some((f, v)) if f.starts_with("--") && f != "--sweep" && f != "--sweep2" => (f, Some(v.to_owned())),
             _ => (arg.as_str(), None),
         };
         let mut value = |name: &str| inline.clone().or_else(|| it.next().cloned()).ok_or(format!("{name} needs a value"));
@@ -108,6 +113,13 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 let (item, param) = target.rsplit_once('.').ok_or("--sweep needs ITEM.PARAM, e.g. 'Coupler.coupling'")?;
                 let (from, to, points) = range(span, 101)?;
                 a.sweep = Some((item.trim().to_owned(), param.trim().to_owned(), from, to, points));
+            }
+            "--sweep2" => {
+                let spec = value("--sweep2")?;
+                let (target, span) = spec.split_once('=').ok_or("--sweep2 needs ITEM.PARAM=FROM:TO")?;
+                let (item, param) = target.rsplit_once('.').ok_or("--sweep2 needs ITEM.PARAM, e.g. 'Coupler.coupling'")?;
+                let (from, to, points) = range(span, 21)?;
+                a.sweep2 = Some((item.trim().to_owned(), param.trim().to_owned(), from, to, points));
             }
             "--box-outputs" => a.box_outputs = true,
             "--readouts" => a.readouts = true,
@@ -130,6 +142,9 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
     }
     if a.wavelength.is_some() && a.sweep.is_some() {
         return Err("use either --wavelength or --sweep, not both".into());
+    }
+    if a.sweep2.is_some() && a.wavelength.is_none() && a.sweep.is_none() {
+        return Err("--sweep2 adds a second axis to --wavelength or --sweep".into());
     }
     Ok(a)
 }
@@ -229,6 +244,25 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     } else {
         None
     };
+
+    if let (Some(spec), Some((item, param, from, to, points))) = (&spec, &args.sweep2) {
+        let item = find_item(layout, &project, item).map_err(Failure::Usage)?;
+        let available = sweep::params_in(layout, item, &project);
+        if !available.iter().any(|p| &p.name == param) {
+            let names: Vec<&str> = available.iter().map(|p| p.name.as_str()).collect();
+            return Err(Failure::Usage(format!("no parameter “{param}” for --sweep2; it has: {}", names.join(", "))));
+        }
+        let axis = sweep::Axis { item, param: param.clone(), start: *from, stop: *to, points: *points };
+        let mut map = sweep::run_map(layout, cell_um, &project, &machine, Some(id), spec, &axis, &names);
+        if let Some(e) = map.error.take() {
+            return Err(Failure::Simulation(e));
+        }
+        let only_boxes = map.series.iter().all(|s| s.from_box);
+        if !args.box_outputs && !only_boxes {
+            map.series.retain(|s| !s.from_box);
+        }
+        return Ok(map.to_csv());
+    }
 
     if let Some(spec) = spec {
         let mut result = sweep::run(layout, cell_um, &project, &machine, Some(id), &spec, &names);

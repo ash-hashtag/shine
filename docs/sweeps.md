@@ -45,6 +45,17 @@ Pick a part (**Use selection**) and one of its parameters, and the range:
 | Ring, add–drop ring | coupling, length, n_eff, n_g, loss (dB/cm) |
 | A component's box | the parameters its component [exports](components.md#parameters) |
 
+## Maps: two parameters at once
+
+Tick **Also vary: a second parameter** to sweep a second parameter too: the sweep runs
+along the first (wavelength or a parameter) at each value of the second, and the result
+is a **map** of one output (choose it under **Show**), its power shaded from dark (most
+light) to light (40 dB below this output's peak). Hover it for the values at any point.
+A ring's through port over wavelength and coupling, for example, shows where its
+resonance is deep enough. Up to 201 values of the second parameter; each point is a full
+simulation, so a map of many points takes a moment. **Copy CSV** and **Save CSV…** give
+one row per point: the two values, then each output's power.
+
 ## Reading the plot
 
 Every detector and output port is a curve, named by its label or its position. Tick **Box
