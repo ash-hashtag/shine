@@ -30,6 +30,8 @@ mod files;
 pub use export_window::{ExportFormat, ExportWindow};
 mod library_window;
 mod monte_carlo_window;
+mod optimise_window;
+pub use optimise_window::{Found, GoalKind, OptimiseWindow, VariableRow};
 mod transmission_window;
 pub use monte_carlo_window::MonteCarloWindow;
 pub use transmission_window::{Quantity, TransmissionWindow};
@@ -105,6 +107,8 @@ pub struct Workspace {
     pub transmission_window: TransmissionWindow,
     /// Analysis → Monte Carlo….
     pub monte_carlo_window: MonteCarloWindow,
+    /// Analysis → Optimise….
+    pub optimise_window: OptimiseWindow,
     /// The library asset being moved to another folder, with the folder typed so far.
     pub moving_asset: Option<(super::assets::AssetId, String)>,
     pub dialog: Option<DocumentDialog>,
@@ -160,6 +164,7 @@ impl Default for Workspace {
             export_window: ExportWindow::default(),
             transmission_window: TransmissionWindow::default(),
             monte_carlo_window: MonteCarloWindow::default(),
+            optimise_window: OptimiseWindow::default(),
             dialog: None,
             status: None,
             incoming: Default::default(),
@@ -1351,6 +1356,13 @@ impl Workspace {
             {
                 self.open_monte_carlo_window();
             }
+            if ui
+                .add_enabled(active.is_some(), egui::Button::new("Optimise…"))
+                .on_hover_text("Find the parameter values that bring an output to a goal")
+                .clicked()
+            {
+                self.open_optimise_window();
+            }
         });
         ui.menu_button("Component", |ui| {
             let label = if is_component {
@@ -1601,6 +1613,7 @@ impl Workspace {
         self.export_window_ui(ctx);
         self.transmission_window_ui(ctx);
         self.monte_carlo_window_ui(ctx);
+        self.optimise_window_ui(ctx);
         if self.about.open {
             self.about.ui(ctx);
         }

@@ -96,7 +96,7 @@ impl OpticsPanel {
             .collect()
     }
 
-    pub(super) fn item_name(&self, item: Item) -> String {
+    pub fn item_name(&self, item: Item) -> String {
         match item {
             Item::Part(i) => self.layout.components.get(i).map_or_else(String::new, |c| {
                 let (x, y) = cell_of(c.pos);

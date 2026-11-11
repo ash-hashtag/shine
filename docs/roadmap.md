@@ -73,8 +73,11 @@ want them.
 - [ ] **More independent comparisons**: SAX and Lumerical INTERCONNECT
 - [ ] **Foundry libraries included**: the open kits' compact models (SiEPIC EBeam,
       gdsfactory's generic kit) ready in the asset library, not only importable
-- [ ] **Optimisation**: let Shine find the parameters (couplings, lengths, phases) that
-      meet a target response
+- [x] **Optimisation**: Shine finds the parameter values (couplings, lengths, phases) that
+      maximise, minimise or reach a target power at an output (Analysis → Optimise…,
+      desktop)
+- [ ] **Optimise a response**: targets over a band of wavelengths (a filter's shape, a
+      resonance's position), and several outputs at once
 
 ## Milestone: design at scale
 

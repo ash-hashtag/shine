@@ -135,6 +135,20 @@ its resonance and fill in its dip, while a straight waveguide doesn't care. The 
 **seed** gives the same samples; **Copy CSV** gives every sample. Only the design's own
 blocks and parts vary, not those inside the components it uses.
 
+## Optimise: let Shine find the values
+
+**Analysis → Optimise…** (desktop app) adjusts parameters until an output meets a goal:
+**maximise** it, **minimise** it, or **reach** a power. Select a part or block and click
+its parameters to add them, each with the range it may move in; choose the output and
+the goal, and press **Optimise**. Shine searches with the Nelder–Mead method (from the
+argmin library): each step is a full simulation, light and electronics, so it works on
+any design. It shows the power before and after and the values it found; **Apply to the
+design** puts them in (Ctrl+Z undoes it).
+
+It finds the best values near the current ones, so start from a sensible design. For
+example, minimising a lossy ring's through port at resonance over its coupling finds
+critical coupling, where the coupling equals the round-trip loss (κ = 1 − a²).
+
 ## Exporting
 
 **Copy CSV** puts the data on the clipboard, ready to paste into a spreadsheet. **Save

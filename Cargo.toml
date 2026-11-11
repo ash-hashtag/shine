@@ -11,7 +11,7 @@ homepage = "https://shine.lupyd.com"
 [features]
 default = ["gui"]
 # The editor. Disable with `default-features = false` to use only the `photonics` library.
-gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image", "dep:rust-rf", "dep:rquickjs"]
+gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image", "dep:rust-rf", "dep:rquickjs", "dep:argmin", "dep:argmin-math"]
 # Stderr + optional file logging setup for binaries.
 logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
 
@@ -59,6 +59,9 @@ ehttp = { version = "0.7.3", optional = true }
 rust-rf = { version = "2.0.1", default-features = false, optional = true }
 # Scripted components: the QuickJS JavaScript engine, sandboxed (desktop only).
 rquickjs = { version = "0.14.0", features = ["parallel"], optional = true }
+# Optimisation: Nelder–Mead from argmin (desktop only: its vectors need OS randomness).
+argmin = { version = "0.11.0", default-features = false, optional = true }
+argmin-math = { version = "0.5.1", default-features = false, features = ["vec"], optional = true }
 faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "rayon"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

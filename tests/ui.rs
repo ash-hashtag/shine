@@ -649,6 +649,7 @@ fn every_control_is_named_for_screen_readers() {
     h.state_mut().open_export_window(shine::panels::workspace::ExportFormat::Gdsfactory);
     h.state_mut().open_transmission_window();
     h.state_mut().open_monte_carlo_window();
+    h.state_mut().open_optimise_window();
     active_mut(&mut h).show_browser = true;
     h.run_steps(4);
     missing.extend(unnamed_controls(&h, "windows"));
@@ -1360,4 +1361,54 @@ fn monte_carlo_shows_the_spread_and_yield() {
     assert!(mc.series.iter().all(|s| s.power.len() == 40));
     assert!(h.query_by_label_contains("Yield").is_some(), "the yield against the spec");
     assert!(h.query_by_label("Mean").is_some() && h.query_by_label("σ").is_some());
+}
+
+#[test]
+fn the_optimiser_finds_a_coupling_and_applies_it() {
+    use egui::{Key, Modifiers};
+    let mut h = app();
+    let p = active_mut(&mut h);
+    p.layout.components.push(shine::panels::optics::model::PlacedComponent {
+        kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
+        pos: cell_center(0, 0),
+    });
+    let dc = p.layout.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.5 }), (4, 0));
+    p.layout.connect_feed(0, PortRef { instance: dc, port: 0 });
+    p.editor.boxes.select_only(0);
+    h.run_steps(3);
+    click_menu(&mut h, "Analysis", "Optimise…");
+    h.get_by_label("coupling").click();
+    h.run_steps(2);
+    assert_eq!(h.state().optimise_window.variables.len(), 1, "the selection's coupling, to adjust");
+    // The coupler's bar output, as sweeps and the optimiser name it.
+    let bar = {
+        let ws = h.state();
+        let p = ws.project.doc(ws.active.unwrap()).unwrap().panel();
+        let catalog = ws.catalog();
+        let names = |inst: shine::panels::optics::model::InstanceId| p.layout.instance(inst).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+        shine::panels::circuit::sweep::outputs(&p.layout, p.outcome().unwrap(), &names).into_iter().map(|o| o.0).find(|n| n.ends_with(" out1"))
+    };
+    {
+        let w = &mut h.state_mut().optimise_window;
+        w.output = bar;
+        w.goal = shine::panels::workspace::GoalKind::Target;
+        w.target_mw = 0.25;
+    }
+    h.run_steps(2);
+    h.get_by_label("▶  Optimise").click();
+    h.run_steps(3);
+    let Some(Ok(found)) = h.state().optimise_window.result.clone() else { panic!("{:?}", h.state().optimise_window.result) };
+    assert!((found.values[0] - 0.75).abs() < 1e-3 && (found.after - 0.25).abs() < 1e-5, "{found:?}");
+
+    // Apply it to the design, and undo.
+    h.get_by_label("Apply to the design").click();
+    h.run_steps(3);
+    let coupling = |h: &Harness<'_, Workspace>| match active(h).layout.instances[0].block {
+        BlockRef::Builtin(Builtin::Coupler { coupling }) => coupling,
+        _ => unreachable!(),
+    };
+    assert!((coupling(&h) - 0.75).abs() < 1e-3);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(coupling(&h), 0.5, "undone");
 }
