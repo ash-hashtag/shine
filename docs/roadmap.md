@@ -67,9 +67,10 @@ want them.
 
 - [x] **Waveguide model**: group index (so ring spacing and delays match real devices) and
       propagation loss for delay lines and rings; connections stay ideal
-- [ ] **Validation page**: results side by side with textbook formulas (rings, MZI,
-      Fabry–Pérot, couplers, the DFT mesh) and with independent tools (PhotonForge, SAX);
-      a first comparison with PhotonForge agreed to 10⁻⁹
+- [x] **Validation page**: results against textbook formulas (couplers, MZIs, rings,
+      Fabry–Pérot, waveguides, the DFT mesh), checked with every build, and against
+      PhotonForge ([Validation](validation.md))
+- [ ] **More independent comparisons**: SAX and Lumerical INTERCONNECT
 - [ ] **Foundry libraries included**: the open kits' compact models (SiEPIC EBeam,
       gdsfactory's generic kit) ready in the asset library, not only importable
 - [ ] **Optimisation**: let Shine find the parameters (couplings, lengths, phases) that

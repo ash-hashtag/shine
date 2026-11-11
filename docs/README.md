@@ -25,6 +25,7 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [Electronics and the clock](electronics.md) | Number inputs, displays, registers, the clock, and function-cell expressions |
 | [Sweeps](sweeps.md) | Spectra and parameter sweeps of any design, plotted and exported as CSV |
 | [Examples](examples.md) | The ready-made circuits and what each one teaches |
+| [Validation](validation.md) | Shine's results against textbook formulas and an independent simulator |
 | [How the simulation works](simulation.md) | What is solved exactly, what is modelled simply, and the limits |
 | [Other tools and tapeout](interop.md) | S-parameters for circuit simulators, and a gdsfactory layout for a mask |
 | [Projects and files](files.md) | The `.shine` format, the browser and desktop builds, logging |

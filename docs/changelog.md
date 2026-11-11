@@ -27,6 +27,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- A [validation page](validation.md): results against textbook formulas, checked by tests
+  with every build, and against PhotonForge.
 - Monte Carlo (Analysis → Monte Carlo…, `shine simulate --monte-carlo`): the design under
   fabrication variation of index, coupling, phase and loss, with each output's histogram,
   statistics and yield against a spec; seeded, so results repeat.
