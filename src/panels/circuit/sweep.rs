@@ -168,7 +168,7 @@ pub fn params(layout: &Layout, item: Item) -> Vec<Param> {
         },
         Item::Box(id) => match layout.instance(id).map(|i| &i.block) {
             Some(BlockRef::Builtin(b)) => match b {
-                Builtin::Laser { .. } => vec![p("power", "mW", 0.0, 4.0), p("phase", "rad", 0.0, TAU)],
+                Builtin::Laser { .. } => vec![p("power", "mW", 0.0, 4.0), p("phase", "rad", 0.0, TAU), p("wavelength", "nm", 400.0, 1700.0)],
                 Builtin::Coupler { .. } => vec![p("coupling", "", 0.0, 1.0)],
                 Builtin::PhaseShifter { .. } => vec![p("phase", "rad", 0.0, TAU)],
                 Builtin::Attenuator { .. } => vec![p("loss", "dB", 0.0, 30.0)],
@@ -293,6 +293,7 @@ fn visit(layout: &mut Layout, item: Item, param: &str, f: &mut dyn FnMut(&mut f6
             let BlockRef::Builtin(b) = &mut inst.block else { return };
             match (b, param) {
                 (Builtin::Laser { amplitude, .. }, "power") => as_power(amplitude, f),
+                (Builtin::Laser { wavelength_nm, .. }, "wavelength") => f(wavelength_nm),
                 (Builtin::Laser { phase, .. } | Builtin::PhaseShifter { phase }, "phase") => f(phase),
                 (Builtin::Coupler { coupling }, "coupling") => f(coupling),
                 (Builtin::Attenuator { loss_db }, "loss") => f(loss_db),

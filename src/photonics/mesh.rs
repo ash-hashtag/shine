@@ -6,6 +6,7 @@
 //! mode for `S` and a mesh for `U` — the building block of optical matrix
 //! multipliers and neural network layers.
 
+use std::f64::consts::PI;
 use std::fmt;
 
 use super::circuit::{Block, Circuit, CircuitError, InPort, NodeId, OutPort, Ports};
@@ -46,6 +47,28 @@ pub struct UnitaryMesh {
     pub size: usize,
     pub mzis: Vec<MziSetting>,
     pub output_phases: Vec<f64>,
+}
+
+/// Write a 2×2 unitary `v` as `diag(top, bottom) · Mzi(θ, φ)`; returns
+/// `(θ, φ, top, bottom)`. Where φ doesn't matter (θ = 0 or π) it is 0.
+fn factor(v: [[C64; 2]; 2]) -> (f64, f64, C64, C64) {
+    let (s, c) = (v[0][0].norm(), v[0][1].norm());
+    let theta = 2.0 * s.atan2(c);
+    let g = C64::new(0.0, 1.0) * C64::from_polar(1.0, theta / 2.0);
+    let (sin, cos) = (theta / 2.0).sin_cos();
+    let unit = |z: C64| if z.norm() > 0.0 { z / z.norm() } else { C64::new(1.0, 0.0) };
+    const EPS: f64 = 1e-12;
+    if cos <= EPS {
+        // The bar state: v = diag(a g e^{iφ}, −b g) with φ = 0.
+        (theta, 0.0, unit(v[0][0] / g), unit(-v[1][1] / g))
+    } else if sin <= EPS {
+        // The cross state: v = [[0, a g], [b g, 0]] with φ = 0.
+        (theta, 0.0, unit(v[0][1] / g), unit(v[1][0] / g))
+    } else {
+        let top = unit(v[0][1] / (g * cos));
+        let phi = (v[0][0] / (top * g * sin)).arg();
+        (theta, phi, top, unit(-v[1][1] / (g * sin)))
+    }
 }
 
 /// Left-multiply rows `m`, `m + 1` of `a` by the MZI transfer matrix.
@@ -92,6 +115,97 @@ impl UnitaryMesh {
             mzis,
             output_phases,
         })
+    }
+
+    /// The rectangular (Clements) arrangement of `u`: the same MZIs and
+    /// output phases as [`Self::decompose`], but `n` columns deep instead of
+    /// `2n − 3`, and every path crosses the same number of MZIs, so losses
+    /// stay balanced. It's what programmable photonic processors are built
+    /// as (W. R. Clements et al., Optica 3, 1460, 2016).
+    pub fn decompose_rectangular(u: &Matrix) -> Result<Self, MeshError> {
+        let n = u.nrows();
+        if u.ncols() != n {
+            return Err(MeshError::NotSquare);
+        }
+        let deviation = (u.adjoint() * u - Matrix::identity(n, n)).norm_l2();
+        if deviation > 1e-8 * (n.max(1) as f64) {
+            return Err(MeshError::NotUnitary(deviation));
+        }
+        // Null the lower-left triangle along anti-diagonals, alternately from
+        // the right (columns: an MZI the light meets first) and from the left
+        // (rows: one it meets last): L_p … L_1 U R_1^H … R_q^H = D.
+        let mut a = u.to_owned();
+        let mut first: Vec<MziSetting> = Vec::new();
+        let mut last: Vec<MziSetting> = Vec::new();
+        for i in 0..n.saturating_sub(1) {
+            if i % 2 == 0 {
+                for j in 0..=i {
+                    let (r, m) = (n - 1 - j, i - j);
+                    let (x, y) = (a[(r, m)], a[(r, m + 1)]);
+                    // (U M^H)[r, m] = 0.
+                    let s = MziSetting { mode: m, theta: 2.0 * y.norm().atan2(x.norm()), phi: x.arg() - y.arg() - PI };
+                    let t = Mzi::matrix(s.theta, s.phi);
+                    for row in 0..n {
+                        let (p, q) = (a[(row, m)], a[(row, m + 1)]);
+                        a[(row, m)] = p * t[(0, 0)].conj() + q * t[(0, 1)].conj();
+                        a[(row, m + 1)] = p * t[(1, 0)].conj() + q * t[(1, 1)].conj();
+                    }
+                    first.push(s);
+                }
+            } else {
+                for j in 0..=i {
+                    let (r, c) = (n + j - i - 2, j);
+                    let (x, y) = (a[(r, c)], a[(r + 1, c)]);
+                    // (M U)[r + 1, c] = 0.
+                    let s = MziSetting { mode: r, theta: 2.0 * x.norm().atan2(y.norm()), phi: y.arg() - x.arg() };
+                    apply_mzi(&mut a, s);
+                    last.push(s);
+                }
+            }
+        }
+        // U = L_1^H … L_p^H D R_q … R_1. Move D to the outputs through each
+        // L^H in turn: L^H D = D' M', with M' an MZI on the same modes.
+        let mut d: Vec<C64> = (0..n).map(|i| a[(i, i)]).collect();
+        let mut moved = Vec::with_capacity(last.len());
+        for s in last.iter().rev() {
+            let t = Mzi::matrix(s.theta, s.phi);
+            let m = s.mode;
+            // V = L^H diag(d_m, d_m+1).
+            let v = [
+                [t[(0, 0)].conj() * d[m], t[(1, 0)].conj() * d[m + 1]],
+                [t[(0, 1)].conj() * d[m], t[(1, 1)].conj() * d[m + 1]],
+            ];
+            let (theta, phi, top, bottom) = factor(v);
+            d[m] = top;
+            d[m + 1] = bottom;
+            moved.push(MziSetting { mode: m, theta, phi });
+        }
+        // D M'_1 … M'_p R_q … R_1: the light meets R_1 … R_q, then M'_p …
+        // M'_1, in the order they were found.
+        let mut mzis = first;
+        mzis.extend(moved);
+        let output_phases = d.iter().map(|z| z.arg()).collect();
+        Ok(Self { size: n, mzis, output_phases })
+    }
+
+    /// How many columns deep the mesh is, each MZI as early as its modes
+    /// allow.
+    pub fn depth(&self) -> usize {
+        self.columns().iter().copied().max().map_or(0, |c| c + 1)
+    }
+
+    /// The column each MZI sits in, as early as its modes allow.
+    pub fn columns(&self) -> Vec<usize> {
+        let mut free = vec![0usize; self.size];
+        self.mzis
+            .iter()
+            .map(|s| {
+                let c = free[s.mode].max(free[s.mode + 1]);
+                free[s.mode] = c + 1;
+                free[s.mode + 1] = c + 1;
+                c
+            })
+            .collect()
     }
 
     /// The unitary implemented by the mesh.
@@ -281,6 +395,33 @@ mod tests {
             let mesh = UnitaryMesh::decompose(&u).unwrap();
             assert_eq!(mesh.mzis.len(), n * (n - 1) / 2);
             assert!((mesh.matrix() - &u).norm_l2() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn rectangular_mesh_reconstructs_n_columns_deep() {
+        for n in [1, 2, 3, 4, 5, 8, 16, 33] {
+            let u = pseudo_random(n, n, 40 + n as u64).svd().unwrap().U().to_owned();
+            let mesh = UnitaryMesh::decompose_rectangular(&u).unwrap();
+            assert_eq!(mesh.mzis.len(), n * (n - 1) / 2);
+            let err = (mesh.matrix() - &u).norm_l2();
+            assert!(err < 1e-9, "n = {n}: {err}");
+            if n > 2 {
+                assert_eq!(mesh.depth(), n, "Clements is n columns deep");
+            }
+        }
+    }
+
+    #[test]
+    fn rectangular_mesh_programs_switching_states() {
+        // The DFT, the identity and a permutation hit θ = 0 and π exactly.
+        let n = 8;
+        let dft = Matrix::from_fn(n, n, |r, c| C64::from_polar(1.0 / (n as f64).sqrt(), -2.0 * PI * (r * c) as f64 / n as f64));
+        let identity = Matrix::identity(n, n);
+        let reverse = Matrix::from_fn(n, n, |r, c| if r + c == n - 1 { C64::new(1.0, 0.0) } else { C64::new(0.0, 0.0) });
+        for (name, u) in [("DFT", dft), ("identity", identity), ("reversal", reverse)] {
+            let mesh = UnitaryMesh::decompose_rectangular(&u).unwrap();
+            assert!((mesh.matrix() - &u).norm_l2() < 1e-9, "{name}");
         }
     }
 

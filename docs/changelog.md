@@ -27,6 +27,17 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- A reference design: a 16×16 programmable photonic matrix processor (136 MZI cells, 1442
+  parts) in the rectangular (Clements) arrangement, programmed as an optical Fourier
+  transform; in File → Examples… and as `reference/photonic-matrix-processor.shine`. Tests
+  check it against its matrices, and `cargo run --release --example reference_design`
+  measures it ([Reference design](reference-design.md)).
+- Meshes can be programmed in the rectangular (Clements) arrangement:
+  `UnitaryMesh::decompose_rectangular`, N columns deep with balanced losses.
+- Large designs draw much faster: a design of 8 600 boxes and 16 600 waveguides went from
+  160 ms a frame to 7 ms (off-screen waveguides are skipped, and boxes are found by
+  bisection rather than one by one).
+- A Laser block's wavelength can be swept.
 - SAX netlist export (File → Export for other tools…, `shine export --format sax`): the
   circuit as a Python file for the SAX circuit simulator, with models that compute what
   Shine does; it runs as it is, or with a foundry kit's models swapped in. Checked against

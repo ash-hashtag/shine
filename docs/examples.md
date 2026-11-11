@@ -44,6 +44,23 @@ optics, and click its pins to try it alone.
 A register feeds eight full adders whose sums feed back into the register: each clock
 tick adds the step (3) to the running total, wrapping at 256. Press **Step** or **Run**.
 
+### 16×16 photonic matrix processor
+
+The core of programmable photonic processors, the chips behind optical neural-network
+accelerators and optical signal processing, at a realistic size: 136 MZI cells, 1442 parts
+once every component is opened up. A 1550 nm laser is split 16 ways; a row of MZI
+modulators sets the input vector; a 16×16 mesh of MZIs multiplies it by a matrix; 16
+detectors read the result.
+
+The mesh is programmed to the discrete Fourier transform and the input is a cosine with
+two periods across the 16 inputs, so the detectors at frequency bins 0, 2 and 14 light up
+and the rest stay dark: an optical FFT.
+
+Try: press Tab on the mesh to look inside (and Tab on an MZI cell to see its couplers,
+heaters and arms); change a modulator's θ and watch the spectrum change; export the mesh's
+S-parameters or SAX netlist. It is also Shine's [reference design](reference-design.md):
+how we measure what Shine can do with a large design.
+
 ### Cascaded interferometers
 
 A free-space Mach–Zehnder saved as a component and used twice: a beam enters the first

@@ -17,6 +17,7 @@ pub mod examples;
 pub mod input;
 pub mod library;
 pub mod model;
+pub mod reference;
 pub mod render;
 pub mod sweep_ui;
 pub mod view;
