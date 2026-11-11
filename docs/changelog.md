@@ -38,6 +38,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   160 ms a frame to 7 ms (off-screen waveguides are skipped, and boxes are found by
   bisection rather than one by one).
 - A Laser block's wavelength can be swept.
+- Designs that take longer than about 12 ms to simulate do so in the background (desktop):
+  editing never waits, the last result stays on screen until the new one arrives, and the
+  status bar says when it's simulating.
 - SAX netlist export (File → Export for other tools…, `shine export --format sax`): the
   circuit as a Python file for the SAX circuit simulator, with models that compute what
   Shine does; it runs as it is, or with a foundry kit's models swapped in. Checked against

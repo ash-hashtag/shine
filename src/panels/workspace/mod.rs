@@ -78,6 +78,19 @@ const SMOOTH_DRAG_BUDGET_MS: f64 = 8.0;
 /// How often a slow design re-simulates while something is being dragged.
 const DRAG_SIMULATIONS_PER_SECOND: f64 = 10.0;
 
+/// Above this, a design simulates on another thread (desktop), so edits
+/// never wait for it; the last result stays on screen until the new one
+/// arrives. Below it, results are ready on the same frame.
+pub const BACKGROUND_AFTER_MS: f64 = 12.0;
+
+/// A simulation running on another thread, and what it's for.
+struct Background {
+    doc: DocId,
+    key: u64,
+    started: web_time::Instant,
+    result: std::sync::mpsc::Receiver<sim::Outcome>,
+}
+
 pub use super::perf::FrameStats;
 
 pub struct Workspace {
@@ -120,6 +133,10 @@ pub struct Workspace {
     pub show_preferences: bool,
     /// How long frames take, for the status bar.
     pub stats: FrameStats,
+    /// The simulation running in the background, if any.
+    background: Option<Background>,
+    /// Simulations slower than this (ms) run in the background (desktop).
+    pub background_after_ms: f64,
     /// The project's fingerprint when it was last saved or opened.
     saved_fingerprint: u64,
     /// A project waiting to be opened until the user decides about unsaved changes.
@@ -171,6 +188,10 @@ impl Default for Workspace {
             prefs: Preferences::default(),
             show_preferences: false,
             stats: FrameStats::default(),
+            background: None,
+            // Tests check results on the frame they're asked for (the
+            // unoptimised build is slow enough to go to the background).
+            background_after_ms: if cfg!(test) { f64::INFINITY } else { BACKGROUND_AFTER_MS },
             saved_fingerprint: 0,
             pending_open: None,
             title: String::new(),
@@ -834,7 +855,10 @@ impl Workspace {
     /// Advance the active document's clock: its registers store their inputs.
     pub fn tick(&mut self) {
         let Some(id) = self.active else { return };
+        // The clock needs the light as the design is now.
+        self.finish_background();
         self.refresh_simulation();
+        self.finish_background();
         let Some(doc) = self.project.doc(id) else { return };
         let panel = doc.panel();
         let outcome = panel.sim.as_ref().map(|s| s.outcome.clone()).unwrap_or_default();
@@ -848,14 +872,29 @@ impl Workspace {
     /// Re-simulate the active document when it, anything it uses, or its
     /// registers changed. Returns whether it ran.
     pub fn refresh_simulation(&mut self) -> bool {
-        let Some(id) = self.active else { return false };
-        let Some(panel) = self.project.doc(id).map(|d| d.panel()) else { return false };
+        let finished = self.receive_background();
+        let Some(id) = self.active else { return finished };
+        let Some(panel) = self.project.doc(id).map(|d| d.panel()) else { return finished };
         if !panel.simulation_active {
-            return false;
+            return finished;
         }
         let key = panel.simulation_key(self.project.fingerprint());
         if !panel.is_stale(key) {
-            return false;
+            return finished;
+        }
+        if let Some(b) = &self.background {
+            // One at a time: when it's done, the newest design runs next.
+            if b.doc == id && b.key == key {
+                return finished;
+            }
+            if let Some(ctx) = &self.ctx {
+                ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            }
+            return finished;
+        }
+        if cfg!(not(target_arch = "wasm32")) && self.stats.last_simulation_ms > self.background_after_ms {
+            self.start_background(id, key);
+            return finished;
         }
         // While something is being dragged, a slow design re-simulates a few
         // times a second rather than on every move, so dragging stays smooth.
@@ -879,6 +918,84 @@ impl Workspace {
             p.set_outcome(key, outcome);
         }
         true
+    }
+
+    /// Start simulating document `id` on another thread.
+    fn start_background(&mut self, id: DocId, key: u64) {
+        let Some(doc) = self.project.doc(id) else { return };
+        let panel = doc.panel();
+        let layout = panel.layout.clone();
+        let docs = sim::Snapshot::of(&layout, &self.project);
+        let (cell_um, machine) = (panel.cell_um, panel.machine.clone());
+        let (send, result) = std::sync::mpsc::channel();
+        let ctx = self.ctx.clone();
+        let job = move || {
+            let outcome = sim::simulate(&layout, cell_um, &docs, &machine, Some(id), &sim::Options::default());
+            // The editor may have closed meanwhile: then nobody wants it.
+            let _ = send.send(outcome);
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Err(e) = std::thread::Builder::new().name("simulation".into()).spawn(job) {
+            tracing::warn!("Couldn't start a simulation thread: {e}");
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        job();
+        self.background = Some(Background { doc: id, key, started: web_time::Instant::now(), result });
+    }
+
+    /// Take the background simulation's result if it's done: shown even if
+    /// the design changed since (the next one starts from there). Returns
+    /// whether one arrived.
+    fn receive_background(&mut self) -> bool {
+        let Some(b) = &self.background else { return false };
+        let outcome = match b.result.try_recv() {
+            Ok(o) => o,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Keep the status line's clock going.
+                if let Some(ctx) = &self.ctx {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
+                return false;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.background = None;
+                return false;
+            }
+        };
+        let Some(b) = self.background.take() else { return false };
+        let ms = b.started.elapsed().as_secs_f64() * 1e3;
+        tracing::debug!("Simulated {} in the background in {ms:.1} ms ({} rounds)", b.doc.0, outcome.iterations);
+        self.stats.last_simulation_ms = ms;
+        self.stats.last_simulation_at = self.time;
+        if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut()) {
+            p.set_outcome(b.key, outcome);
+        }
+        true
+    }
+
+    /// Whether a simulation is running in the background.
+    pub fn simulating_in_background(&self) -> bool {
+        self.background.is_some()
+    }
+
+    /// Wait for the background simulation, if any, and take its result.
+    pub fn finish_background(&mut self) {
+        while let Some(b) = &self.background {
+            match b.result.recv() {
+                Ok(o) => {
+                    let b = self.background.take().expect("checked");
+                    self.stats.last_simulation_ms = b.started.elapsed().as_secs_f64() * 1e3;
+                    if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut()) {
+                        p.set_outcome(b.key, o);
+                    }
+                }
+                Err(_) => self.background = None,
+            }
+        }
     }
 
     // ---- UI ---------------------------------------------------------------
@@ -1002,6 +1119,11 @@ impl Workspace {
     fn status_text(&self) -> String {
         if let Some((message, _)) = &self.status {
             return message.clone();
+        }
+        if let Some(b) = &self.background
+            && b.started.elapsed().as_secs_f64() > 0.2
+        {
+            return format!("Simulating… {:.1} s", b.started.elapsed().as_secs_f64());
         }
         self.active
             .and_then(|id| self.project.doc(id))

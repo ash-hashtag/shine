@@ -88,8 +88,8 @@ want them.
       measured up to 128×128 (83 000 parts) ([Reference design](reference-design.md))
 - [x] **Large designs stay quick to look at**: drawing and navigating a design of 8 600
       boxes and 16 600 waveguides takes a few milliseconds a frame
-- [ ] **Simulate in the background**: editing a design whose simulation takes longer than
-      a frame stays smooth, with results arriving when they're ready
+- [x] **Simulate in the background**: editing a design whose simulation takes longer than
+      a frame stays smooth, with results arriving when they're ready (desktop)
 
 - [ ] **Python API**: Shine's engine and project files from Python, so designs fit into
       the scripts and flows engineers already use (gdsfactory, SAX, notebooks)

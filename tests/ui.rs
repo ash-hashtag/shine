@@ -21,6 +21,9 @@ fn app_stepping(dt: f32) -> Harness<'static, Workspace> {
         .with_max_steps(8)
         .with_step_dt(dt)
         .build_ui_state(|ui, ws: &mut Workspace| ws.ui(ui), Workspace::default());
+    // Results on the frame they're asked for: an unoptimised build is slow
+    // enough to send simulations to the background.
+    h.state_mut().background_after_ms = f64::INFINITY;
     h.run_steps(3);
     h
 }

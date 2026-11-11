@@ -128,17 +128,32 @@ fn editor(project: &Project, bytes: &[u8]) {
     let centre = Pos2::new(800.0, 500.0);
     let zoom: Vec<f64> = (0..20).map(|k| frame(&ctx, &mut ws, &mut t, vec![Event::PointerMoved(centre), Event::Zoom(if k % 2 == 0 { 1.1 } else { 1.0 / 1.1 })])).collect();
     tracing::info!("  editor, processor: open {open_ws:>6.1} ms   first frame {first:>8.1} ms   idle {}   zooming {}", stats(&idle), stats(&zoom));
-    // Edit: change a modulator, as dragging its θ would (re-simulates).
-    let edits: Vec<f64> = (0..10)
-        .map(|k| {
-            let id = ws.active.unwrap();
-            let p = ws.project.doc_mut(id).unwrap().panel_mut();
-            let m = p.layout.instances.iter_mut().find(|i| i.param("θ").is_some()).unwrap();
-            m.set_param("θ", Some(1.0 + 0.01 * k as f64));
-            frame(&ctx, &mut ws, &mut t, Vec::new())
-        })
-        .collect();
-    tracing::info!("  editing a modulator: {}", stats(&edits));
+    // Edit: change a modulator, as dragging its θ would. The frame shouldn't
+    // wait for the simulation; the result arrives when it's ready.
+    let mut edits = Vec::new();
+    let mut results = Vec::new();
+    for k in 0..6 {
+        let id = ws.active.unwrap();
+        let p = ws.project.doc_mut(id).unwrap().panel_mut();
+        let m = p.layout.instances.iter_mut().find(|i| i.param("θ").is_some()).unwrap();
+        m.set_param("θ", Some(1.0 + 0.01 * k as f64));
+        let start = Instant::now();
+        edits.push(frame(&ctx, &mut ws, &mut t, Vec::new()));
+        // Frames go on (as they would, at 60 a second) until the result is in.
+        loop {
+            let fresh = {
+                let p = ws.project.doc(id).unwrap().panel();
+                !p.is_stale(p.simulation_key(ws.project.fingerprint()))
+            };
+            if fresh {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+            edits.push(frame(&ctx, &mut ws, &mut t, Vec::new()));
+        }
+        results.push(ms(start.elapsed()));
+    }
+    tracing::info!("  editing a modulator: frames {}   result shown after {}", stats(&edits), stats(&results));
     let mesh_id = ws.project.documents.iter().find(|d| d.name.contains("mesh")).unwrap().id;
     ws.open_tab(mesh_id);
     let first = frame(&ctx, &mut ws, &mut t, Vec::new());

@@ -54,7 +54,8 @@ in November 2026:
 | SAX netlist; gdsfactory layout | 4 ms; 3 ms | 66 ms; 54 ms | 0.29 s; 0.25 s |
 | Editor frame, idle or zooming: processor | 0.3 ms | 0.9 ms | 2.4 ms |
 | Editor frame, idle or zooming: inside the mesh | 0.4 ms | 2.9 ms | 7.4 ms |
-| Editor frame after an edit (re-simulates) | 4 ms | 55 ms | 260 ms |
+| Editor frame after an edit | 4 ms | 1.2 ms | 3 ms |
+| Result shown after an edit | same frame | 67 ms | 0.3 s |
 
 ## What it tells us
 
@@ -66,10 +67,12 @@ in November 2026:
   128×128 mesh is 83 000 parts and simulates in a quarter of a second.
 - **Sweeps and S-parameters are runs, not live updates**: seconds for a large design, as
   in other circuit simulators. They use every core.
-- **Limit: edits re-simulate before the next frame.** Up to about 32×32 (5 000 parts) that
-  is under a frame's time; above it, each edit holds the editor for the length of one
-  simulation (a quarter of a second at 128×128). Simulating in the background, so the
-  editor never waits, is [on the roadmap](roadmap.md#milestone-design-at-scale).
+- **Editing never waits for the simulation.** A design that takes longer than about 12 ms
+  to simulate does so in the background (desktop app): edits take a few milliseconds and
+  the new result appears when it's ready. (Before, each edit held the editor for a whole
+  simulation: a quarter of a second at 128×128.)
+- **Limit: opening a large design waits for its first simulation** (a quarter of a second
+  at 128×128), and in the browser, which has no threads, every simulation does.
 - **Limit: the splitter tree needs a power of two inputs**, and the generic models are
   ideal (lossless couplers, a fixed group index). For a real chip, swap in your foundry
   kit's models ([Other tools and tapeout](interop.md)).

@@ -542,6 +542,29 @@ fn simulation_is_cached_by_fingerprint_and_registers() {
 }
 
 #[test]
+fn slow_designs_simulate_in_the_background() {
+    let mut ws = Workspace::default();
+    let id = demo(&mut ws, "16×16 photonic matrix processor");
+    assert!(ws.refresh_simulation(), "the first run is on the spot");
+    let power = |ws: &mut Workspace| panel(ws, id).sim.as_ref().unwrap().outcome.port_power.values().sum::<f64>();
+    let before = power(&mut ws);
+    // Pretend it's slow: the next edit's simulation runs on another thread.
+    ws.background_after_ms = 0.0;
+    ws.stats.last_simulation_ms = 1.0;
+    let modulator = panel(&mut ws, id).layout.instances.iter().position(|i| i.param("θ").is_some()).unwrap();
+    panel(&mut ws, id).layout.instances[modulator].set_param("θ", Some(0.0));
+    ws.refresh_simulation();
+    if !cfg!(target_arch = "wasm32") {
+        assert!(ws.simulating_in_background());
+        assert_eq!(power(&mut ws), before, "the last result stays on screen meanwhile");
+    }
+    ws.finish_background();
+    assert!(!ws.simulating_in_background());
+    assert!(power(&mut ws) < before, "one input dark: less light out");
+    assert!(!ws.refresh_simulation(), "and it's current");
+}
+
+#[test]
 fn simulate_toggle_is_on_by_default_and_flips() {
     let mut ws = Workspace::default();
     assert_eq!(ws.simulation_flag().copied(), Some(true), "new layouts simulate");
@@ -694,7 +717,8 @@ fn sweeps_run_through_the_workspace_with_components() {
 
 #[test]
 fn slow_designs_resimulate_less_often_while_dragging() {
-    let mut ws = Workspace::default();
+    // As in the browser, which has no threads to simulate in the background.
+    let mut ws = Workspace { background_after_ms: f64::INFINITY, ..Workspace::default() };
     let id = ws.active.unwrap();
     let laser = OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None };
     panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: laser, pos: Pos2::new(20.0, 20.0) });

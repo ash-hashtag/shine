@@ -45,6 +45,45 @@ impl Documents for NoDocuments {
     }
 }
 
+/// Copies of the documents a layout uses (and those they use), so it can
+/// be simulated on another thread while the editor carries on.
+pub struct Snapshot {
+    docs: HashMap<DocId, (Layout, f64, String)>,
+}
+
+impl Snapshot {
+    pub fn of(layout: &Layout, docs: &dyn Documents) -> Self {
+        let mut s = Self { docs: HashMap::new() };
+        let mut todo: Vec<DocId> = Vec::new();
+        let used = |l: &Layout, todo: &mut Vec<DocId>| {
+            todo.extend(l.instances.iter().filter_map(|i| match i.block {
+                BlockRef::Component(d) => Some(d),
+                BlockRef::Builtin(_) => None,
+            }))
+        };
+        used(layout, &mut todo);
+        while let Some(id) = todo.pop() {
+            if s.docs.contains_key(&id) {
+                continue;
+            }
+            if let Some((l, cell)) = docs.layout(id) {
+                used(l, &mut todo);
+                s.docs.insert(id, (l.clone(), cell, docs.name(id)));
+            }
+        }
+        s
+    }
+}
+
+impl Documents for Snapshot {
+    fn layout(&self, id: DocId) -> Option<(&Layout, f64)> {
+        self.docs.get(&id).map(|(l, c, _)| (l, *c))
+    }
+    fn name(&self, id: DocId) -> String {
+        self.docs.get(&id).map_or_else(|| "a deleted component".into(), |d| d.2.clone())
+    }
+}
+
 /// Instances from the top layout down to a nested layout.
 pub type Path = Vec<InstanceId>;
 

@@ -27,9 +27,18 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
 ## Live simulation and speed
 
 With live simulation on, the design is simulated again whenever it changes. Small designs
-take well under a millisecond. While you drag something in a design whose simulation
-takes longer than about 8 ms, it re-simulates ten times a second instead of on every
-move, so dragging stays smooth, and once more when you let go.
+take well under a millisecond, and the result is there on the same frame.
+
+In the desktop app, a design whose simulation takes longer than about 12 ms simulates in
+the background: you keep editing, the last result stays on screen, and the new one
+appears when it's ready (the status bar shows **Simulating…** if it takes more than a
+moment). If you change the design meanwhile, the newest version is simulated next. A
+design of 83 000 parts (the [reference design](reference-design.md) at 128×128) shows
+its result about a third of a second after each edit, without the editor ever waiting.
+
+In the browser, which simulates on the page's only thread, a design whose simulation
+takes longer than about 8 ms re-simulates ten times a second while you drag instead of on
+every move, so dragging stays smooth, and once more when you let go.
 
 To check whether a stutter is real, open **View → Performance graph**: it plots the time
 between frames (what you see as smoothness) and the CPU time of each frame over the last
