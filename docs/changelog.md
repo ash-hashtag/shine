@@ -10,7 +10,7 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
-## 0.1.1 (unreleased)
+## 0.1.1 (2026-11-11)
 
 ### Added
 
