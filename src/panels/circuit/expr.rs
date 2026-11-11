@@ -6,8 +6,8 @@
 //! `? :`, `||`, `&&`, `|`, `^`, `&`, `== !=`, `< <= > >=`, `<< >>`, `+ -`,
 //! `* / %`, unary `- !`, `**` (right associative).
 //!
-//! Functions: `abs sqrt floor ceil round exp ln sin cos min max clamp bit
-//! pow argmax sum`.
+//! Functions: `abs sqrt floor ceil round exp ln sin cos asin acos atan min
+//! max clamp bit pow argmax sum`.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -418,6 +418,18 @@ impl Expr {
                         arity(1)?;
                         values[0].cos()
                     }
+                    "asin" => {
+                        arity(1)?;
+                        values[0].asin()
+                    }
+                    "acos" => {
+                        arity(1)?;
+                        values[0].acos()
+                    }
+                    "atan" => {
+                        arity(1)?;
+                        values[0].atan()
+                    }
                     "pow" => {
                         arity(2)?;
                         values[0].powf(values[1])
@@ -539,6 +551,7 @@ mod tests {
         assert_eq!(eval("round(sqrt(p1) * 100)"), 87.0);
         assert_eq!(eval("abs(-2) + floor(1.7) + ceil(1.2) + pow(2, 3)"), 13.0);
         assert!((eval("exp(ln(5)) + sin(0) + cos(0)") - 6.0).abs() < 1e-12);
+        assert!((eval("asin(1)") - std::f64::consts::FRAC_PI_2).abs() < 1e-15 && eval("acos(1)") == 0.0 && (eval("atan(1) * 4") - std::f64::consts::PI).abs() < 1e-15);
         assert!((eval("pi") - std::f64::consts::PI).abs() < 1e-15);
     }
 

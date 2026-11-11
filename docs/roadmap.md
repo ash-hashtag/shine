@@ -86,6 +86,13 @@ want them.
       measured up to 128×128 (83 000 parts) ([Reference design](reference-design.md))
 - [x] **Large designs stay quick to look at**: drawing and navigating a design of 8 600
       boxes and 16 600 waveguides takes a few milliseconds a frame
+- [x] **An AI inference chip**: a two-layer optical neural network reading handwritten
+      digits, simulated whole and checked against SAX and PhotonForge
+      ([Optical neural network](neural-network.md))
+- [ ] **Program a mesh from a matrix in the editor**: choose or type a matrix, and Shine
+      sets the mesh's heaters (the decomposition is there; the panel isn't)
+- [ ] **Smaller SAX netlists**: leave out components' pins (zero-phase pass-throughs, a
+      third of the instances in a large design)
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than
       a frame stays smooth, with results arriving when they're ready (desktop)
 

@@ -13,6 +13,7 @@
 pub mod bridge;
 pub mod canvas;
 pub mod editor;
+pub mod digits;
 pub mod examples;
 pub mod input;
 pub mod library;

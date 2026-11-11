@@ -57,6 +57,10 @@ connected and solved, rings' loops included, not the component formulas:
 | 8 stages | 1.3 × 10⁻¹⁰ | 7 × 10⁻¹¹ |
 | 32 stages (101 instances, 132 connections) | 1.3 × 10⁻¹⁰ | 8 × 10⁻¹¹ |
 
+A whole chip, finally: the [optical neural network](neural-network.md) that reads
+handwritten digits (465 MZIs, 4 698 parts) reads the same digit in Shine, SAX and
+PhotonForge for all 450 test digits, its scores agreeing to 10⁻¹⁰.
+
 ## What the models leave out
 
 Circuit-level simulation describes each component by how it passes light, so it is only

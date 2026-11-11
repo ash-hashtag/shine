@@ -42,15 +42,15 @@ pub const WAVELENGTH_NM: f64 = 1550.0;
 pub const MZI_CELL: &str = "MZI cell";
 pub const MODULATOR: &str = "Modulator";
 
-fn arm() -> Builtin {
+pub(super) fn arm() -> Builtin {
     Builtin::DelayLine { length_um: ARM_UM, n_eff: N_EFF, n_g: N_G, reference_nm: WAVELENGTH_NM, loss_db_per_cm: LOSS_DB_PER_CM }
 }
 
-fn link(l: &mut Layout, from: (InstanceId, usize), to: (InstanceId, usize)) {
+pub(super) fn link(l: &mut Layout, from: (InstanceId, usize), to: (InstanceId, usize)) {
     l.connect_optical(PortRef { instance: from.0, port: from.1 }, PortRef { instance: to.0, port: to.1 });
 }
 
-fn add(l: &mut Layout, b: Builtin, cell: (i32, i32)) -> InstanceId {
+pub(super) fn add(l: &mut Layout, b: Builtin, cell: (i32, i32)) -> InstanceId {
     l.add_instance(BlockRef::Builtin(b), cell)
 }
 
@@ -94,6 +94,12 @@ pub fn mzi_cell(project: &mut Project) -> DocId {
 
 /// The N×N mesh programmed to `mesh`, as a component (named for its size).
 pub fn mesh(project: &mut Project, mesh: &UnitaryMesh) -> DocId {
+    let n = mesh.size;
+    mesh_named(project, mesh, &format!("{n}×{n} mesh"), &format!("U{n}"))
+}
+
+/// [`mesh`] with a name and initials of its own.
+pub fn mesh_named(project: &mut Project, mesh: &UnitaryMesh, name: &str, initials: &str) -> DocId {
     let cell = mzi_cell(project);
     let n = mesh.size;
     let mut l = Layout::default();
@@ -133,8 +139,8 @@ pub fn mesh(project: &mut Project, mesh: &UnitaryMesh) -> DocId {
         link(&mut l, (ps, 0), (out, 0));
     }
     project.add_component(
-        &format!("{n}×{n} mesh"),
-        &format!("U{n}"),
+        name,
+        initials,
         &format!(
             "{} MZI cells in the rectangular (Clements) arrangement, {depth} columns deep, programmed to a {n}×{n} unitary matrix; every path crosses the same length of waveguide, so losses are balanced.",
             mesh.mzis.len()

@@ -62,6 +62,16 @@ the first detector; press Tab on the mesh to look inside. It is also Shine's
 [reference design](reference-design.md), with more to try: how we measure what Shine can
 do with a large design.
 
+### Digit recognizer (optical neural network)
+
+A small AI inference chip: a two-layer optical neural network that reads handwritten
+digits, 93.6% right on 450 test digits. The digit is the 4×4 grid of value inputs at the
+top left; layer 1 (two MZI meshes with attenuators between them) multiplies it by a trained
+matrix; 16 photodetector neurons with electronics apply the nonlinearity and drive layer 2;
+the display shows the brightest of its 10 outputs. 465 MZIs, 4 698 parts. See
+[Optical neural network](neural-network.md) for how it's built, and how it compares with
+SAX and PhotonForge.
+
 ### Cascaded interferometers
 
 A free-space Mach–Zehnder saved as a component and used twice: a beam enters the first

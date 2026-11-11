@@ -44,6 +44,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - A Laser block's wavelength can be swept.
 - Detector blocks show the power they read beside them, and glow with it; Laser blocks show
   their power and wavelength.
+- An optical neural network that reads handwritten digits (File → Examples… → Digit
+  recognizer): a two-layer inference chip of 465 MZIs, trained on the UCI digits (CC BY 4.0)
+  for the hardware it runs on, 93.6% right on 450 test digits. Shine simulates it whole,
+  light, detectors and electronics; SAX and PhotonForge read the same digits, scores within
+  10⁻¹⁰ ([Optical neural network](neural-network.md)).
+- `asin`, `acos` and `atan` in function-cell expressions.
 - The interface size (menus, panels, text; also Ctrl+= and Ctrl+−) and the canvas zoom are
   separate preferences, both remembered: designs open at the canvas zoom you last used, or
   fitted to the window if you prefer.

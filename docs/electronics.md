@@ -71,7 +71,7 @@ A red `!` next to an expression means it doesn't parse; hover it for the reason.
 | Bits | `<< >> & \| ^ ~` on whole numbers |
 | Comparison and logic | `< <= > >= == !=`, `&&`, `\|\|`, `!`; true is 1, false is 0 |
 | Choice | `cond ? a : b` |
-| Functions | `abs sqrt floor ceil round exp ln sin cos`, `pow(x, y)`, `bit(x, k)` (bit k of x), `clamp(x, lo, hi)`, `min(…)`, `max(…)`, `sum(…)`, `argmax(…)` (0-based index of the largest) |
+| Functions | `abs sqrt floor ceil round exp ln sin cos asin acos atan`, `pow(x, y)`, `bit(x, k)` (bit k of x), `clamp(x, lo, hi)`, `min(…)`, `max(…)`, `sum(…)`, `argmax(…)` (0-based index of the largest) |
 
 Examples:
 

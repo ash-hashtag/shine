@@ -472,6 +472,11 @@ pub fn demos() -> Vec<Demo> {
             build: super::reference::demo,
         },
         Demo {
+            name: "Digit recognizer (optical neural network)",
+            description: "A small AI inference chip: a two-layer optical neural network that reads handwritten digits, 93.6% right on 450 test digits. The 4×4 grid of value inputs (top left) is the digit, shown as a thumbnail; each drives a modulator on one of 16 lights split from the laser. Layer 1 (two 16×16 MZI meshes with attenuators between them) multiplies the image by a trained matrix; 16 photodetector neurons with electronics apply the nonlinearity and drive layer 2's modulators; layer 2 multiplies again, and the readout shows the brightest of its 10 outputs, the digit, on the display. Press Tab on a layer to see its meshes.",
+            build: super::digits::demo,
+        },
+        Demo {
             name: "Cascaded interferometers",
             description: "The free-space Mach–Zehnder saved as a component and used twice: a beam feeds the first box directly and a waveguide carries one output to the second.",
             build: cascaded_interferometers,
