@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::circuit::sim::{self, Documents, Machine, Options, Outcome};
+use super::appearance::Appearance;
 use super::file_format;
 use super::optics::OpticsPanel;
 use super::optics::model::{BlockRef, Builtin, Item, Layout, PortCounts};
@@ -23,6 +24,8 @@ pub struct DocId(pub u64);
 pub struct ComponentMeta {
     pub initials: String,
     pub description: String,
+    /// Colour, outline and picture of its boxes.
+    pub appearance: Appearance,
 }
 
 /// What a document holds. Layouts are the only kind today; the enum leaves
@@ -167,13 +170,15 @@ pub(crate) struct DocumentFile {
 
 pub(crate) mod v4;
 pub(crate) mod v5;
+pub(crate) mod v6;
 
 /// Format 3: layouts had no laser feeds (waveguides from a laser into a box).
 pub(crate) mod v3 {
     use serde::{Deserialize, Serialize};
 
     use super::v4::{Instance, Layout4};
-    use super::{ComponentMeta, DocId, DocumentFile};
+    use super::v6::Meta6 as ComponentMeta;
+    use super::{DocId, DocumentFile};
     use crate::panels::optics::model::{Line, PlacedComponent, SignalWire, Wire};
 
     #[derive(Serialize, Deserialize)]
@@ -207,7 +212,7 @@ pub(crate) mod v3 {
         DocumentFile {
             id: d.id,
             name: d.name,
-            component: d.component,
+            component: d.component.map(ComponentMeta::upgrade),
             cell_um: d.cell_um,
             layout: Layout4 {
                 components: l.components,
@@ -231,7 +236,8 @@ pub(crate) mod v2 {
     use serde::{Deserialize, Serialize};
 
     use super::v4::{Instance, Layout4};
-    use super::{ComponentMeta, DocId, DocumentFile};
+    use super::v6::Meta6 as ComponentMeta;
+    use super::{DocId, DocumentFile};
     use crate::panels::optics::model::{Line, OpticComponentKind, PlacedComponent, SignalWire, Wire};
 
     #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -306,7 +312,7 @@ pub(crate) mod v2 {
         DocumentFile {
             id: d.id,
             name: d.name,
-            component: d.component,
+            component: d.component.map(ComponentMeta::upgrade),
             cell_um: d.cell_um,
             layout: Layout4 {
                 components: l.components.into_iter().map(|p| PlacedComponent { kind: kind(p.kind), pos: p.pos }).collect(),
@@ -329,7 +335,8 @@ pub(crate) mod v1 {
     use egui::{Pos2, Vec2};
     use serde::{Deserialize, Serialize};
 
-    use super::{ComponentMeta, DocId, DocumentFile};
+    use super::v6::Meta6 as ComponentMeta;
+    use super::{DocId, DocumentFile};
     use crate::panels::schematic::model::Schematic;
     use crate::panels::optics::model::{DETECTOR, GRID, Instance, Layout, Line, OpticComponentKind, PlacedComponent};
 
@@ -427,7 +434,7 @@ pub(crate) mod v1 {
         DocumentFile {
             id: d.id,
             name: d.name,
-            component: d.component,
+            component: d.component.map(ComponentMeta::upgrade),
             cell_um,
             layout,
         }
@@ -447,6 +454,7 @@ pub struct CatalogEntry {
     pub depends_on: BTreeSet<DocId>,
     /// Parameters it exports, which each of its boxes can set.
     pub parameters: Vec<ComponentParam>,
+    pub appearance: Appearance,
 }
 
 /// An exported parameter, as the boxes using a component see it.
@@ -483,6 +491,8 @@ pub fn component_parameters(layout: &Layout) -> Vec<ComponentParam> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Catalog {
     pub entries: Vec<CatalogEntry>,
+    /// The asset library's components (set by the workspace), placeable too.
+    pub assets: std::sync::Arc<Vec<super::assets::AssetSummary>>,
 }
 
 /// How an instance looks and connects.
@@ -496,6 +506,8 @@ pub struct BlockDisplay {
     pub signal_inputs: Vec<String>,
     pub signal_outputs: Vec<String>,
     pub component: Option<DocId>,
+    /// A component's colour, outline and picture; default for built-in blocks.
+    pub appearance: Appearance,
 }
 
 impl BlockDisplay {
@@ -512,6 +524,10 @@ impl BlockDisplay {
 impl Catalog {
     pub fn get(&self, id: DocId) -> Option<&CatalogEntry> {
         self.entries.iter().find(|e| e.id == id)
+    }
+
+    pub fn asset(&self, asset: super::assets::AssetRef) -> Option<&super::assets::AssetSummary> {
+        self.assets.iter().find(|a| a.asset == asset)
     }
 
     pub fn components(&self) -> impl Iterator<Item = &CatalogEntry> {
@@ -535,17 +551,22 @@ impl Catalog {
                 let name = match b {
                     Builtin::InputPin { name } | Builtin::OutputPin { name } => format!("{} “{name}”", info.name),
                     Builtin::FunctionCell { name, .. } if !name.is_empty() => name.clone(),
+                    Builtin::Model(m) => m.name.clone(),
                     _ => info.name.to_owned(),
                 };
                 BlockDisplay {
                     name,
                     initials: info.initials.to_owned(),
-                    description: info.description.to_owned(),
+                    description: match b {
+                        Builtin::Model(m) => m.summary(),
+                        _ => info.description.to_owned(),
+                    },
                     inputs: b.inputs(),
                     outputs: b.outputs(),
                     signal_inputs: b.signal_inputs(),
                     signal_outputs: b.signal_outputs(),
                     component: None,
+                    appearance: Appearance::default(),
                 }
             }
             BlockRef::Component(id) => match self.get(*id) {
@@ -558,6 +579,7 @@ impl Catalog {
                     signal_inputs: e.interface.signal_inputs.clone(),
                     signal_outputs: e.interface.signal_outputs.clone(),
                     component: Some(*id),
+                    appearance: e.appearance.clone(),
                 },
                 None => BlockDisplay {
                     name: "Missing component".into(),
@@ -568,6 +590,7 @@ impl Catalog {
                     signal_inputs: Vec::new(),
                     signal_outputs: Vec::new(),
                     component: Some(*id),
+                    appearance: Appearance::default(),
                 },
             },
         }
@@ -639,6 +662,7 @@ impl Project {
         self.doc_mut(id).expect("just added").component = Some(ComponentMeta {
             initials: initials.into(),
             description: description.into(),
+            appearance: Appearance::default(),
         });
         id
     }
@@ -696,9 +720,70 @@ impl Project {
                     is_component: d.component.is_some(),
                     depends_on: self.dependencies(d.id),
                     parameters: component_parameters(d.layout()),
+                    appearance: d.component.as_ref().map(|m| m.appearance.clone()).unwrap_or_default(),
                 })
                 .collect(),
+            assets: Default::default(),
         }
+    }
+
+    /// Document `id` with every document it uses, as a project of its own
+    /// with `id` first: what a component file or library asset holds.
+    pub fn extract(&self, id: DocId) -> Option<Project> {
+        let root = self.doc(id)?;
+        let mut documents = vec![Document::from_file(root.to_file())];
+        for dep in self.dependencies(id) {
+            if let Some(d) = self.doc(dep) {
+                documents.push(Document::from_file(d.to_file()));
+            }
+        }
+        Some(Project { documents, next_id: self.next_id, path: None })
+    }
+
+    /// Copy `bundle`'s first document, and those it uses, into this project;
+    /// returns its id here. A component already here with the same name and
+    /// content is reused rather than copied again.
+    pub fn import(&mut self, bundle: &Project) -> Option<DocId> {
+        let root = bundle.documents.first()?.id;
+        let mut mapped = std::collections::HashMap::new();
+        Some(self.import_doc(bundle, root, &mut mapped, 0))
+    }
+
+    fn import_doc(&mut self, bundle: &Project, id: DocId, mapped: &mut std::collections::HashMap<DocId, DocId>, depth: usize) -> DocId {
+        if let Some(&here) = mapped.get(&id) {
+            return here;
+        }
+        let Some(doc) = bundle.doc(id) else { return id };
+        // What it uses comes first, so its boxes can point at the copies.
+        if depth < 64 {
+            for used in doc.references() {
+                let here = self.import_doc(bundle, used, mapped, depth + 1);
+                mapped.insert(used, here);
+            }
+        }
+        let mut file = doc.to_file();
+        for inst in &mut file.layout.instances {
+            if let BlockRef::Component(old) = inst.block
+                && let Some(&new) = mapped.get(&old)
+            {
+                inst.block = BlockRef::Component(new);
+            }
+        }
+        let same = self.documents.iter().find(|d| {
+            d.name == file.name && d.component == file.component && d.component.is_some() && *d.layout() == file.layout && d.panel().cell_um == file.cell_um
+        });
+        let here = match same {
+            Some(d) => d.id,
+            None => {
+                file.id = self.allocate();
+                file.name = self.unique_name(&file.name);
+                let here = file.id;
+                self.documents.push(Document::from_file(file));
+                here
+            }
+        };
+        mapped.insert(id, here);
+        here
     }
 
     /// Settle a document's optics and electronics with the given register state.
@@ -761,6 +846,15 @@ impl Project {
                 ProjectFile {
                     next_id: old.next_id,
                     documents: old.documents.into_iter().map(v5::upgrade).collect(),
+                }
+            }
+            // Format 8 only added model blocks: format 7 reads as it is.
+            7 => file_format::decode_body(bytes)?,
+            6 => {
+                let old: v6::Project = file_format::decode_body(bytes)?;
+                ProjectFile {
+                    next_id: old.next_id,
+                    documents: old.documents.into_iter().map(v6::upgrade).collect(),
                 }
             }
             _ => file_format::decode(bytes)?,

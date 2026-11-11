@@ -11,7 +11,7 @@ homepage = "https://shine.lupyd.com"
 [features]
 default = ["gui"]
 # The editor. Disable with `default-features = false` to use only the `photonics` library.
-gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png"]
+gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image", "dep:rust-rf", "dep:rquickjs"]
 # Stderr + optional file logging setup for binaries.
 logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
 
@@ -31,7 +31,7 @@ egui = { version = "0.37.0", features = ["serde", "monochrome_emoji_fonts"], opt
 eframe = { version = "0.37.0", features = ["serde", "persistence"], optional = true }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
-serde = { version = "1.0.229", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 rfd = { version = "0.18.0", optional = true }
 num-complex = "0.4.6"
@@ -40,6 +40,10 @@ pulp = "0.22.3"
 egui_plot = { version = "0.38.0", optional = true }
 # Images of the canvas and plots.
 png = { version = "0.18.1", optional = true }
+# Component icons: draws WebP and SVG pictures (pure Rust, so the browser build works too).
+egui_extras = { version = "0.37.0", default-features = false, features = ["svg", "webp"], optional = true }
+# Component icons: reads the pictures people choose, scales them down and saves them as WebP.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 web-time = "1.1.0"
 postcard = { version = "1.1.3", features = ["use-std"] }
 
@@ -48,6 +52,10 @@ rayon = "1.12.0"
 tracing-appender = { version = "0.2.5", optional = true }
 # The desktop app's "Check for updates" (the browser app is always current).
 ehttp = { version = "0.7.3", optional = true }
+# Reading S-parameter files (Touchstone 1 and 2): a port of scikit-rf.
+rust-rf = { version = "2.0.1", default-features = false, optional = true }
+# Scripted components: the QuickJS JavaScript engine, sandboxed (desktop only).
+rquickjs = { version = "0.14.0", features = ["parallel"], optional = true }
 faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "rayon"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -61,6 +69,17 @@ js-sys = "0.3"
 [dev-dependencies]
 # Drives the UI by widget labels in tests (tests/ui.rs).
 egui_kittest = "0.37.0"
+
+# Debug builds: quick to rebuild and quick enough to use. No debug info
+# (backtraces still name functions); set `debug = true` here, or build with
+# CARGO_PROFILE_DEV_DEBUG=true, when a debugger is needed. Dependencies are
+# lightly optimised: built once, they make the debug app and tests much faster.
+[profile.dev]
+debug = false
+strip = "debuginfo"
+
+[profile.dev.package."*"]
+opt-level = 1
 
 # Used by scripts/build-web.sh for the browser build.
 [profile.web]

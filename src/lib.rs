@@ -21,6 +21,9 @@ pub mod panels;
 #[cfg(feature = "gui")]
 pub use app::ShineApp;
 
+/// The app's name for the OS: its settings folder and window class.
+pub const APP_ID: &str = "Shine";
+
 #[cfg(feature = "gui")]
 mod app {
     use crate::panels::workspace::Workspace;
@@ -40,7 +43,26 @@ mod app {
                     storage.get_string(crate::panels::session::KEY),
                 );
             }
+            app.load_library(cc.storage);
             app
+        }
+
+        /// The asset library: a file next to the settings on desktop, the
+        /// page's storage in the browser.
+        fn load_library(&mut self, storage: Option<&dyn eframe::Storage>) {
+            use crate::panels::assets::{LIBRARY_FILE, Library, STORAGE_KEY};
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(dir) = eframe::storage_dir(crate::APP_ID) {
+                self.workspace.library = Library::open_file(dir.join(LIBRARY_FILE));
+                return;
+            }
+            let stored = storage.and_then(|s| s.get_string(STORAGE_KEY));
+            if let Some(text) = stored {
+                match crate::panels::session::base64_decode(&text).and_then(|b| Library::from_bytes(&b)) {
+                    Ok(library) => self.workspace.library = library,
+                    Err(e) => tracing::error!("Couldn't read the asset library: {e}"),
+                }
+            }
         }
 
         /// Preferences and the last session, as kept in the app's storage.
@@ -65,6 +87,12 @@ mod app {
         fn save(&mut self, storage: &mut dyn eframe::Storage) {
             eframe::set_value(storage, crate::panels::prefs::STORAGE_KEY, &self.workspace.prefs);
             storage.set_string(crate::panels::session::KEY, self.workspace.session().encode());
+            // Kept in a file of its own on desktop; here only when it changed.
+            if self.workspace.library.path.is_none()
+                && let Some(bytes) = self.workspace.library.take_changes()
+            {
+                storage.set_string(crate::panels::assets::STORAGE_KEY, crate::panels::session::base64_encode(&bytes));
+            }
         }
 
         /// Save the session often, so a crash or a closed tab loses little.

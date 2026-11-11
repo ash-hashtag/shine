@@ -30,11 +30,37 @@ pub enum Action {
     ShowShortcuts,
     /// Open the selected component's definition.
     Inspect,
+    /// Arrow keys: move the selection (or the grab) by whole cells, or pan
+    /// the view when nothing is selected.
+    Nudge(i32, i32),
+    ZoomIn,
+    ZoomOut,
+    /// Select the next (or previous) part or box, to select without a mouse.
+    SelectNext,
+    SelectPrevious,
+    /// Wire from the selected item; again (or Enter) wires to the one
+    /// selected then.
+    Wire,
+}
+
+/// The cells an arrow key moves by: one, or five with Shift.
+fn arrow(key: Key, m: Modifiers) -> Option<(i32, i32)> {
+    let step = if m.shift { 5 } else { 1 };
+    match key {
+        Key::ArrowLeft => Some((-step, 0)),
+        Key::ArrowRight => Some((step, 0)),
+        Key::ArrowUp => Some((0, -step)),
+        Key::ArrowDown => Some((0, step)),
+        _ => None,
+    }
 }
 
 /// Map a key press to an action. While grabbing, only the modal keys apply.
 pub fn shortcut(key: Key, m: Modifiers, grabbing: bool) -> Option<Action> {
     use Action::*;
+    if let Some((dx, dy)) = arrow(key, m).filter(|_| !m.command && !m.alt) {
+        return Some(Nudge(dx, dy));
+    }
     if grabbing {
         return match key {
             Key::X => Some(ConstrainX),
@@ -53,6 +79,8 @@ pub fn shortcut(key: Key, m: Modifiers, grabbing: bool) -> Option<Action> {
         Key::O if m.command => Open,
         Key::N if m.command => New,
         Key::I if m.command => InvertSelection,
+        // Ctrl+A (Cmd+A) too, as in every other program.
+        Key::A if m.command && !m.shift && !m.alt => SelectAll,
         Key::A if m.alt => DeselectAll,
         Key::A if m.shift => AddMenu,
         Key::A if plain => SelectAll,
@@ -67,6 +95,12 @@ pub fn shortcut(key: Key, m: Modifiers, grabbing: bool) -> Option<Action> {
         Key::N if plain => ToggleProperties,
         Key::T if plain => ToggleToolbar,
         Key::Tab if plain => Inspect,
+        Key::Plus | Key::Equals if !m.command => ZoomIn,
+        Key::Minus if !m.command => ZoomOut,
+        Key::CloseBracket if plain => SelectNext,
+        Key::W if plain => Wire,
+        Key::Enter if plain => Confirm,
+        Key::OpenBracket if plain => SelectPrevious,
         Key::F1 => ShowShortcuts,
         Key::Questionmark => ShowShortcuts,
         Key::Escape => Cancel,
@@ -88,17 +122,21 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Left drag on component", "Move it"),
     ("Double click", "Rotate a part / open a component"),
     ("Click a number's bit", "Toggle that bit"),
-    ("A / Alt+A / Ctrl+I", "Select all / none / invert"),
+    ("A or Ctrl+A / Alt+A / Ctrl+I", "Select all / none / invert"),
     ("G", "Grab (move); X / Y constrain axis"),
     ("Enter / Left click", "Confirm grab"),
     ("Esc / Right click", "Cancel grab"),
     ("R / Shift+R", "Rotate clockwise / counter-clockwise"),
     ("Shift+D", "Duplicate and move"),
+    ("Arrow keys / Shift+arrows", "Move the selection (or a grab) 1 / 5 cells; with nothing selected, pan"),
+    ("+ / −", "Zoom in / out"),
+    ("] / [", "Select the next / previous part or box"),
+    ("W, then ] / [ and Enter", "Wire the selected item to another, first free ports"),
     ("X / Delete", "Delete selected"),
     ("Shift+A / Right click", "Add menu / context menu"),
     (
         "Tab / Double click",
-        "Open a component's definition in its own tab",
+        "Open the selected component's definition in its own tab (otherwise Tab moves to the next control)",
     ),
     (
         "Drag from a port or terminal",
@@ -142,6 +180,14 @@ mod tests {
             (Key::Questionmark, Action::ShowShortcuts),
             (Key::Escape, Action::Cancel),
             (Key::Tab, Action::Inspect),
+            (Key::ArrowLeft, Action::Nudge(-1, 0)),
+            (Key::ArrowDown, Action::Nudge(0, 1)),
+            (Key::Plus, Action::ZoomIn),
+            (Key::Minus, Action::ZoomOut),
+            (Key::CloseBracket, Action::SelectNext),
+            (Key::OpenBracket, Action::SelectPrevious),
+            (Key::W, Action::Wire),
+            (Key::Enter, Action::Confirm),
         ];
         for (key, action) in cases {
             assert_eq!(shortcut(key, NONE, false), Some(action), "{key:?}");
@@ -152,6 +198,7 @@ mod tests {
     #[test]
     fn modified_keys() {
         assert_eq!(shortcut(Key::Z, ctrl(), false), Some(Action::Undo));
+        assert_eq!(shortcut(Key::A, ctrl(), false), Some(Action::SelectAll));
         assert_eq!(
             shortcut(
                 Key::Z,

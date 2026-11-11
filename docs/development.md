@@ -15,6 +15,11 @@ cargo test                                  # every test, including headless UI 
 cargo clippy --all-targets                  # lints (CI fails on warnings)
 ```
 
+Debug builds carry no debug information and lightly optimise the dependencies, so they
+rebuild quickly and run at a usable speed. For a debugger, build with
+`CARGO_PROFILE_DEV_DEBUG=true cargo build` (or set `debug = true` under `[profile.dev]`
+in `Cargo.toml`).
+
 On Linux the editor needs the usual windowing libraries (`libxkbcommon`, `libxcb`,
 Wayland or X11 at runtime).
 
@@ -43,7 +48,8 @@ link, a ring's parameter, a 16-mode optical DFT); `--example matmul` times the e
 large MZI mesh. `--example frame_bench [n]` times editor frames while dragging a box,
 with one, three and six copies of example component n (0 full adder, 1 Mach–Zehnder…).
 `--example scale_bench` times one simulation of 1 to 32 Full adders, to show how the time
-grows with a design's size. Run them before and after a change that could affect speed.
+grows with a design's size. `--example library_bench [n]` times importing, saving,
+loading and searching an asset library of n components (5000 by default). Run them before and after a change that could affect speed.
 
 ## The website and browser build
 

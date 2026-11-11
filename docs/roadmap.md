@@ -41,10 +41,12 @@ What a tool people rely on every day needs, before more features.
       scripts and CI
 - [x] **Export**: sweep data and readings as CSV, plots and the canvas as images
 - [x] **Sweep a component's exported parameters**
-- [ ] **Speed on big designs**: simulation time that grows gently with the number of
-      components (measured with `examples/frame_bench`)
-- [ ] **Accessibility**: every control named for screen readers; keyboard use throughout
-- [ ] **Installable builds**: signed and notarised desktop apps, and instructions until then
+- [x] **Speed on big designs**: simulation time that grows gently with the number of
+      components (measured with `examples/scale_bench` and `examples/frame_bench`)
+- [x] **Accessibility**: every control named for screen readers; keyboard use throughout
+- [ ] **Installable builds**: signed and notarised desktop apps (until then, [Getting
+      started](getting-started.md#installing-the-desktop-app) explains opening the
+      unsigned builds)
 
 ## Milestone: answer the questions engineers ask
 
@@ -60,12 +62,48 @@ want them.
 
 - [x] **Waveguide model**: group index (so ring spacing and delays match real devices) and
       propagation loss for delay lines and rings; connections stay ideal
-- [ ] **S-parameter import** (Touchstone `.sNp`): measured or simulated components from a
-      foundry kit (PDK) or an FDTD tool, used as black boxes
-- [ ] **Monte Carlo**: how a design holds up to fabrication variation
 - [ ] **Validation page**: simulated results plotted against textbook formulas (rings,
       MZI, Fabry–Pérot, couplers, the DFT mesh)
 - [ ] **Two polarisations** per port
+
+## Milestone: work with other tools
+
+Shine makes a design work quickly; the rest of the industry's tools take it from there,
+and feed it their components.
+
+- [x] **S-parameter export** (Touchstone `.sNp`) of any design with light ports, for
+      circuit simulators, scikit-rf and measurement software
+- [x] **Layout for gdsfactory**: the design as gdsfactory components, placements and
+      routes, which gdsfactory turns into a GDS or OASIS mask with a foundry's kit: the
+      way to a tapeout ([Other tools and tapeout](interop.md))
+- [x] **`shine export`** on the command line, for scripts and CI
+- [x] **S-parameter import**: Touchstone `.sNp` (versions 1 and 2) and Lumerical `.dat`
+      files from a foundry kit (PDK), an FDTD tool or a measurement, used as black boxes;
+      a folder of them becomes an asset library folder
+- [ ] **Netlist export** for circuit simulators that take one (gdsfactory/SAX netlists,
+      Lumerical INTERCONNECT)
+- [ ] **Choose a foundry kit** when exporting a layout: its component names and sizes
+      instead of the generic ones
+
+## Milestone: analytics and graphs
+
+- [x] **Resonance readouts** on wavelength sweeps: FSR, width and Q, checked against the
+      textbook ring
+- [x] **Readouts from the command line** (`shine simulate … --readouts`)
+- [ ] **Phase and group delay** plots, from the same sweep
+- [ ] **Two-parameter sweeps**: a map of an output over two parameters
+- [ ] **S-matrix view**: how every input reaches every output, at a wavelength
+- [ ] **Monte Carlo**: how a design holds up to fabrication variation; histograms and yield
+
+## Milestone: custom components
+
+- [x] **Scripted components**: a component's light, signals and state written in
+      JavaScript (QuickJS), run in a sandbox with no files, network or clock and with time
+      and memory limits; so libraries can hold small ICs and parametric devices
+- [x] **Standard component libraries**: folders of Touchstone and Lumerical files (as the
+      open foundry kits publish their compact models) imported into the asset library
+- [ ] **Parameters for scripts**: values each box sets, as for components
+- [ ] **Scripts in the browser** (QuickJS built for WebAssembly)
 
 ## Later: realistic simulation (separate)
 
@@ -75,8 +113,8 @@ want them.
 
 ## Later: from circuit to chip
 
-- Help converting a circuit into a layout that can be fabricated: real components from a
-  foundry kit, routed waveguides, and export to OASIS or GDS
+- The first step is done through gdsfactory (above). Later: placement that respects each
+  kit's real sizes and rules, and drawing GDS or OASIS directly for the simplest cases
 
 ## Ideas
 

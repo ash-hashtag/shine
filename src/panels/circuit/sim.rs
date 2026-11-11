@@ -72,6 +72,9 @@ impl Key {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Machine {
     pub registers: HashMap<(Path, InstanceId), Vec<f64>>,
+    /// Scripted components' state, as JSON, by box (unset: the script's own
+    /// initial state).
+    pub scripts: HashMap<(Path, InstanceId), String>,
     pub tick: u64,
     /// By signal-in pin, in interface order; missing pins read 0.
     pub inputs: Vec<f64>,
@@ -302,6 +305,20 @@ impl Electronics<'_> {
                         .cloned()
                         .unwrap_or_else(|| vec![0.0; *bits as usize]),
                     BlockRef::Builtin(cell @ Builtin::FunctionCell { .. }) => self.function_cell(cell, path, inst.id, &ins),
+                    BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() && !m.signal_outputs.is_empty() => {
+                        let wired: Vec<Option<f64>> = ins
+                            .iter()
+                            .enumerate()
+                            .map(|(k, &v)| layout.signal_source(Terminal { item, port: k }).map(|_| v))
+                            .collect();
+                        match script_outputs(m, &wired, self.machine.scripts.get(&(path.to_vec(), inst.id))) {
+                            Ok(outs) => outs,
+                            Err(e) => {
+                                self.error(format!("“{}”: {e}", m.name));
+                                Vec::new()
+                            }
+                        }
+                    }
                     BlockRef::Builtin(_) => Vec::new(),
                     BlockRef::Component(doc) => {
                         if self.stack.contains(doc) {
@@ -424,8 +441,18 @@ enum Target {
 impl Optics<'_> {
     /// Drive level of a primitive's signal input, if wired.
     fn drive(&self, layout: &Layout, path: &[InstanceId], part: usize) -> Option<f64> {
+        self.drive_of(layout, path, Item::Part(part))
+    }
+
+    /// Drive level of an item's first signal input, if wired.
+    fn drive_of(&self, layout: &Layout, path: &[InstanceId], item: Item) -> Option<f64> {
+        self.drive_at(layout, path, item, 0)
+    }
+
+    /// Drive level of an item's signal input `port`, if wired.
+    fn drive_at(&self, layout: &Layout, path: &[InstanceId], item: Item, port: usize) -> Option<f64> {
         layout
-            .signal_source(Terminal { item: Item::Part(part), port: 0 })
+            .signal_source(Terminal { item, port })
             .map(|from| self.signals.get(&Key::new(path, from.item, from.port)).copied().unwrap_or(0.0))
     }
 
@@ -503,7 +530,33 @@ impl Optics<'_> {
         let mut geometry = HashMap::new();
         for inst in &layout.instances {
             let ports = match &inst.block {
+                #[cfg(not(target_arch = "wasm32"))]
+                BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() => {
+                    // A script's light can depend on its signals, as they are now.
+                    let code = m.script().expect("checked");
+                    let (engine, declared) = crate::panels::script::engine(code).map_err(|e| format!("“{}”: {e}", m.name))?;
+                    let signals: Vec<Option<f64>> =
+                        (0..declared.signal_inputs.len()).map(|k| self.drive_at(layout, path, Item::Box(inst.id), k)).collect();
+                    let component = crate::panels::script::Scripted { name: m.name.clone(), engine, declared, signals };
+                    // Its mistakes show now, as the simulation's error.
+                    if !m.inputs.is_empty() && !m.outputs.is_empty() {
+                        component.transmission(crate::photonics::REFERENCE_NM).map_err(|e| format!("“{}”: {e}", m.name))?;
+                    }
+                    let n = c.add(component);
+                    Ports {
+                        inputs: (0..m.inputs.len()).map(|k| n.input(k)).collect(),
+                        outputs: (0..m.outputs.len()).map(|k| n.output(k)).collect(),
+                    }
+                }
                 BlockRef::Builtin(b) => {
+                    // A signal on a control input (attenuator, phase shifter) sets the block.
+                    let driven = match b {
+                        Builtin::Attenuator { .. } | Builtin::PhaseShifter { .. } => {
+                            self.drive_of(layout, path, Item::Box(inst.id)).map(|v| b.driven(v))
+                        }
+                        _ => None,
+                    };
+                    let b = driven.as_ref().unwrap_or(b);
                     let light: Vec<f64> = (0..b.outputs().len())
                         .map(|k| self.light.get(&Key::new(path, Item::Box(inst.id), k)).copied().unwrap_or(0.0))
                         .collect();
@@ -587,6 +640,14 @@ impl Optics<'_> {
             wire_sources.push(from);
         }
 
+        // The layout's own light pins are its boundary: the light on them is
+        // connected by whatever uses the layout, so no beam starts or ends
+        // on them in here.
+        let boundary = |items: &[Item]| -> std::collections::HashSet<InstanceId> {
+            items.iter().filter_map(|i| if let Item::Box(id) = i { Some(*id) } else { None }).collect()
+        };
+        let (pins_in, pins_out) = (boundary(&iface.optical_in), boundary(&iface.optical_out));
+
         // Free-space beams: from emitting parts and from unwired box outputs.
         let mut targets: Vec<(Pos2, Target)> = layout
             .components
@@ -600,7 +661,7 @@ impl Optics<'_> {
             let inputs = instance_ports[&inst.id].inputs.len();
             for &(ci, cj) in &g.cells {
                 let row = (cj - inst.cell.1) as usize;
-                let entry = (ci == inst.cell.0 && row < inputs).then_some(row);
+                let entry = (ci == inst.cell.0 && row < inputs && !pins_in.contains(&inst.id)).then_some(row);
                 targets.push((crate::panels::optics::model::cell_center(ci, cj), Target::Box { id: inst.id, entry }));
             }
         }
@@ -613,7 +674,7 @@ impl Optics<'_> {
                 }
             }
         }
-        for inst in &layout.instances {
+        for inst in layout.instances.iter().filter(|i| !pins_out.contains(&i.id)) {
             for (k, &out) in instance_ports[&inst.id].outputs.iter().enumerate() {
                 if !wired_outputs.contains(&(inst.id, k)) {
                     sources.push((geometry[&inst.id].optical_out[k], out, 0, None));
@@ -720,6 +781,67 @@ pub fn simulate(
     root: Option<DocId>,
     options: &Options,
 ) -> Outcome {
+    let settled = match settle(layout, cell_um, docs, machine, root, options) {
+        Ok(s) => s,
+        Err(e) => return Outcome::failed(e),
+    };
+    let Settled { solutions, built, source_colors, iteration, stable, signals, .. } = settled;
+    outcome_of(layout, solutions, built, source_colors, iteration, stable, signals)
+}
+
+/// How light passes between a layout's light ports, at each of several
+/// wavelengths, with its own lasers off: `matrices[k][(o, i)]` is the field
+/// leaving output `o` per unit field entering input `i` at
+/// `wavelengths_nm[k]`. Signals inside (phase shifters, switches) are at the
+/// values they settle to, as in [`simulate`].
+#[derive(Clone, Debug)]
+pub struct Transmission {
+    pub wavelengths_nm: Vec<f64>,
+    pub matrices: Vec<crate::photonics::Matrix>,
+}
+
+pub fn transmission(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &dyn Documents,
+    machine: &Machine,
+    root: Option<DocId>,
+    wavelengths_nm: &[f64],
+) -> Result<Transmission, String> {
+    let settled = settle(layout, cell_um, docs, machine, root, &Options::default())?;
+    if !settled.stable {
+        return Err("The circuit did not settle; a feedback loop may be oscillating".into());
+    }
+    let ports = &settled.built.ports;
+    if ports.inputs.is_empty() || ports.outputs.is_empty() {
+        return Err("It needs light Input and Output ports (or pins) to have S-parameters".into());
+    }
+    let circuit = &settled.circuit;
+    let matrices = crate::photonics::par::try_map(wavelengths_nm, |&wl| circuit.transfer_matrix(wl, &ports.inputs, &ports.outputs))
+        .map_err(|e| e.to_string())?;
+    Ok(Transmission { wavelengths_nm: wavelengths_nm.to_vec(), matrices })
+}
+
+/// The circuit of a layout once its electronics and light agree, with the
+/// light of its sources.
+struct Settled {
+    circuit: Circuit,
+    solutions: Vec<crate::photonics::Solution>,
+    built: Built,
+    source_colors: HashMap<u32, [u8; 3]>,
+    iteration: usize,
+    stable: bool,
+    signals: HashMap<Key, f64>,
+}
+
+fn settle(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &dyn Documents,
+    machine: &Machine,
+    root: Option<DocId>,
+    options: &Options,
+) -> Result<Settled, String> {
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
     // The last round's light, turned into an outcome once it settles: the
@@ -737,7 +859,7 @@ pub fn simulate(
         };
         electronics.eval(layout, &[], &machine.inputs);
         if let Some(e) = electronics.errors.first() {
-            return Outcome::failed(e.clone());
+            return Err(e.clone());
         }
 
         let mut optics = Optics {
@@ -751,14 +873,8 @@ pub fn simulate(
             colors: HashMap::new(),
         };
         let mut circuit = Circuit::new();
-        let built = match optics.build(&mut circuit, layout, &[], cell_um) {
-            Ok(b) => b,
-            Err(e) => return Outcome::failed(e),
-        };
-        let solutions = match circuit.simulate_sources() {
-            Ok(s) => s,
-            Err(e) => return Outcome::failed(e.to_string()),
-        };
+        let built = optics.build(&mut circuit, layout, &[], cell_um)?;
+        let solutions = circuit.simulate_sources().map_err(|e| e.to_string())?;
         let total = |f: &dyn Fn(&crate::photonics::Solution) -> f64| solutions.iter().map(f).fold(0.0, |a, b| a + b);
         let new_powers: HashMap<Key, f64> = optics
             .sensors
@@ -771,14 +887,24 @@ pub fn simulate(
         signals = electronics.signals;
         powers = new_powers;
 
-        last = Some((solutions, built, source_colors, iteration, stable));
+        last = Some(Settled { circuit, solutions, built, source_colors, iteration, stable, signals: signals.clone() });
         if stable {
             break;
         }
     }
-    let Some((solutions, built, source_colors, iteration, stable)) = last else {
-        return Outcome::failed("nothing to simulate");
-    };
+    last.ok_or_else(|| "nothing to simulate".to_owned())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn outcome_of(
+    layout: &Layout,
+    solutions: Vec<crate::photonics::Solution>,
+    built: Built,
+    source_colors: HashMap<u32, [u8; 3]>,
+    iteration: usize,
+    stable: bool,
+    signals: HashMap<Key, f64>,
+) -> Outcome {
     let total = |f: &dyn Fn(&crate::photonics::Solution) -> f64| solutions.iter().map(f).fold(0.0, |a, b| a + b);
         let colors: Vec<Option<[u8; 3]>> =
             solutions.iter().map(|s| s.source().and_then(|id| source_colors.get(&id).copied())).collect();
@@ -849,7 +975,17 @@ pub fn simulate(
 /// Advance the clock: every register stores its data inputs (when its write
 /// input is high or unconnected), using the signals of a settled `outcome`.
 pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outcome: &Outcome) {
-    fn walk(layout: &Layout, path: &[InstanceId], docs: &dyn Documents, signals: &HashMap<Key, f64>, out: &mut HashMap<(Path, InstanceId), Vec<f64>>, depth: usize) {
+    #[allow(clippy::too_many_arguments)]
+    fn walk(
+        layout: &Layout,
+        path: &[InstanceId],
+        docs: &dyn Documents,
+        signals: &HashMap<Key, f64>,
+        out: &mut HashMap<(Path, InstanceId), Vec<f64>>,
+        scripts: &HashMap<(Path, InstanceId), String>,
+        script_updates: &mut HashMap<(Path, InstanceId), String>,
+        depth: usize,
+    ) {
         if depth > 32 {
             return;
         }
@@ -873,7 +1009,18 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
                     if let Some((child, _)) = docs.layout(*doc) {
                         let mut inner = path.to_vec();
                         inner.push(inst.id);
-                        walk(child, &inner, docs, signals, out, depth + 1);
+                        walk(child, &inner, docs, signals, out, scripts, script_updates, depth + 1);
+                    }
+                }
+                BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() => {
+                    let item = Item::Box(inst.id);
+                    let signals: Vec<Option<f64>> = (0..m.signal_inputs.len()).map(|k| input(item, k)).collect();
+                    let key = (path.to_vec(), inst.id);
+                    match script_tick(m, &signals, scripts.get(&key)) {
+                        Ok(next) => {
+                            script_updates.insert(key, next);
+                        }
+                        Err(e) => tracing::warn!("“{}” on a clock tick: {e}", m.name),
                     }
                 }
                 BlockRef::Builtin(_) => {}
@@ -881,9 +1028,39 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
         }
     }
     let mut updates = HashMap::new();
-    walk(layout, &[], docs, &outcome.signals, &mut updates, 0);
+    let mut script_updates = HashMap::new();
+    walk(layout, &[], docs, &outcome.signals, &mut updates, &machine.scripts, &mut script_updates, 0);
     machine.registers.extend(updates);
+    machine.scripts.extend(script_updates);
     machine.tick += 1;
+}
+
+/// A scripted component's signal outputs.
+#[cfg(not(target_arch = "wasm32"))]
+fn script_outputs(m: &crate::panels::models::ModelSpec, signals: &[Option<f64>], state: Option<&String>) -> Result<Vec<f64>, String> {
+    let (engine, declared) = crate::panels::script::engine(m.script().unwrap_or_default())?;
+    let state = state.cloned().unwrap_or_else(|| declared.state.clone());
+    let e = engine.lock().map_err(|_| "script engine poisoned")?;
+    e.outputs(&declared, signals, &state)
+}
+
+/// A scripted component's next state on a clock tick.
+#[cfg(not(target_arch = "wasm32"))]
+fn script_tick(m: &crate::panels::models::ModelSpec, signals: &[Option<f64>], state: Option<&String>) -> Result<String, String> {
+    let (engine, declared) = crate::panels::script::engine(m.script().unwrap_or_default())?;
+    let state = state.cloned().unwrap_or_else(|| declared.state.clone());
+    let e = engine.lock().map_err(|_| "script engine poisoned")?;
+    e.tick(&declared, signals, &state)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn script_outputs(_: &crate::panels::models::ModelSpec, _: &[Option<f64>], _: Option<&String>) -> Result<Vec<f64>, String> {
+    Err("scripted components run in the desktop app".into())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn script_tick(_: &crate::panels::models::ModelSpec, _: &[Option<f64>], _: Option<&String>) -> Result<String, String> {
+    Err("scripted components run in the desktop app".into())
 }
 
 /// Read a number from bits listed most significant first.

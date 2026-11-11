@@ -62,6 +62,81 @@ pub struct Readout {
     pub insertion_loss_db: Option<f64>,
     /// Peak over minimum, in dB.
     pub extinction_db: f64,
+    /// Resonances, for a wavelength sweep: their spacing, width and Q.
+    pub spectrum: Option<Spectrum>,
+}
+
+/// The resonances in a spectrum: dips (a ring's through port) or peaks (its
+/// drop port), each where the power is beyond halfway between the curve's
+/// lowest and highest.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spectrum {
+    /// Whether the resonances are dips (else peaks).
+    pub dips: bool,
+    /// Where each resonance is, in nm, in order.
+    pub resonances: Vec<f64>,
+    /// Free spectral range: the mean spacing of neighbouring resonances, nm.
+    pub fsr_nm: Option<f64>,
+    /// Full width at half depth (or height) of the strongest resonance, nm;
+    /// none when the sweep has too few points across it.
+    pub fwhm_nm: Option<f64>,
+    /// Quality factor: wavelength over width.
+    pub q: Option<f64>,
+}
+
+/// Find the resonances in `ys` (power) over `xs` (wavelengths, ascending).
+pub fn spectrum(xs: &[f64], ys: &[f64]) -> Option<Spectrum> {
+    let n = xs.len().min(ys.len());
+    if n < 5 {
+        return None;
+    }
+    let (lo, hi) = ys[..n].iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &y| (a.min(y), b.max(y)));
+    // Under ~0.5 dB of contrast there is nothing to measure.
+    if hi <= 0.0 || hi.is_nan() || (hi - lo) / hi < 0.1 {
+        return None;
+    }
+    let half = (lo + hi) / 2.0;
+    let mut sorted = ys[..n].to_vec();
+    sorted.sort_by(f64::total_cmp);
+    // Mostly high with narrow dips, or mostly low with narrow peaks.
+    let dips = sorted[n / 2] > half;
+    let inside = |y: f64| if dips { y < half } else { y > half };
+    // Where the curve crosses `half` between samples k and k + 1.
+    let cross = |k: usize| xs[k] + (half - ys[k]) / (ys[k + 1] - ys[k]) * (xs[k + 1] - xs[k]);
+    let mut resonances = Vec::new();
+    let mut widths: Vec<(f64, f64, f64)> = Vec::new(); // (width, centre, depth)
+    let mut k = 0;
+    while k < n {
+        if !inside(ys[k]) {
+            k += 1;
+            continue;
+        }
+        let start = k;
+        while k < n && inside(ys[k]) {
+            k += 1;
+        }
+        let end = k - 1;
+        let best = (start..=end).fold(start, |b, j| if (ys[j] < ys[b]) == dips { j } else { b });
+        // Refine the centre with a parabola through the extreme and its neighbours.
+        let centre = if best > 0 && best + 1 < n {
+            let (a, b, c) = (ys[best - 1], ys[best], ys[best + 1]);
+            let d = a - 2.0 * b + c;
+            let shift = if d.abs() > 0.0 { 0.5 * (a - c) / d } else { 0.0 };
+            xs[best] + shift.clamp(-1.0, 1.0) * (xs[best + 1] - xs[best - 1]) / 2.0
+        } else {
+            xs[best]
+        };
+        resonances.push(centre);
+        // A width needs both edges inside the sweep and a few points across.
+        if start > 0 && end + 1 < n && end - start >= 2 {
+            widths.push((cross(end) - cross(start - 1), centre, (ys[best] - half).abs()));
+        }
+    }
+    let fsr_nm = (resonances.len() >= 2).then(|| (resonances[resonances.len() - 1] - resonances[0]) / (resonances.len() - 1) as f64);
+    let strongest = widths.iter().max_by(|a, b| a.2.total_cmp(&b.2));
+    let fwhm_nm = strongest.map(|w| w.0.abs());
+    let q = strongest.filter(|w| w.0.abs() > 0.0).map(|w| w.1 / w.0.abs());
+    Some(Spectrum { dips, resonances, fsr_nm, fwhm_nm, q })
 }
 
 /// A sweepable parameter: name, unit, sensible range.
@@ -370,6 +445,11 @@ pub fn run(
 }
 
 impl SweepResult {
+    /// Whether the x axis is wavelength (so resonances can be measured).
+    pub fn is_wavelength(&self) -> bool {
+        self.x_label.starts_with("Wavelength")
+    }
+
     /// Peak, minimum, insertion loss and extinction ratio of each curve.
     pub fn readouts(&self) -> Vec<Readout> {
         self.series
@@ -389,6 +469,7 @@ impl SweepResult {
                     min_at: self.xs[lo],
                     insertion_loss_db: input.map(|r| db(r) - db(s.power[hi])),
                     extinction_db: db(s.power[hi]) - db(s.power[lo]),
+                    spectrum: self.is_wavelength().then(|| spectrum(&self.xs, &s.power)).flatten(),
                 }
             })
             .collect()
@@ -397,6 +478,34 @@ impl SweepResult {
     /// Power relative to the input at each point, in dB.
     pub fn relative_db(&self, series: &Series) -> Vec<f64> {
         series.power.iter().zip(&self.reference).map(|(&p, &r)| if r > 0.0 { db(p / r) } else { DB_FLOOR }).collect()
+    }
+
+    /// The readouts as CSV, one row per output.
+    pub fn readouts_csv(&self) -> String {
+        let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+        let opt = |v: Option<f64>| v.map_or_else(String::new, |v| format!("{v}"));
+        let mut out = format!(
+            "\"output\",\"peak (mW)\",{},\"minimum (mW)\",\"minimum at\",\"insertion loss (dB)\",\"extinction (dB)\",\"resonances\",\"FSR (nm)\",\"width (nm)\",\"Q\"\n",
+            quote(&format!("peak at ({})", self.x_label))
+        );
+        for r in self.readouts() {
+            let s = r.spectrum.as_ref();
+            out += &format!(
+                "{},{},{},{},{},{},{},{},{},{},{}\n",
+                quote(&r.name),
+                r.peak,
+                r.peak_at,
+                r.min,
+                r.min_at,
+                opt(r.insertion_loss_db),
+                r.extinction_db,
+                s.map_or_else(String::new, |s| format!("{} {}", s.resonances.len(), if s.dips { "dips" } else { "peaks" })),
+                opt(s.and_then(|s| s.fsr_nm)),
+                opt(s.and_then(|s| s.fwhm_nm)),
+                opt(s.and_then(|s| s.q)),
+            );
+        }
+        out
     }
 
     /// The sweep as CSV: the x column, then one power column (mW) per output.

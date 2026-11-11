@@ -48,6 +48,9 @@ pub struct Grab {
     pub tweak: bool,
     /// Whole cells moved so far.
     pub offset: (i32, i32),
+    /// The last pointer position the grab followed, so arrow keys can move it
+    /// on from there.
+    pub mouse: Pos2,
 }
 
 #[derive(Debug)]
@@ -200,8 +203,17 @@ impl Editor {
             duplicated_from: None,
             tweak,
             offset: (0, 0),
+            mouse,
         });
         true
+    }
+
+    /// Move a grab on by whole cells, as if the pointer had moved that far.
+    pub fn nudge_grab(&mut self, layout: &mut Layout, cells: (i32, i32)) {
+        let Some(g) = &mut self.grab else { return };
+        g.start -= Vec2::new(cells.0 as f32, cells.1 as f32) * GRID;
+        let mouse = g.mouse;
+        self.update_grab(layout, mouse);
     }
 
     /// Copy the selection (with the wires between copied items) and start
@@ -279,6 +291,7 @@ impl Editor {
 
     pub fn update_grab(&mut self, layout: &mut Layout, mouse: Pos2) {
         let Some(g) = &mut self.grab else { return };
+        g.mouse = mouse;
         let delta = mouse - g.start;
         let mut cells = ((delta.x / GRID).round() as i32, (delta.y / GRID).round() as i32);
         match g.axis {

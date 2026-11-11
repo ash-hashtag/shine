@@ -57,6 +57,8 @@ pub enum CircuitError {
     /// A feedback loop has no unique steady state (e.g. a lossless cavity
     /// exactly on resonance).
     Singular,
+    /// A component defined elsewhere (data or a program) couldn't be made.
+    Model(String),
 }
 
 impl fmt::Display for CircuitError {
@@ -86,6 +88,7 @@ impl fmt::Display for CircuitError {
             Self::PortCountMismatch(n) => {
                 write!(f, "replacement for node {} has different port counts", n.0)
             }
+            Self::Model(why) => write!(f, "{why}"),
             Self::PortListLengthMismatch { from, to } => {
                 write!(f, "cannot connect {from} outputs to {to} inputs")
             }
@@ -441,6 +444,46 @@ mod tests {
                 assert_eq!(a == C64::ZERO, j != k, "only its own ring is lit");
             }
         }
+    }
+
+    #[test]
+    fn sources_in_separate_parts_share_lanes_exactly() {
+        // Part A: three independent lasers into one combiner (three lanes).
+        // Parts B and C: one laser each, both with source id 7, so their
+        // light is one coherent solution spanning both parts.
+        // Part D: a lone laser. Every solution must match its source alone.
+        let mut c = Circuit::new();
+        let comb = c.add(YCombiner);
+        let comb2 = c.add(YCombiner);
+        let det_a = c.add(Detector::new());
+        for (k, port) in [comb.input(0), comb.input(1), comb2.input(1)].into_iter().enumerate() {
+            let laser = c.add(Laser::new(1.0 + k as f64, 1550.0).with_source(10 + k as u32));
+            c.connect(laser.output(0), port).unwrap();
+        }
+        c.connect(comb.output(0), comb2.input(0)).unwrap();
+        c.connect(comb2.output(0), det_a.input(0)).unwrap();
+        let mut dets = vec![det_a];
+        for (amp, id) in [(0.5, 7), (0.25, 7), (2.0, 20)] {
+            let laser = c.add(Laser::new(amp, 1550.0).with_source(id));
+            let det = c.add(Detector::new());
+            c.connect(laser.output(0), det.input(0)).unwrap();
+            dets.push(det);
+        }
+        let together = c.simulate_sources().unwrap();
+        let ids: Vec<_> = together.iter().map(|s| s.source().unwrap()).collect();
+        assert_eq!(ids, vec![7, 10, 11, 12, 20]);
+        let program = c.compile(1550.0).unwrap();
+        for sol in &together {
+            let alone = program.run_sources(&[sol.source().unwrap()]).unwrap().remove(0);
+            for &det in &dets {
+                let (a, b) = (sol.detected_power(det), alone.detected_power(det));
+                assert!((a - b).abs() < 1e-12, "source {:?}, detector {det:?}: {a} vs {b}", sol.source());
+            }
+        }
+        let seven = &together[0];
+        assert!((seven.detected_power(dets[1]) - 0.25).abs() < 1e-12);
+        assert!((seven.detected_power(dets[2]) - 0.0625).abs() < 1e-12);
+        assert_eq!(seven.detected_power(dets[3]), 0.0);
     }
 
     #[test]

@@ -24,6 +24,9 @@ Options:
   --sweep ITEM.PARAM=FROM:TO[:POINTS]
                                   sweep a parameter, e.g. --sweep 'Phase shifter.phase=0:6.28'
   --box-outputs                   also include the light leaving boxes
+  --readouts                      with a sweep: each output's peak, minimum, insertion
+                                  loss, extinction and resonances (FSR, width, Q) as CSV,
+                                  instead of the curves
   --clock N                       tick the clock N times first (registers)
   --csv                           readings as CSV (sweeps are always CSV)
   --out FILE                      write to FILE instead of standard output
@@ -60,6 +63,7 @@ pub struct Args {
     pub laser: Option<String>,
     pub sweep: Option<(String, String, f64, f64, usize)>,
     pub box_outputs: bool,
+    pub readouts: bool,
     pub clock: u64,
     pub csv: bool,
     pub out: Option<String>,
@@ -67,7 +71,7 @@ pub struct Args {
 }
 
 /// `FROM:TO[:POINTS]`.
-fn range(text: &str, default_points: usize) -> Result<(f64, f64, usize), String> {
+pub(crate) fn range(text: &str, default_points: usize) -> Result<(f64, f64, usize), String> {
     let parts: Vec<&str> = text.split(':').collect();
     let num = |s: &str| s.trim().parse::<f64>().map_err(|_| format!("“{s}” isn't a number (expected FROM:TO[:POINTS])"));
     match parts.as_slice() {
@@ -106,6 +110,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 a.sweep = Some((item.trim().to_owned(), param.trim().to_owned(), from, to, points));
             }
             "--box-outputs" => a.box_outputs = true,
+            "--readouts" => a.readouts = true,
             "--clock" => a.clock = value("--clock")?.parse().map_err(|_| "--clock needs a number of ticks")?,
             "--csv" => a.csv = true,
             "--out" => a.out = Some(value("--out")?),
@@ -234,7 +239,7 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
         if !args.box_outputs && !only_boxes {
             result.series.retain(|s| !s.from_box);
         }
-        return Ok(result.to_csv());
+        return Ok(if args.readouts { result.readouts_csv() } else { result.to_csv() });
     }
 
     let o = sim::simulate(layout, cell_um, &project, &machine, Some(id), &Options::default());
@@ -260,7 +265,7 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
 }
 
 /// `--doc NAME`, or the first document that isn't a component.
-fn choose_doc(project: &Project, name: Option<&str>) -> Result<DocId, String> {
+pub(crate) fn choose_doc(project: &Project, name: Option<&str>) -> Result<DocId, String> {
     match name {
         Some(name) => project.find(name).ok_or_else(|| {
             let names: Vec<&str> = project.documents.iter().map(|d| d.name.as_str()).collect();
@@ -300,6 +305,8 @@ pub fn main(args: &[String]) -> i32 {
         }
     }
 }
+
+pub mod export;
 
 #[cfg(test)]
 mod tests;

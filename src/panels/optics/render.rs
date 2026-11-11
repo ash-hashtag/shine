@@ -416,7 +416,7 @@ mod tests {
         };
         assert_eq!(
             beam_label(&beam, PowerUnit::MilliWatt),
-            "λ: 650.0 nm\nPower: 250 µW (-6.02 dBm)\nAmplitude: 0.5000\nPhase: 1.500 π"
+            "λ: 650.0 nm\nPower: 0.250 mW (-6.02 dBm)\nAmplitude: 0.5000\nPhase: 1.500 π"
         );
     }
 

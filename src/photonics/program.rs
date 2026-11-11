@@ -141,8 +141,11 @@ pub struct Row {
 enum Sources<'a> {
     Off,
     All,
-    /// Lane `l` carries only the sources whose id is `ids[l]`: one mutually
-    /// coherent group per lane, all solved in one vectorised pass.
+    /// Each listed source id emits only in its lane (a global lane index);
+    /// the others are off. A lane may carry several ids whose light never
+    /// meets, all solved in one vectorised pass.
+    Lanes(&'a HashMap<u32, usize>),
+    /// Lane `l` carries only the sources whose id is `ids[l]`.
     PerLane(&'a [u32]),
 }
 
@@ -185,6 +188,46 @@ pub struct Program {
     rows: Vec<Row>,
     terms: Vec<Term>,
     blocks: Vec<SolveBlock>,
+    /// For each slot, the optically connected part of the circuit it lies
+    /// in ([`NO_GROUP`] for open inputs). Light from one part never reaches
+    /// another, so sources in different parts can share a lane.
+    slot_group: Arc<Vec<u32>>,
+    /// The part each source id emits in.
+    source_group: HashMap<u32, u32>,
+}
+
+const NO_GROUP: u32 = u32::MAX;
+
+/// Labels each node with its weakly connected part of the circuit, treating
+/// emitters that share a source id as connected (their light is one coherent
+/// field, so they must stay in one lane).
+fn connected_parts(circuit: &Circuit, emitters: &[(usize, u32)]) -> Vec<u32> {
+    let n = circuit.nodes.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut v: usize) -> usize {
+        while parent[v] != v {
+            parent[v] = parent[parent[v]];
+            v = parent[v];
+        }
+        v
+    }
+    let union = |parent: &mut Vec<usize>, a: usize, b: usize| {
+        let (ra, rb) = (find(parent, a), find(parent, b));
+        if ra != rb {
+            parent[ra.max(rb)] = ra.min(rb);
+        }
+    };
+    for (v, node) in circuit.nodes.iter().enumerate() {
+        for sink in node.sinks.iter().flatten() {
+            union(&mut parent, v, sink.node.index());
+        }
+    }
+    let mut emitter_of_id: HashMap<u32, usize> = HashMap::new();
+    for &(v, id) in emitters {
+        let first = *emitter_of_id.entry(id).or_insert(v);
+        union(&mut parent, v, first);
+    }
+    (0..n).map(|v| find(&mut parent, v) as u32).collect()
 }
 
 impl Program {
@@ -204,7 +247,30 @@ impl Program {
                 in_open: Vec::new(),
                 num_slots: 0,
             }),
+            slot_group: Arc::new(Vec::new()),
+            source_group: HashMap::new(),
         };
+
+        // Sharing lanes only pays with several independent sources.
+        let emitters: Vec<(usize, u32)> = circuit
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| !n.component.emission_wavelengths().is_empty())
+            .map(|(v, n)| (v, n.component.source_id()))
+            .collect();
+        if emitters.iter().any(|e| e.1 != emitters[0].1) {
+            let parts = connected_parts(circuit, &emitters);
+            let mut slot_group = vec![NO_GROUP; layout.num_slots];
+            for (v, node) in circuit.nodes.iter().enumerate() {
+                let first = layout.out_offset[v] as usize;
+                slot_group[first..first + node.sinks.len()].fill(parts[v]);
+            }
+            for &(v, id) in &emitters {
+                program.source_group.insert(id, parts[v]);
+            }
+            program.slot_group = Arc::new(slot_group);
+        }
 
         for scc in strongly_connected_components(circuit) {
             let cyclic = scc.len() > 1 || {
@@ -371,13 +437,42 @@ impl Program {
 
     /// The light of each group of sources on its own: solution `k` holds the
     /// fields from the sources with id `sources[k]` only, nothing injected
-    /// on open inputs. All groups run together, one per SIMD lane.
+    /// on open inputs. All groups run together, one per SIMD lane, except
+    /// that sources in parts of the circuit that aren't connected share a
+    /// lane: their fields never touch the same slot, so each one's solution
+    /// is its lane with the other parts masked out. Many copies of a
+    /// sub-circuit then cost as many lanes as one copy has sources.
     pub fn run_sources(&self, sources: &[u32]) -> Result<Vec<Solution>, CircuitError> {
         if sources.is_empty() {
             return Ok(Vec::new());
         }
-        let batch = self.execute(&[], Mat::<C64>::zeros(0, sources.len()).as_ref(), Sources::PerLane(sources))?;
-        Ok(sources.iter().enumerate().map(|(lane, &id)| batch.lane(lane, id)).collect())
+        let one_lane_each = |batch: Solution| sources.iter().enumerate().map(|(lane, &id)| batch.lane(lane, id)).collect();
+        if sources.len() == 1 || self.source_group.is_empty() {
+            let batch = self.execute(&[], Mat::<C64>::zeros(0, sources.len()).as_ref(), Sources::PerLane(sources))?;
+            return Ok(one_lane_each(batch));
+        }
+        // Within a part, each source takes the next free lane of that part.
+        let mut next_lane: HashMap<Option<u32>, usize> = HashMap::new();
+        let assigned: Vec<(u32, usize, Option<u32>)> = sources
+            .iter()
+            .map(|&id| {
+                let group = self.source_group.get(&id).copied();
+                let next = next_lane.entry(group).or_insert(0);
+                *next += 1;
+                (id, *next - 1, group)
+            })
+            .collect();
+        if next_lane.len() == 1 {
+            let batch = self.execute(&[], Mat::<C64>::zeros(0, sources.len()).as_ref(), Sources::PerLane(sources))?;
+            return Ok(one_lane_each(batch));
+        }
+        let lanes = next_lane.values().copied().max().unwrap_or(0);
+        let lane_of: HashMap<u32, usize> = assigned.iter().map(|&(id, lane, _)| (id, lane)).collect();
+        let batch = self.execute(&[], Mat::<C64>::zeros(0, lanes).as_ref(), Sources::Lanes(&lane_of))?;
+        Ok(assigned
+            .iter()
+            .map(|&(id, lane, group)| batch.lane_view(lane, id, (self.slot_group.clone(), group.unwrap_or(NO_GROUP))))
+            .collect())
     }
 
     /// Linear response from `inputs` to `outputs`, with sources disabled.
@@ -428,6 +523,7 @@ impl Program {
                 program: self,
                 state: &mut state,
                 sources,
+                first_lane: start,
             });
             state
         });
@@ -437,7 +533,9 @@ impl Program {
             wavelength_nm: self.wavelength_nm,
             source: None,
             lanes,
-            chunks,
+            first_lane: 0,
+            chunks: Arc::new(chunks),
+            mask: None,
         })
     }
 }
@@ -483,6 +581,8 @@ struct Execute<'a> {
     program: &'a Program,
     state: &'a mut State,
     sources: Sources<'a>,
+    /// Global index of the chunk's first lane.
+    first_lane: usize,
 }
 
 impl WithSimd for Execute<'_> {
@@ -494,6 +594,7 @@ impl WithSimd for Execute<'_> {
             program,
             state,
             sources,
+            first_lane,
         } = self;
         let lanes = state.lanes;
         let mut acc_re = vec![0.0; lanes];
@@ -515,6 +616,17 @@ impl WithSimd for Execute<'_> {
                         let src = if row.source_id == id { row.source } else { C64::ZERO };
                         acc_re[l] = src.re;
                         acc_im[l] = src.im;
+                    }
+                }
+                Sources::Lanes(lane_of) => {
+                    acc_re.fill(0.0);
+                    acc_im.fill(0.0);
+                    if row.source != C64::ZERO
+                        && let Some(&lane) = lane_of.get(&row.source_id)
+                        && (first_lane..first_lane + lanes).contains(&lane)
+                    {
+                        acc_re[lane - first_lane] = row.source.re;
+                        acc_im[lane - first_lane] = row.source.im;
                     }
                 }
             }
@@ -582,7 +694,14 @@ pub struct Solution {
     wavelength_nm: f64,
     source: Option<u32>,
     lanes: usize,
-    chunks: Vec<State>,
+    /// Lane `l` of this solution is lane `first_lane + l` of `chunks`, which
+    /// may be shared with other solutions of the same run.
+    first_lane: usize,
+    chunks: Arc<Vec<State>>,
+    /// When the lane is shared by sources in separate parts of the circuit:
+    /// the part of each slot and this solution's part. Slots elsewhere read
+    /// as zero.
+    mask: Option<(Arc<Vec<u32>>, u32)>,
 }
 
 impl Solution {
@@ -599,14 +718,13 @@ impl Solution {
         self.lanes
     }
 
-    /// One sample of a batch as its own solution, tagged with `source`.
+    /// One sample of a batch as its own solution, tagged with `source`: a
+    /// compact copy, quickest to read from.
     fn lane(&self, lane: usize, source: u32) -> Solution {
-        let chunk = &self.chunks[lane / CHUNK_LANES];
-        let l = lane % CHUNK_LANES;
         let slots = self.layout.num_slots;
         let mut state = State::zeros(slots, 1);
         for slot in 0..slots {
-            let v = chunk.get(slot, l);
+            let v = self.value(slot, lane);
             state.re[slot] = v.re;
             state.im[slot] = v.im;
         }
@@ -615,12 +733,37 @@ impl Solution {
             wavelength_nm: self.wavelength_nm,
             source: Some(source),
             lanes: 1,
-            chunks: vec![state],
+            first_lane: 0,
+            chunks: Arc::new(vec![state]),
+            mask: None,
+        }
+    }
+
+    /// One sample of a batch, sharing the batch's fields instead of copying
+    /// them, with the slots outside `mask`'s part reading as zero. For lanes
+    /// shared by many sources, where a copy per source would cost more than
+    /// the run.
+    fn lane_view(&self, lane: usize, source: u32, mask: (Arc<Vec<u32>>, u32)) -> Solution {
+        assert!(lane < self.lanes, "lane {lane} out of range");
+        Solution {
+            layout: self.layout.clone(),
+            wavelength_nm: self.wavelength_nm,
+            source: Some(source),
+            lanes: 1,
+            first_lane: self.first_lane + lane,
+            chunks: self.chunks.clone(),
+            mask: Some(mask),
         }
     }
 
     fn value(&self, slot: usize, lane: usize) -> C64 {
         assert!(lane < self.lanes, "lane {lane} out of range");
+        if let Some((groups, group)) = &self.mask
+            && groups[slot] != *group
+        {
+            return C64::ZERO;
+        }
+        let lane = self.first_lane + lane;
         self.chunks[lane / CHUNK_LANES].get(slot, lane % CHUNK_LANES)
     }
 
@@ -656,6 +799,9 @@ impl Solution {
 
     /// Power arriving on all inputs of `node` for every sample, vectorised.
     pub fn detected_power_batch(&self, node: NodeId) -> Vec<f64> {
+        if self.first_lane != 0 || self.mask.is_some() || self.chunks.iter().map(|c| c.lanes).sum::<usize>() != self.lanes {
+            return (0..self.lanes).map(|l| self.detected_power_at(node, l)).collect();
+        }
         struct Powers<'a> {
             sol: &'a Solution,
             node: NodeId,
@@ -665,7 +811,7 @@ impl Solution {
             #[inline(always)]
             fn with_simd<S: Simd>(self, simd: S) -> Vec<f64> {
                 let mut out = Vec::with_capacity(self.sol.lanes);
-                for chunk in &self.sol.chunks {
+                for chunk in self.sol.chunks.iter() {
                     let mut acc = vec![0.0; chunk.lanes];
                     for i in self.sol.layout.node_inputs(self.node) {
                         let (re, im) = chunk.slot(self.sol.layout.in_slot[i] as usize);

@@ -49,7 +49,10 @@ Parts with signal terminals:
 
 - **Laser** (input on top): the amplitude is multiplied by the signal.
 - **Phase Shifter** (input on top): adds π per unit.
-- **Attenuator** (input on top): multiplies the transmission.
+- **Attenuator** (input on top): multiplies the transmission, so 0 blocks the light and 1
+  leaves it as set; the inspector shows what passes now.
+- **Waveguide attenuator** and **Waveguide phase shifter** blocks (input on top): the
+  same for light in waveguides.
 - **Detector** (output below): the received power, or 0/1 with *bit* on.
 - the electronics blocks, function cells, and components' **Signal in/out** pins.
 

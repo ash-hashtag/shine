@@ -120,7 +120,7 @@ fn version_1_files_are_upgraded() {
             v1::Document {
                 id: DocId(3),
                 name: "Old layout".into(),
-                component: Some(ComponentMeta { initials: "OL".into(), description: "d".into() }),
+                component: Some(v6::Meta6 { initials: "OL".into(), description: "d".into() }),
                 content: v1::Content::Layout {
                     cell_um: 2.5,
                     components: vec![
@@ -314,4 +314,108 @@ fn exports_and_instance_values_are_saved_and_format_5_files_open() {
     bytes[4..6].copy_from_slice(&5u16.to_le_bytes());
     let l = Project::from_bytes(&bytes).unwrap().doc(DocId(1)).unwrap().layout().clone();
     assert!(l.exports.is_empty() && l.instances[0].params.is_empty() && l.instances[0].cell == (1, 1));
+}
+
+/// A component using another one: a box holding the example Full adder.
+fn nested_project() -> (Project, DocId, DocId) {
+    let mut p = Project::new();
+    let fa = examples::import_component(&mut p, 0).unwrap();
+    let mut outer = Layout::default();
+    outer.add_instance(BlockRef::Component(fa), (0, 0));
+    let wrapper = p.add_component("Two-bit thing", "TB", "Uses a full adder", outer, 10.0);
+    (p, fa, wrapper)
+}
+
+#[test]
+fn appearance_is_saved_and_format_6_still_opens() {
+    use crate::panels::appearance::{BoxShape, Icon, IconFormat};
+    let (mut p, fa, _) = nested_project();
+    p.doc_mut(fa).unwrap().component.as_mut().unwrap().appearance = Appearance {
+        color: Some([10, 200, 30]),
+        shape: BoxShape::Chamfered,
+        icon: Some(Icon::new(IconFormat::Svg, b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec())),
+    };
+    let back = Project::from_bytes(&p.to_bytes()).unwrap();
+    assert_eq!(back.doc(fa).unwrap().component, p.doc(fa).unwrap().component);
+    assert_eq!(back.catalog().get(fa).unwrap().appearance.shape, BoxShape::Chamfered);
+
+    // The same project as format 6 wrote it: no appearance.
+    let old = v6::Project {
+        next_id: 9,
+        documents: p
+            .documents
+            .iter()
+            .map(|d| v6::Document {
+                id: d.id,
+                name: d.name.clone(),
+                component: d.component.as_ref().map(|m| v6::Meta6 { initials: m.initials.clone(), description: m.description.clone() }),
+                cell_um: d.panel().cell_um,
+                layout: d.layout().clone(),
+            })
+            .collect(),
+    };
+    let mut bytes = file_format::MAGIC.to_vec();
+    bytes.extend_from_slice(&6u16.to_le_bytes());
+    bytes.extend(postcard::to_allocvec(&old).unwrap());
+    let opened = Project::from_bytes(&bytes).unwrap();
+    let meta = opened.doc(fa).unwrap().component.clone().unwrap();
+    assert_eq!(meta.initials, "FA");
+    assert_eq!(meta.appearance, Appearance::default());
+}
+
+#[test]
+fn components_move_between_projects_with_what_they_use() {
+    let (p, fa, wrapper) = nested_project();
+    let bundle = p.extract(wrapper).unwrap();
+    assert_eq!(bundle.documents.iter().map(|d| d.id).collect::<Vec<_>>(), vec![wrapper, fa], "itself first, then what it uses");
+
+    // Into a project that already has a layout using ids 1 and 2.
+    let mut other = Project::new();
+    other.add_layout("Layout", Layout::default(), 10.0);
+    other.add_layout("Another", Layout::default(), 10.0);
+    let here = other.import(&bundle).unwrap();
+    assert_eq!(other.documents.len(), 4);
+    let inner = match other.doc(here).unwrap().layout().instances[0].block {
+        BlockRef::Component(id) => id,
+        _ => unreachable!(),
+    };
+    assert_eq!(other.doc(inner).unwrap().name, "Full adder", "the box points at the copied adder");
+    let o = other.simulate(here, &Default::default());
+    assert!(o.error.is_none(), "{:?}", o.error);
+
+    // Again: nothing new.
+    assert_eq!(other.import(&bundle), Some(here));
+    assert_eq!(other.documents.len(), 4);
+
+    // A different component of the same name is kept apart.
+    let mut changed = p.extract(wrapper).unwrap();
+    changed.doc_mut(wrapper).unwrap().component.as_mut().unwrap().description = "Changed".into();
+    let second = other.import(&changed).unwrap();
+    assert_ne!(second, here);
+    assert_eq!(other.doc(second).unwrap().name, "Two-bit thing 2");
+    assert_eq!(other.documents.len(), 5, "the unchanged adder is shared");
+}
+
+#[test]
+fn a_waveguide_component_with_pins_works_inside_another_design() {
+    // Its Output pin used to start a beam inside it as well, so placing it
+    // failed with "already connected".
+    let mut p = Project::new();
+    let mut inner = Layout::default();
+    let a = inner.add_instance(BlockRef::Builtin(Builtin::InputPin { name: "a".into() }), (0, 0));
+    let dc = inner.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.25 }), (3, 0));
+    let bar = inner.add_instance(BlockRef::Builtin(Builtin::OutputPin { name: "bar".into() }), (7, 0));
+    let cross = inner.add_instance(BlockRef::Builtin(Builtin::OutputPin { name: "cross".into() }), (7, 2));
+    inner.connect_optical(PortRef { instance: a, port: 0 }, PortRef { instance: dc, port: 0 });
+    inner.connect_optical(PortRef { instance: dc, port: 0 }, PortRef { instance: bar, port: 0 });
+    inner.connect_optical(PortRef { instance: dc, port: 1 }, PortRef { instance: cross, port: 0 });
+    let c = p.add_component("Tap", "T", "", inner, 10.0);
+    let mut top = Layout::default();
+    let laser = top.add_instance(BlockRef::Builtin(Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: 1550.0 }), (0, 0));
+    let tap = top.add_instance(BlockRef::Component(c), (4, 0));
+    top.connect_optical(PortRef { instance: laser, port: 0 }, PortRef { instance: tap, port: 0 });
+    let id = p.add_layout("Top", top, 10.0);
+    let o = p.simulate(id, &Default::default());
+    assert!(o.error.is_none(), "{:?}", o.error);
+    assert!((o.port_power[&(tap, 0)] - 0.75).abs() < 1e-9 && (o.port_power[&(tap, 1)] - 0.25).abs() < 1e-9, "{:?}", o.port_power);
 }

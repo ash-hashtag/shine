@@ -1,5 +1,6 @@
 //! Workspace tests: documents, tabs, components and the full UI.
 
+use crate::panels::assets::AssetRef;
 use egui::{Event, Modifiers, Pos2, Rect, Vec2};
 
 use super::*;
@@ -264,9 +265,9 @@ fn example_components_are_placed_from_the_library() {
     let mut h = Harness::new();
     let id = ws.active.unwrap();
     h.frame(&mut ws, Vec::new());
-    panel(&mut ws, id).place(Placeable::Example(0), model::cell_center(2, 2));
+    panel(&mut ws, id).place(Placeable::Asset(AssetRef::Example(0)), model::cell_center(2, 2));
     h.frame(&mut ws, Vec::new());
-    panel(&mut ws, id).place(Placeable::Example(0), model::cell_center(2, 8));
+    panel(&mut ws, id).place(Placeable::Asset(AssetRef::Example(0)), model::cell_center(2, 8));
     h.frame(&mut ws, Vec::new());
     let fa = ws.project.find("Full adder").expect("imported once");
     assert_eq!(ws.project.documents.len(), 2);
@@ -320,10 +321,11 @@ fn saving_a_document_as_a_component() {
         doc.component,
         Some(ComponentMeta {
             initials: "BR".into(),
-            description: "Routes beams.".into()
+            description: "Routes beams.".into(),
+            appearance: Default::default(),
         })
     );
-    assert!(ws.status.as_ref().unwrap().0.contains("My components"));
+    assert!(ws.status.as_ref().unwrap().0.contains("This project"));
     assert_eq!(ws.project.catalog().components().count(), 1);
 
     // Renaming to a taken name picks a free one; initials are capped at 4.
@@ -403,8 +405,8 @@ fn project_files_round_trip_and_layouts_import() {
     assert_eq!(panel(&mut other, id).cell_um, 2.0);
 
     // Browser uploads arrive as bytes and open on the next frame.
-    other.incoming.lock().unwrap().push(("upload".into(), ws.project.to_bytes()));
-    other.incoming.lock().unwrap().push(("junk".into(), vec![0xff, 0x00]));
+    other.incoming.lock().unwrap().push(IncomingFile::new(FilePurpose::Open, "upload.shine", ws.project.to_bytes()));
+    other.incoming.lock().unwrap().push(IncomingFile::new(FilePurpose::Open, "junk", vec![0xff, 0x00]));
     Harness::new().frame(&mut other, Vec::new());
     assert!(other.status.as_ref().unwrap().0.contains("Open failed"));
     // The imported layout is unsaved, so the uploaded project waits for an answer.

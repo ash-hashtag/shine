@@ -2,12 +2,12 @@
 
 use egui::{Color32, Id, Pos2, RichText, Ui};
 
-use super::examples::component_examples;
 use super::canvas::source_letter;
 use super::model::{BlockRef, Builtin, Item, OpticComponentKind, Terminal, cell_of};
 use super::{Drag, Hit, MenuChoice, OpticsPanel, Request, Tool, WireRef, input_number, output_number, render};
 use crate::panels::circuit::sim;
 use crate::panels::prefs::{Palette, WAVELENGTH_PRESETS, is_visible};
+use crate::panels::assets::AssetRef;
 use crate::panels::project::{BlockDisplay, Catalog};
 use crate::panels::{ui_kit, units};
 
@@ -18,8 +18,9 @@ pub enum Placeable {
     Part(OpticComponentKind),
     /// A built-in block or a project component, drawn as a box.
     Block(BlockRef),
-    /// One of [`component_examples`]; the host adds it to the project first.
-    Example(usize),
+    /// A component from the asset library (or Shine's examples); the host
+    /// copies it into the project first.
+    Asset(AssetRef),
 }
 
 impl Placeable {
@@ -28,7 +29,7 @@ impl Placeable {
             Self::Part(OpticComponentKind::Detector { threshold }) if *threshold > 0.0 => "Threshold detector".into(),
             Self::Part(kind) => kind.name().into(),
             Self::Block(block) => catalog.display(block).name,
-            Self::Example(i) => component_examples().get(*i).map_or("Example", |e| e.name).into(),
+            Self::Asset(asset) => catalog.asset(*asset).map_or_else(|| "Library component".into(), |a| a.entry.name.clone()),
         }
     }
 }
@@ -40,16 +41,23 @@ pub struct Entry {
     pub description: String,
 }
 
-/// Library sections, in order.
+/// Library sections, in order: parts, then components (which the Assets
+/// tab shows in folders).
 pub const SECTIONS: [&str; 7] = [
     "Light & detection",
     "Free-space optics",
     "Electronics & I/O",
-    "Example components",
-    "My components",
     "Waveguide blocks",
     "Component ports",
+    "This project",
+    "Asset library",
 ];
+/// The first sections are parts, in the Parts tab.
+pub const PART_SECTIONS: usize = 5;
+/// The project's components.
+pub const PROJECT_SECTION: &str = SECTIONS[5];
+/// Components of the asset library, examples included.
+pub const ASSETS_SECTION: &str = SECTIONS[6];
 
 pub fn part_description(kind: &OpticComponentKind) -> &'static str {
     match kind {
@@ -77,8 +85,9 @@ fn matches(search: &str, name: &str, description: &str) -> bool {
     search.is_empty() || name.to_lowercase().contains(&search) || description.to_lowercase().contains(&search)
 }
 
-/// Every library entry matching `search`, grouped by section in [`SECTIONS`] order.
-pub fn entries(catalog: &Catalog, with_examples: bool, search: &str) -> Vec<Entry> {
+/// Every library entry matching `search`, grouped by section in
+/// [`SECTIONS`] order. Library components need a project (`in_project`).
+pub fn entries(catalog: &Catalog, in_project: bool, search: &str) -> Vec<Entry> {
     let palette = OpticComponentKind::palette();
     let mut out = Vec::new();
     let mut part = |section, kind: OpticComponentKind| {
@@ -99,7 +108,7 @@ pub fn entries(catalog: &Catalog, with_examples: bool, search: &str) -> Vec<Entr
         part(SECTIONS[1], k);
     }
     for &k in &palette[7..] {
-        part(SECTIONS[6], k);
+        part(SECTIONS[4], k);
     }
     let block = |section, b: Builtin| {
         let info = b.info();
@@ -111,42 +120,37 @@ pub fn entries(catalog: &Catalog, with_examples: bool, search: &str) -> Vec<Entr
         }
     };
     out.extend(Builtin::electronic_palette().into_iter().map(|b| block(SECTIONS[2], b)));
-    let examples = component_examples();
-    if with_examples {
-        out.extend(examples.iter().enumerate().map(|(i, e)| Entry {
-            section: SECTIONS[3],
-            item: Placeable::Example(i),
-            name: e.name.into(),
-            description: e.description.into(),
+    out.extend(catalog.components().map(|e| Entry {
+        section: PROJECT_SECTION,
+        item: Placeable::Block(BlockRef::Component(e.id)),
+        name: e.name.clone(),
+        description: e.description.clone(),
+    }));
+    if in_project {
+        out.extend(catalog.assets.iter().filter(|a| a.matches(search)).map(|a| Entry {
+            section: ASSETS_SECTION,
+            item: Placeable::Asset(a.asset),
+            name: a.entry.name.clone(),
+            description: a.entry.description.clone(),
         }));
     }
-    out.extend(
-        catalog
-            .components()
-            .filter(|e| !with_examples || !examples.iter().any(|x| x.name == e.name))
-            .map(|e| Entry {
-                section: SECTIONS[4],
-                item: Placeable::Block(BlockRef::Component(e.id)),
-                name: e.name.clone(),
-                description: e.description.clone(),
-            }),
-    );
     out.extend(
         Builtin::palette()
             .into_iter()
             .filter(|b| {
                 !matches!(b, Builtin::Laser { .. } | Builtin::Detector | Builtin::InputPin { .. } | Builtin::OutputPin { .. })
             })
-            .map(|b| block(SECTIONS[5], b)),
+            .map(|b| block(SECTIONS[3], b)),
     );
-    out.retain(|e| matches(search, &e.name, &e.description));
+    // Assets were searched by folder and port names too.
+    out.retain(|e| matches!(e.item, Placeable::Asset(_)) || matches(search, &e.name, &e.description));
     out.sort_by_key(|e| SECTIONS.iter().position(|s| *s == e.section));
     out
 }
 
 pub fn badge_fill(d: &BlockDisplay) -> Color32 {
     if d.component.is_some() {
-        ui_kit::accent(&d.name)
+        crate::panels::appearance::fill(&d.appearance, &d.name)
     } else {
         Color32::from_rgb(88, 96, 112)
     }
@@ -156,14 +160,18 @@ pub fn badge_fill(d: &BlockDisplay) -> Color32 {
 fn draw_icon(painter: &egui::Painter, rect: egui::Rect, item: &Placeable, catalog: &Catalog) {
     match item {
         Placeable::Part(kind) => render::draw_component(painter, rect.center(), kind, 1.0, 0.6),
+        Placeable::Block(block @ BlockRef::Component(_)) => {
+            let d = catalog.display(block);
+            crate::panels::appearance::paint_badge(painter, rect, &d.appearance, &d.name, &d.initials);
+        }
         Placeable::Block(block) => {
             let d = catalog.display(block);
             ui_kit::badge(painter, rect.shrink(1.0), &d.initials, badge_fill(&d), Color32::WHITE);
         }
-        Placeable::Example(i) => {
-            let e = &component_examples()[*i];
-            ui_kit::badge(painter, rect.shrink(1.0), e.initials, ui_kit::accent(e.name), Color32::WHITE);
-        }
+        Placeable::Asset(asset) => match catalog.asset(*asset) {
+            Some(a) => crate::panels::appearance::paint_badge(painter, rect, &a.entry.appearance, &a.entry.name, &a.entry.initials),
+            None => ui_kit::badge(painter, rect.shrink(1.0), "?", Color32::GRAY, Color32::WHITE),
+        },
     }
 }
 
@@ -188,6 +196,44 @@ pub fn block_tooltip(d: &BlockDisplay) -> String {
 }
 
 impl OpticsPanel {
+    /// What the signal on an item's control input does right now, e.g.
+    /// "0.5 × 50% → passes 25%"; `None` when nothing drives it.
+    pub fn drive_note(&self, item: Item) -> Option<String> {
+        let to = Terminal { item, port: 0 };
+        self.layout.signal_source(to)?;
+        let v = self.outcome()?.input(&self.layout, to);
+        let pct = |t: f64| format!("{:.0}%", t * 100.0);
+        let value = fmt_value(v);
+        Some(match item {
+            Item::Part(i) => match self.layout.components.get(i)?.kind {
+                OpticComponentKind::Attenuator { transmission } => {
+                    let t = transmission as f64;
+                    format!("{value} × {} → passes {}", pct(t), pct((t * v).clamp(0.0, 1.0)))
+                }
+                OpticComponentKind::PhaseShifter { phase } => {
+                    format!("adds {value}π → {:.2} rad", phase as f64 + std::f64::consts::PI * v)
+                }
+                OpticComponentKind::Laser { amplitude, .. } => {
+                    let mw = (amplitude as f64 * v).powi(2);
+                    format!("{value} × amplitude → {}", units::format_power(mw, self.prefs.power_unit))
+                }
+                _ => return None,
+            },
+            Item::Box(id) => match &self.layout.instance(id)?.block {
+                BlockRef::Builtin(b @ Builtin::Attenuator { loss_db }) => {
+                    let set = 10f64.powf(-loss_db / 10.0);
+                    let Builtin::Attenuator { loss_db: now } = b.driven(v) else { return None };
+                    let now = if now.is_finite() { format!("{now:.2} dB") } else { "blocked".into() };
+                    format!("{value} × {} → passes {} ({now})", pct(set), pct((set * v).clamp(0.0, 1.0)))
+                }
+                BlockRef::Builtin(Builtin::PhaseShifter { phase }) => {
+                    format!("adds {value}π → {:.2} rad", phase + std::f64::consts::PI * v)
+                }
+                _ => return None,
+            },
+        })
+    }
+
     fn library_row(&mut self, ui: &mut Ui, entry: &Entry) {
         let placeable = match (&entry.item, self.doc_id) {
             (Placeable::Block(BlockRef::Component(id)), Some(me)) => self.catalog.can_place(*id, me),
@@ -209,10 +255,15 @@ impl OpticsPanel {
         let tip = match &entry.item {
             _ if !placeable => format!("{}\n\nCan't be placed here: it uses this document.", entry.name),
             Placeable::Block(b) => block_tooltip(&self.catalog.display(b)),
-            Placeable::Example(_) => format!(
-                "{}\n{}\n\nPlacing it adds a copy to your project that you can open (Tab) and change.",
-                entry.name, entry.description
-            ),
+            Placeable::Asset(asset) => match self.catalog.asset(*asset) {
+                Some(a) => format!(
+                    "{}\n{}\n{}\n\nPlacing it adds a copy to your project that you can open (Tab) and change.",
+                    a.entry.name,
+                    a.entry.description,
+                    a.ports()
+                ),
+                None => entry.name.clone(),
+            },
             Placeable::Part(_) => format!("{}\n{}", entry.name, entry.description),
         };
         response.on_hover_text(tip);
@@ -223,19 +274,23 @@ impl OpticsPanel {
         ui.horizontal(|ui| {
             let browse = ui
                 .add(egui::Button::new("▦").min_size(egui::vec2(24.0, 0.0)))
+                .accessible_name("Browse parts and components")
                 .on_hover_text("Browse every part and component by category");
             ui.add(
                 egui::TextEdit::singleline(&mut self.search)
                     .hint_text("Search parts")
                     .desired_width(f32::INFINITY),
-            );
+            )
+            .accessible_name("Search parts");
             if browse.clicked() {
                 self.show_browser = !self.show_browser;
             }
         });
         ui.add_space(2.0);
         let search = self.search.clone();
-        let items = entries(&self.catalog, self.embedded, &search);
+        let mut items = entries(&self.catalog, self.embedded, &search);
+        // Components are in the Assets tab.
+        items.retain(|e| SECTIONS[..PART_SECTIONS].contains(&e.section));
         if !search.trim().is_empty() {
             for entry in &items {
                 self.library_row(ui, entry);
@@ -244,28 +299,18 @@ impl OpticsPanel {
                 ui.label(RichText::new("Nothing matches").weak());
             }
         } else {
-            for (k, section) in SECTIONS.into_iter().enumerate() {
-                let rows: Vec<&Entry> = items.iter().filter(|e| e.section == section).collect();
-                let my_components = section == SECTIONS[4];
-                if rows.is_empty() && !(my_components && self.embedded) {
+            for (k, section) in SECTIONS[..PART_SECTIONS].iter().enumerate() {
+                let rows: Vec<&Entry> = items.iter().filter(|e| e.section == *section).collect();
+                if rows.is_empty() {
                     continue;
                 }
                 // Folders: the essentials start open, the rest stay out of the way.
                 egui::CollapsingHeader::new(RichText::new(format!("{section}  ·  {}", rows.len())).strong())
-                    .id_salt(("library_folder", section))
-                    .default_open(k == 0 || my_components)
+                    .id_salt(("library_folder", *section))
+                    .default_open(k == 0)
                     .show(ui, |ui| {
                         for entry in rows {
                             self.library_row(ui, entry);
-                        }
-                        if my_components
-                            && self.embedded
-                            && ui
-                                .small_button("+ New component")
-                                .on_hover_text("Start an empty component with ports, ready to fill and reuse")
-                                .clicked()
-                        {
-                            self.requests.push(Request::NewComponent);
                         }
                     });
             }
@@ -299,7 +344,8 @@ impl OpticsPanel {
                     egui::TextEdit::singleline(&mut self.browser_search)
                         .hint_text("Search everything")
                         .desired_width(f32::INFINITY),
-                );
+                )
+                .accessible_name("Search parts and components");
                 ui.label(RichText::new("Click a tile, then click the grid to place it, or drag it onto the grid.").small().weak());
                 ui.add_space(4.0);
                 let all = entries(&self.catalog, self.embedded, &self.browser_search);
@@ -310,7 +356,7 @@ impl OpticsPanel {
                         ui.set_width(200.0);
                         for (k, section) in SECTIONS.into_iter().enumerate() {
                             let n = all.iter().filter(|e| e.section == section).count();
-                            if n == 0 && !(k == 4 && self.embedded) {
+                            if n == 0 && !(SECTIONS[k] == PROJECT_SECTION && self.embedded) {
                                 continue;
                             }
                             let label = format!("🗀  {section}  ({n})");
@@ -473,7 +519,8 @@ impl OpticsPanel {
                             egui::TextEdit::singleline(&mut menu.search)
                                 .hint_text("Type to search…")
                                 .desired_width(f32::INFINITY),
-                        );
+                        )
+                        .accessible_name("Search parts to add");
                         if just_opened {
                             search.request_focus();
                         }
@@ -633,8 +680,15 @@ impl OpticsPanel {
             ui.label(RichText::new(&d.description).small().weak());
         }
         let mut changed = false;
+        let note = self.drive_note(Item::Box(self.layout.instances[b].id));
         match &mut self.layout.instances[b].block {
-            BlockRef::Builtin(block) => changed = builtin_params_ui(ui, block, self.prefs.power_unit),
+            BlockRef::Builtin(block) => {
+                changed = builtin_params_ui(ui, block, self.prefs.power_unit);
+                if let Some(note) = note {
+                    ui.label(RichText::new(format!("Driven by a signal: {note}")).small())
+                        .on_hover_text("The signal on its top terminal changes the value set above while it's wired");
+                }
+            }
             BlockRef::Component(doc) => {
                 let doc = *doc;
                 self.component_params_ui(ui, b, doc);
@@ -646,6 +700,7 @@ impl OpticsPanel {
         if changed {
             self.prune_connections();
         }
+        self.script_ui(ui, b);
         if matches!(self.layout.instances[b].block, BlockRef::Builtin(_)) {
             self.exports_ui(ui, Item::Box(id));
         }
@@ -713,6 +768,7 @@ impl OpticsPanel {
         let unit = self.prefs.power_unit;
         let iface = sim::interface(&self.layout);
         let driver = self.layout.signal_source(Terminal { item: Item::Part(i), port: 0 });
+        let drive_note = self.drive_note(Item::Part(i));
         let output = self.outcome().map(|o| o.signal(Item::Part(i), 0));
         let mut label = self.layout.label(i).unwrap_or_default().to_owned();
         let component = &mut self.layout.components[i];
@@ -728,33 +784,36 @@ impl OpticsPanel {
             let tau = std::f32::consts::TAU;
             match &mut component.kind {
                 OpticComponentKind::Laser { amplitude, phase, wavelength, source, color, .. } => {
-                    ui.label("Power");
+                    let l = ui.label("Power").id;
                     let mut a = *amplitude as f64;
-                    if units::power_editor(ui, &mut a, unit).changed() {
+                    if units::power_editor(ui, &mut a, unit).labelled_by(l).changed() {
                         *amplitude = a as f32;
                     }
                     ui.end_row();
-                    ui.label("Phase");
-                    ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad"))
+                    let l = ui.label("Phase").id;
+                    ui_kit::slider(ui, l, phase, 0.0..=tau, " rad")
+                        .labelled_by(l)
                         .on_hover_text("Only matters relative to lasers on the same source");
                     ui.end_row();
-                    ui.label("Wavelength");
+                    let l = ui.label("Wavelength").id;
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(wavelength).range(200.0..=2000.0).speed(0.5).suffix(" nm"));
+                        ui.add(egui::DragValue::new(wavelength).range(200.0..=2000.0).speed(0.5).suffix(" nm")).labelled_by(l);
                         egui::ComboBox::from_id_salt("laser_wavelength")
                             .selected_text("Presets")
                             .show_ui(ui, |ui| {
                                 for &(nm, what) in WAVELENGTH_PRESETS {
                                     ui.selectable_value(wavelength, nm, format!("{nm:.0} nm  {what}"));
                                 }
-                            });
+                            })
+                            .response
+                            .accessible_name("Wavelength presets");
                     });
                     ui.end_row();
                     ui.label("");
                     let band = if is_visible(*wavelength as f64) { "visible" } else if *wavelength > 780.0 { "infrared" } else { "ultraviolet" };
                     ui.label(RichText::new(band).small().weak());
                     ui.end_row();
-                    ui.label("Source");
+                    let l = ui.label("Source").id;
                     egui::ComboBox::from_id_salt("laser_source")
                         .selected_text(if *source == 0 { "Own (independent)".to_owned() } else { format!("Shared {}", source_letter(*source)) })
                         .show_ui(ui, |ui| {
@@ -764,6 +823,7 @@ impl OpticsPanel {
                             }
                         })
                         .response
+                        .labelled_by(l)
                         .on_hover_text(
                             "Lasers on the same shared source are phase-locked, like light split from one laser, and interfere. \
                              Independent lasers never interfere with each other: their powers add, as with real separate lasers.",
@@ -782,21 +842,21 @@ impl OpticsPanel {
                     ui.end_row();
                 }
                 OpticComponentKind::BeamSplitter { reflectivity, transparency, .. } => {
-                    ui.label("Reflectivity");
-                    if ui.add(egui::Slider::new(reflectivity, 0.0..=1.0)).changed() {
+                    let l = ui.label("Reflectivity").id;
+                    if ui_kit::slider(ui, l, reflectivity, 0.0..=1.0, "").labelled_by(l).changed() {
                         *transparency = 1.0 - *reflectivity;
                     }
                     ui.end_row();
                 }
                 OpticComponentKind::PhaseShifter { phase } => {
-                    ui.label("Phase");
-                    ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad"));
+                    let l = ui.label("Phase").id;
+                    ui_kit::slider(ui, l, phase, 0.0..=tau, " rad").labelled_by(l);
                     ui.end_row();
                 }
                 OpticComponentKind::Attenuator { transmission } => {
-                    ui.label("Transmission");
+                    let l = ui.label("Transmission").id;
                     ui.horizontal(|ui| {
-                        ui.add(egui::Slider::new(transmission, 0.0..=1.0));
+                        ui_kit::slider(ui, l, transmission, 0.0..=1.0, "").labelled_by(l);
                         ui.label(RichText::new(format!("{:.2} dB loss", units::loss_db(*transmission as f64))).small().weak());
                     });
                     ui.end_row();
@@ -813,8 +873,9 @@ impl OpticsPanel {
                     }
                     ui.end_row();
                     if digital {
-                        ui.label("Threshold");
+                        let l = ui.label("Threshold").id;
                         ui.add(egui::DragValue::new(threshold).range(0.001..=100.0).speed(0.01).suffix(" mW"))
+                            .labelled_by(l)
                             .on_hover_text("Light at or above this power reads 1");
                         ui.end_row();
                     }
@@ -865,17 +926,19 @@ impl OpticsPanel {
                     | OpticComponentKind::SignalIn
                     | OpticComponentKind::SignalOut
             ) {
-                ui.label("Name");
+                let l = ui.label("Name").id;
                 label_changed = ui
                     .add(egui::TextEdit::singleline(&mut label).hint_text("shown on the box").desired_width(120.0))
+                    .labelled_by(l)
                     .changed();
                 ui.end_row();
             }
             if let Some(&input) = kind.signal_inputs().first() {
                 ui.label("Driven by");
-                ui.label(match driver {
-                    Some(_) => RichText::new("a signal wire"),
-                    None => RichText::new(format!("nothing ({input} fixed)")).weak(),
+                ui.label(match (driver, &drive_note) {
+                    (Some(_), Some(note)) => RichText::new(format!("a signal: {note}")),
+                    (Some(_), None) => RichText::new("a signal wire"),
+                    (None, _) => RichText::new(format!("nothing ({input} fixed)")).weak(),
                 })
                 .on_hover_text("Drag from a signal output (square terminal) to the terminal above this part");
                 ui.end_row();
@@ -906,6 +969,83 @@ impl OpticsPanel {
         });
     }
 
+    /// A scripted block's code, edited here and applied with a button.
+    fn script_ui(&mut self, ui: &mut Ui, b: usize) {
+        let inst = &self.layout.instances[b];
+        let BlockRef::Builtin(Builtin::Model(m)) = &inst.block else { return };
+        let Some(code) = m.script() else { return };
+        let id = inst.id;
+        if self.script_edit.as_ref().is_none_or(|e| e.0 != id) {
+            self.script_edit = Some((id, code.to_owned(), None));
+        }
+        ui_kit::section(ui, "Script");
+        let mut apply = false;
+        let mut revert = false;
+        if let Some((_, text, error)) = &mut self.script_edit {
+            let unchanged = text.as_str() == code;
+            ui.add(
+                egui::TextEdit::multiline(text)
+                    .code_editor()
+                    .desired_rows(18)
+                    .desired_width(f32::INFINITY)
+                    .lock_focus(true),
+            )
+            .accessible_name("JavaScript of this component");
+            ui.horizontal(|ui| {
+                apply = ui
+                    .add_enabled(!unchanged, egui::Button::new("Apply"))
+                    .on_hover_text("Load the script and update the box's ports")
+                    .clicked();
+                revert = ui.add_enabled(!unchanged, egui::Button::new("Revert")).clicked();
+            });
+            if let Some(e) = error {
+                ui.colored_label(ui.visuals().error_fg_color, e.as_str());
+            }
+            ui.label(
+                RichText::new("Runs in a sandbox: no files, network or clock, and a time and memory limit on each call.")
+                    .small()
+                    .weak(),
+            );
+        }
+        if revert {
+            self.script_edit = Some((id, code.to_owned(), None));
+        }
+        if apply && let Some((_, text, _)) = self.script_edit.clone() {
+            match crate::panels::models::ModelSpec::from_script(&text) {
+                Ok(spec) => {
+                    self.set_model(b, spec);
+                    self.script_edit = Some((id, text, None));
+                    self.notify("Script applied");
+                }
+                Err(e) => {
+                    if let Some(edit) = &mut self.script_edit {
+                        edit.2 = Some(e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Put a new model in box `b`. A component that is just the model and
+    /// its pins gets pins to match the new ports; otherwise the box changes
+    /// and connections to ports that are gone are dropped.
+    pub fn set_model(&mut self, b: usize, spec: crate::panels::models::ModelSpec) {
+        let only_wrapper = self.layout.instances.len()
+            == 1 + self.layout.instances.iter().filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::InputPin { .. } | Builtin::OutputPin { .. }))).count()
+            && self.layout.components.iter().all(|c| matches!(c.kind, OpticComponentKind::SignalIn | OpticComponentKind::SignalOut));
+        if only_wrapper {
+            self.layout = crate::panels::models::component_layout(spec);
+            self.editor.clear_selection();
+            if let Some(m) = self.layout.instances.iter().position(|i| matches!(i.block, BlockRef::Builtin(Builtin::Model(_)))) {
+                self.editor.boxes.select_only(m);
+            }
+            self.script_edit = None;
+        } else {
+            self.layout.instances[b].block = BlockRef::Builtin(Builtin::Model(std::sync::Arc::new(spec)));
+            self.prune_connections();
+        }
+    }
+
     /// The values a component box sets for its component's exported
     /// parameters; unset ones show (and use) the value inside.
     fn component_params_ui(&mut self, ui: &mut Ui, b: usize, doc: crate::panels::project::DocId) {
@@ -927,7 +1067,7 @@ impl OpticsPanel {
                     inst.set_param(&p.name, Some(v));
                 }
                 if set.is_some() {
-                    if ui.small_button("↺").on_hover_text(format!("Back to the component's value ({})", fmt_value(p.default))).clicked() {
+                    if ui.small_button("↺").accessible_name(format!("Reset {}", p.name)).on_hover_text(format!("Back to the component's value ({})", fmt_value(p.default))).clicked() {
                         inst.set_param(&p.name, None);
                     }
                 } else {
@@ -970,6 +1110,7 @@ impl OpticsPanel {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("{} as", e.param)).small());
                 ui.add(egui::TextEdit::singleline(&mut e.name).desired_width(110.0))
+                    .accessible_name(format!("Exported name of {}", e.param))
                     .on_hover_text("The name boxes show for it");
             });
         }
@@ -979,8 +1120,8 @@ impl OpticsPanel {
         ui_kit::section(ui, "Simulation");
         ui.checkbox(&mut self.simulation_active, "Live simulation").on_hover_text("Space");
         ui.horizontal(|ui| {
-            ui.label("Cell size");
-            ui.add(egui::DragValue::new(&mut self.cell_um).range(0.01..=10_000.0).speed(0.01).suffix(" µm"));
+            let l = ui.label("Cell size").id;
+            ui.add(egui::DragValue::new(&mut self.cell_um).range(0.01..=10_000.0).speed(0.01).suffix(" µm")).labelled_by(l);
         });
         ui.horizontal(|ui| {
             ui.label(format!("Clock  tick {}", self.machine.tick));
@@ -1044,9 +1185,9 @@ impl OpticsPanel {
                 "Light is a classical wave: interference and resonance are exact, but there are no photons, noise or quantum effects.",
                 "Beams are thin rays on the grid: no diffraction, spreading or polarisation.",
                 "Only lasers on the same shared source interfere; independent lasers add power.",
-                "Waveguides have one effective index (2.4), no dispersion or loss.",
+                "Connections between parts are ideal; delay lines and rings have the index, group index and loss you set.",
                 "Steady state only: no time, bandwidth or data rate.",
-                "Parts are ideal unless you add loss; powers are relative units.",
+                "Parts are ideal unless you add loss; a laser of amplitude 1 emits 1 mW.",
             ] {
                 ui.label(RichText::new(format!("• {line}")).small().weak());
             }
@@ -1156,54 +1297,55 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
         return function_cell_ui(ui, block);
     }
     egui::Grid::new("block_params").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-        let mut row = |ui: &mut Ui, label: &str, widget: &mut dyn FnMut(&mut Ui) -> egui::Response| {
-            ui.label(label);
-            changed |= widget(ui).changed();
+        // Each widget is named by its row's label for screen readers.
+        let mut row = |ui: &mut Ui, label: &str, widget: &mut dyn FnMut(&mut Ui, egui::Id) -> egui::Response| {
+            let label = ui.label(label).id;
+            changed |= widget(ui, label).labelled_by(label).changed();
             ui.end_row();
         };
         match block {
             Builtin::Laser { amplitude, phase, wavelength_nm } => {
-                row(ui, "Power", &mut |ui| units::power_editor(ui, amplitude, unit));
-                row(ui, "Phase", &mut |ui| ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad")));
-                row(ui, "Wavelength", &mut |ui| {
+                row(ui, "Power", &mut |ui, _| units::power_editor(ui, amplitude, unit));
+                row(ui, "Phase", &mut |ui, l| ui_kit::slider(ui, l, phase, 0.0..=tau, " rad"));
+                row(ui, "Wavelength", &mut |ui, _| {
                     ui.add(egui::DragValue::new(wavelength_nm).range(200.0..=2000.0).speed(0.1).suffix(" nm"))
                 });
             }
             Builtin::InputPin { name } | Builtin::OutputPin { name } => {
-                row(ui, "Name", &mut |ui| ui.text_edit_singleline(name));
+                row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name));
             }
             Builtin::Coupler { coupling } => {
-                row(ui, "Coupling", &mut |ui| ui.add(egui::Slider::new(coupling, 0.0..=1.0)));
+                row(ui, "Coupling", &mut |ui, l| ui_kit::slider(ui, l, coupling, 0.0..=1.0, ""));
             }
             Builtin::PhaseShifter { phase } => {
-                row(ui, "Phase", &mut |ui| ui.add(egui::Slider::new(phase, 0.0..=tau).suffix(" rad")));
+                row(ui, "Phase", &mut |ui, l| ui_kit::slider(ui, l, phase, 0.0..=tau, " rad"));
             }
             Builtin::Attenuator { loss_db } => {
-                row(ui, "Loss", &mut |ui| {
+                row(ui, "Loss", &mut |ui, _| {
                     let t = units::from_db(-*loss_db);
                     ui.add(egui::DragValue::new(loss_db).range(0.0..=100.0).speed(0.1).suffix(" dB"))
                         .on_hover_text(format!("Passes {t:.3} of the power"))
                 });
             }
             Builtin::DelayLine { length_um, n_eff, n_g, reference_nm, loss_db_per_cm } => {
-                row(ui, "Length", &mut |ui| {
+                row(ui, "Length", &mut |ui, _| {
                     ui.add(egui::DragValue::new(length_um).range(0.0..=1e6).speed(0.05).suffix(" µm"))
                 });
-                row(ui, "n_eff", &mut |ui| {
+                row(ui, "n_eff", &mut |ui, _| {
                     ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01))
                         .on_hover_text("Effective index at the reference wavelength")
                 });
-                row(ui, "n_g", &mut |ui| {
+                row(ui, "n_g", &mut |ui, _| {
                     ui.add(egui::DragValue::new(n_g).range(1.0..=6.0).speed(0.01)).on_hover_text(
                         "Group index: sets how the phase changes with wavelength, so resonance spacing and delay. \
                          Silicon strip ≈ 4.2; equal to n_eff for no dispersion",
                     )
                 });
-                row(ui, "at", &mut |ui| {
+                row(ui, "at", &mut |ui, _| {
                     ui.add(egui::DragValue::new(reference_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm"))
                         .on_hover_text("Wavelength the indices are given at")
                 });
-                row(ui, "Loss", &mut |ui| {
+                row(ui, "Loss", &mut |ui, _| {
                     ui.add(egui::DragValue::new(loss_db_per_cm).range(0.0..=1000.0).speed(0.1).suffix(" dB/cm"))
                 });
                 let delay = crate::photonics::Waveguide::new(*length_um, *n_eff).with_group_index(*n_g, *reference_nm).group_delay_ps();
@@ -1212,11 +1354,11 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 ui.end_row();
             }
             Builtin::Mzi { theta, phi } => {
-                row(ui, "θ (internal)", &mut |ui| {
-                    ui.add(egui::Slider::new(theta, 0.0..=tau).suffix(" rad"))
+                row(ui, "θ (internal)", &mut |ui, l| {
+                    ui_kit::slider(ui, l, theta, 0.0..=tau, " rad")
                         .on_hover_text("π: in1 → out1 (bar). 0: in1 → out2 (cross). π/2: half to each.")
                 });
-                row(ui, "φ (input)", &mut |ui| ui.add(egui::Slider::new(phi, 0.0..=tau).suffix(" rad")));
+                row(ui, "φ (input)", &mut |ui, l| ui_kit::slider(ui, l, phi, 0.0..=tau, " rad"));
                 // Where light from in1 goes, so a switch at π doesn't look broken.
                 let s = crate::photonics::Component::s_matrix(&crate::photonics::Mzi::new(*theta, *phi), crate::photonics::REFERENCE_NM);
                 let (bar, cross) = (s[(0, 0)].norm_sqr() * 100.0, s[(1, 0)].norm_sqr() * 100.0);
@@ -1226,25 +1368,25 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
             }
             Builtin::Ring { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm }
             | Builtin::AddDropRing { coupling, length_um, n_eff, loss_db_per_cm, n_g, reference_nm } => {
-                row(ui, "Coupling", &mut |ui| ui.add(egui::Slider::new(coupling, 0.0..=1.0)));
-                row(ui, "Length", &mut |ui| {
+                row(ui, "Coupling", &mut |ui, l| ui_kit::slider(ui, l, coupling, 0.0..=1.0, ""));
+                row(ui, "Length", &mut |ui, _| {
                     ui.add(egui::DragValue::new(length_um).range(0.1..=1e5).speed(0.01).suffix(" µm"))
                 });
-                row(ui, "n_eff", &mut |ui| {
+                row(ui, "n_eff", &mut |ui, _| {
                     ui.add(egui::DragValue::new(n_eff).range(1.0..=4.0).speed(0.01))
                         .on_hover_text("Effective index at the reference wavelength")
                 });
-                row(ui, "n_g", &mut |ui| {
+                row(ui, "n_g", &mut |ui, _| {
                     ui.add(egui::DragValue::new(n_g).range(1.0..=6.0).speed(0.01)).on_hover_text(
                         "Group index: sets how the phase changes with wavelength, so resonance spacing and delay. \
                          Silicon strip ≈ 4.2; equal to n_eff for no dispersion",
                     )
                 });
-                row(ui, "at", &mut |ui| {
+                row(ui, "at", &mut |ui, _| {
                     ui.add(egui::DragValue::new(reference_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm"))
                         .on_hover_text("Wavelength the indices are given at")
                 });
-                row(ui, "Loss", &mut |ui| {
+                row(ui, "Loss", &mut |ui, _| {
                     ui.add(egui::DragValue::new(loss_db_per_cm).range(0.0..=1000.0).speed(0.1).suffix(" dB/cm"))
                 });
                 let fsr = *reference_nm * *reference_nm / (*n_g * *length_um * 1000.0);
@@ -1253,25 +1395,36 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 ui.end_row();
             }
             Builtin::SplitterTree { levels } => {
-                row(ui, "Levels", &mut |ui| ui.add(egui::Slider::new(levels, 0..=5)));
+                row(ui, "Levels", &mut |ui, l| ui_kit::slider(ui, l, levels, 0..=5, ""));
             }
             Builtin::SwitchTree { levels, address } => {
-                row(ui, "Levels", &mut |ui| ui.add(egui::Slider::new(levels, 1..=5)));
+                row(ui, "Levels", &mut |ui, l| ui_kit::slider(ui, l, levels, 1..=5, ""));
                 *address = (*address).min((1 << *levels) - 1);
                 let max = (1 << *levels) - 1;
-                row(ui, "Address", &mut |ui| ui.add(egui::Slider::new(address, 0..=max)));
+                row(ui, "Address", &mut |ui, l| ui_kit::slider(ui, l, address, 0..=max, ""));
             }
             Builtin::Dft { n } => {
-                row(ui, "Modes", &mut |ui| ui.add(egui::Slider::new(n, 2..=16)));
+                row(ui, "Modes", &mut |ui, l| ui_kit::slider(ui, l, n, 2..=16, ""));
             }
             Builtin::NumberInput { bits, value } => {
-                row(ui, "Bits", &mut |ui| ui.add(egui::Slider::new(bits, 1..=16)));
+                row(ui, "Bits", &mut |ui, l| ui_kit::slider(ui, l, bits, 1..=16, ""));
                 let max = (1u64 << *bits) - 1;
                 *value = (*value).min(max);
-                row(ui, "Value", &mut |ui| ui.add(egui::DragValue::new(value).range(0..=max)));
+                row(ui, "Value", &mut |ui, _| ui.add(egui::DragValue::new(value).range(0..=max)));
             }
             Builtin::Display { bits } | Builtin::Register { bits } => {
-                row(ui, "Bits", &mut |ui| ui.add(egui::Slider::new(bits, 1..=16)));
+                row(ui, "Bits", &mut |ui, l| ui_kit::slider(ui, l, bits, 1..=16, ""));
+            }
+            Builtin::Model(m) => {
+                ui.label("Data");
+                ui.label(RichText::new(m.summary()).small());
+                ui.end_row();
+                ui.label("Light in");
+                ui.label(RichText::new(m.inputs.join(", ")).small());
+                ui.end_row();
+                ui.label("Light out");
+                ui.label(RichText::new(m.outputs.join(", ")).small());
+                ui.end_row();
             }
             Builtin::Detector | Builtin::YSplitter | Builtin::YCombiner | Builtin::Crossing | Builtin::FunctionCell { .. } => {}
         }
@@ -1286,15 +1439,16 @@ fn function_cell_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
     };
     let mut changed = false;
     egui::Grid::new("function_params").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-        ui.label("Name");
-        changed |= ui.text_edit_singleline(name).changed();
+        let l = ui.label("Name").id;
+        changed |= ui.text_edit_singleline(name).labelled_by(l).changed();
         ui.end_row();
-        ui.label("Signal inputs");
-        changed |= ui.add(egui::DragValue::new(inputs).range(0..=16)).on_hover_text("in1, in2, …").changed();
+        let l = ui.label("Signal inputs").id;
+        changed |= ui.add(egui::DragValue::new(inputs).range(0..=16)).labelled_by(l).on_hover_text("in1, in2, …").changed();
         ui.end_row();
-        ui.label("Light inputs");
+        let l = ui.label("Light inputs").id;
         changed |= ui
             .add(egui::DragValue::new(light_inputs).range(0..=8))
+            .labelled_by(l)
             .on_hover_text("p1, p2, …: power received on each left-edge port")
             .changed();
         ui.end_row();
@@ -1304,15 +1458,15 @@ fn function_cell_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
         let mut remove = None;
         for (k, expr) in exprs.iter_mut().enumerate() {
             ui.horizontal(|ui| {
-                ui.monospace(format!("{prefix}{} =", k + 1));
+                let l = ui.monospace(format!("{prefix}{} =", k + 1)).id;
                 let error = crate::panels::circuit::expr::parse(expr).err();
-                let edit = ui.add(egui::TextEdit::singleline(expr).code_editor().desired_width(130.0));
+                let edit = ui.add(egui::TextEdit::singleline(expr).code_editor().desired_width(130.0)).labelled_by(l);
                 changed |= edit.changed();
                 if let Some(e) = error {
                     edit.on_hover_text(e.to_string());
                     ui.colored_label(ui.visuals().error_fg_color, "!");
                 }
-                if ui.small_button("×").clicked() {
+                if ui.small_button("×").accessible_name(format!("Remove {prefix}{}", k + 1)).on_hover_text("Remove").clicked() {
                     remove = Some(k);
                 }
             });

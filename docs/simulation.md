@@ -41,8 +41,8 @@ Performance** also puts the frame rate and timings in the status bar.
 ## Units
 
 Powers are in milliwatts: a field of amplitude *a* carries *a*² mW, so a laser of amplitude
-1 emits 1 mW (0 dBm). Lasers are set by their power, in mW or dBm; readings show mW (with
-µW, nW or W as fits) or dBm, chosen in **Edit → Preferences…**. Losses are in dB: an
+1 emits 1 mW (0 dBm). Lasers are set by their power, in mW or dBm; readings show mW (W above a
+watt, nW below a microwatt; 3 dB off 1 mW reads 0.501 mW) or dBm, chosen in **Edit → Preferences…**. Losses are in dB: an
 attenuator's transmission *T* is a loss of −10·log10 *T* dB (0.5 is 3.01 dB). Detector
 thresholds are in mW. Everything is linear in the light, so scaling every laser scales
 every reading by the same factor.

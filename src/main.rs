@@ -5,21 +5,21 @@
 use shine::ShineApp;
 use shine::logging::{self, LogConfig};
 
-/// The app's name for the OS: its settings folder and window class.
-const APP_ID: &str = "Shine";
+use shine::APP_ID;
 
 fn main() -> eframe::Result {
     // Command-line use: no window, nothing but the output.
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("simulate") => std::process::exit(shine::cli::main(&args[1..])),
+        Some("export") => std::process::exit(shine::cli::export::main(&args[1..])),
         Some("--version" | "-V") => {
             println!("shine {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Some("--help" | "-h") => {
             println!(
-                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [--log-file PATH] [--log-level FILTER]   open the editor\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine --version",
+                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [--log-file PATH] [--log-level FILTER]   open the editor\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine export PROJECT.shine [options]          S-parameters or a gdsfactory layout (--help for options)\n  shine --version",
                 env!("CARGO_PKG_VERSION")
             );
             return Ok(());

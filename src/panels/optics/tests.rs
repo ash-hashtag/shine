@@ -1,5 +1,6 @@
 //! Headless UI tests: real egui input events drive the panel.
 
+use crate::panels::assets::AssetRef;
 use egui::{Event, Key, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButton, Vec2};
 
 use super::*;
@@ -892,21 +893,24 @@ fn add_box(panel: &mut OpticsPanel, block: Builtin, cell: (i32, i32)) -> model::
 
 #[test]
 fn library_lists_sections_and_searches() {
-    let catalog = crate::panels::project::Catalog::default();
+    let catalog = crate::panels::project::Catalog { assets: crate::panels::assets::Library::new().summaries(), ..Default::default() };
     let all = library::entries(&catalog, true, "");
     for section in library::SECTIONS {
-        if section != library::SECTIONS[4] {
+        if section != library::PROJECT_SECTION {
             assert!(all.iter().any(|e| e.section == section), "{section}");
         }
     }
     // Primitives are not repeated as waveguide boxes.
-    assert!(!all.iter().any(|e| e.section == library::SECTIONS[5] && e.name == "Laser"));
+    assert!(!all.iter().any(|e| e.section == "Waveguide blocks" && e.name == "Laser"));
+    // The add menu finds library components by port names too.
+    let by_port = library::entries(&catalog, true, "carry");
+    assert!(by_port.iter().any(|e| e.name == "Full adder" && e.section == library::ASSETS_SECTION), "the adder's carry pins");
     let found = library::entries(&catalog, true, "regist");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].item, Placeable::Block(BlockRef::Builtin(Builtin::Register { bits: 8 })));
     assert!(library::entries(&catalog, false, "full adder").is_empty(), "examples need a project");
     assert_eq!(Placeable::Part(OpticComponentKind::Detector { threshold: 0.5 }).name(&catalog), "Threshold detector");
-    assert_eq!(Placeable::Example(0).name(&catalog), "Full adder");
+    assert_eq!(Placeable::Asset(AssetRef::Example(0)).name(&catalog), "Full adder");
 }
 
 #[test]
@@ -1066,12 +1070,12 @@ fn add_menu_search_places_the_first_match() {
     assert!(panel.menu.is_none());
     assert_eq!(panel.layout.instances.len(), 1);
     assert_eq!(panel.layout.instances[0].cell, (2, 2));
-    // Example components need a host.
-    panel.place(Placeable::Example(0), cell_center(9, 9));
+    // Library components need a host.
+    panel.place(Placeable::Asset(AssetRef::Example(0)), cell_center(9, 9));
     assert!(panel.status.as_ref().unwrap().0.contains("project"));
     panel.embedded = true;
-    panel.place(Placeable::Example(0), cell_center(9, 9));
-    assert_eq!(panel.requests, vec![Request::PlaceExample { example: 0, cell: (9, 9) }]);
+    panel.place(Placeable::Asset(AssetRef::Example(0)), cell_center(9, 9));
+    assert_eq!(panel.requests, vec![Request::PlaceAsset { asset: AssetRef::Example(0), cell: (9, 9) }]);
 }
 
 #[test]

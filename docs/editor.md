@@ -30,10 +30,15 @@ There are four ways, all placing into the cell you point at:
 
 ![The library folders](img/library.webp)
 
-Parts are grouped into folders: *Light & detection*, *Free-space optics*,
-*Electronics & I/O*, *Example components*, *My components*, *Waveguide blocks* and
-*Component ports*. Click a folder to open or close it. Typing in the search box shows
-matching parts from every folder in one list.
+The left panel has two tabs. **Parts** groups the parts into folders: *Light &
+detection*, *Free-space optics*, *Electronics & I/O*, *Waveguide blocks* and *Component
+ports*. Click a folder to open or close it. Typing in the search box shows matching parts
+from every folder in one list. Below the parts is the **Project** list of every document.
+
+**Assets** holds [components](components.md#the-asset-library): *This project*'s own,
+then the **asset library**, kept for every project: Shine's *Examples* and your own
+folders. Its search finds components by name, description, folder, port or parameter.
+The add menu and the parts browser list them too, as *This project* and *Asset library*.
 
 ### The add menu
 
@@ -47,7 +52,8 @@ menu scrolls the menu, not the grid. **Esc** or a click on the grid closes it.
 
 ![The Parts & components browser](img/browser.webp)
 
-The browser shows every part as a tile with its description, folder by folder. Click a
+The browser shows every part and component as a tile with its description, folder by
+folder. Click a
 tile and then click the grid, or drag the tile onto the grid. **+ New component** starts
 a [component](components.md).
 
@@ -98,9 +104,25 @@ sessions (a settings file on desktop, the browser's storage on the web):
 | Light colours | Real colours where visible (infrared and ultraviolet in distinct false colours), a distinct colour per wavelength, or one colour; use lasers' own colours |
 | Channels | Draw each wavelength on a waveguide or beam as its own strand |
 | Beams, readings | Direction arrows; detector powers on the canvas |
-| Power in | mW (with µW, nW or W as fits) or dBm, for readings and laser power |
+| Power in | mW (W above a watt, nW below a microwatt) or dBm, for readings and laser power |
 | New lasers | Their wavelength, typed or from presets |
 | Simulation | Live simulation for new documents; clock speed |
+
+## Keyboard and screen readers
+
+Everything in the editor works from the keyboard. Tab and Shift+Tab move through the
+menus, panels and windows, and Space or Enter presses the focused button. On the canvas,
+`]` and `[` step the selection through the parts and boxes, the arrow keys move what's
+selected (or pan the view when nothing is), G with the arrows and Enter makes a longer
+move, Shift+A opens the add menu next to the selection (type to search, Enter to place),
+and + and − zoom. To wire, select the start and press W, step to the end with `]` / `[`
+and press Enter: it connects the first free output of the start to the first free input
+of the end that match (light before signals), and Esc gives up. Keys go to the focused control first: while a slider has the focus, the
+arrows change its value.
+
+Every control has a name for screen readers (the label beside it, or a description for
+buttons that show only a symbol), and the canvas describes what's on it and what's
+selected. A test checks that no control on any panel or window is left unnamed.
 
 ## Keyboard and mouse reference
 
@@ -118,15 +140,19 @@ sessions (a settings file on desktop, the browser's storage on the web):
 | Left drag on component | Move it |
 | Double click | Rotate a part / open a component |
 | Click a number's bit | Toggle that bit |
-| A / Alt+A / Ctrl+I | Select all / none / invert |
+| A or Ctrl+A / Alt+A / Ctrl+I | Select all / none / invert |
 | G | Grab (move); X / Y constrain axis |
 | Enter / Left click | Confirm grab |
 | Esc / Right click | Cancel grab |
 | R / Shift+R | Rotate clockwise / counter-clockwise |
 | Shift+D | Duplicate and move |
+| Arrow keys / Shift+arrows | Move the selection (or a grab) 1 / 5 cells; with nothing selected, pan |
+| + / − | Zoom in / out |
+| ] / [ | Select the next / previous part or box |
+| W, then ] / [ and Enter | Wire the selected item to another, first free ports |
 | X / Delete | Delete selected |
 | Shift+A / Right click | Add menu / context menu |
-| Tab / Double click | Open a component's definition in its own tab |
+| Tab / Double click | Open the selected component's definition in its own tab (otherwise Tab moves to the next control) |
 | Drag from a port or terminal | Wire it: light ports take waveguides, square terminals take signals |
 | Ctrl+Z / Ctrl+Shift+Z | Undo / redo |
 | Space | Toggle simulation |

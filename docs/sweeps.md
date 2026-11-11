@@ -66,9 +66,19 @@ Under the plot, a table gives for every curve shown:
 | Minimum | lowest power, and where |
 | Insertion loss | input over peak power, in dB: what the best path loses |
 | Extinction | peak over minimum, in dB: how deep the switching or notch is |
+| FSR | wavelength sweeps: the free spectral range, the mean spacing of the resonances |
+| Width | wavelength sweeps: full width of the strongest resonance at half its depth (dips) or height (peaks) |
+| Q | wavelength sweeps: the quality factor, the resonance's wavelength over its width |
 
 In the add–drop ring example, the drop port's insertion loss is about 0 dB at resonance,
 and the through port's extinction is over 20 dB.
+
+A resonance is wherever a curve goes past halfway between its lowest and highest power:
+dips on a ring's through port, peaks on its drop port (hover the FSR for how many were
+found). Its width needs both its sides inside the sweep and a few points across it, so a
+narrow resonance shows *–* until the sweep has enough points: for a ring of Q 10 000 at
+1550 nm (0.16 nm wide), use steps of 0.05 nm or less. The values follow the textbook ring:
+FSR = λ²/(n_g·L), and the width and Q from the coupling and loss.
 
 Each point is a full simulation: light and electronics settle together, and components are
 simulated through. Coarse sweeps (tens of points) are instant; thousands of points on a big

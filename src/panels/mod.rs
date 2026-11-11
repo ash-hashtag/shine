@@ -1,4 +1,6 @@
 pub mod about;
+pub mod appearance;
+pub mod assets;
 pub mod beam_sim;
 pub mod chips;
 pub mod circuit;
@@ -6,11 +8,14 @@ pub mod empty;
 pub mod export;
 pub mod file_format;
 pub mod history;
+pub mod interop;
+pub mod models;
 pub mod optics;
 pub mod perf;
 pub mod prefs;
 pub mod project;
 pub mod schematic;
+pub mod script;
 pub mod selection;
 pub mod session;
 pub mod ui_kit;
@@ -30,8 +35,9 @@ pub enum Request {
     Inspect(project::DocId),
     /// Start a new component document.
     NewComponent,
-    /// Place example component `example` (adding its document if needed) at a cell.
-    PlaceExample { example: usize, cell: (i32, i32) },
+    /// Place a component from the asset library (copying it into the
+    /// project if needed) at a cell.
+    PlaceAsset { asset: assets::AssetRef, cell: (i32, i32) },
     /// Advance the clock one tick.
     Tick,
     /// Run the sweep set up in the editor's sweep window.

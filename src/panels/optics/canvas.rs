@@ -323,6 +323,22 @@ impl OpticsPanel {
     fn canvas_contents(&mut self, ui: &mut Ui, theme: &CanvasTheme) {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         self.canvas = Some(rect);
+        self.canvas_id = Some(response.id);
+        // Clicking the canvas gives it the keyboard (arrows move the
+        // selection); Tab still moves on to the next control.
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
+        if response.has_focus() {
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter { tab: false, horizontal_arrows: true, vertical_arrows: true, escape: true },
+                )
+            });
+        }
+        let description = self.canvas_description();
+        let response = response.accessible_name(description);
         if self.frame_pending {
             self.frame_pending = false;
             self.frame(false);
@@ -378,8 +394,15 @@ impl OpticsPanel {
                     let r = Rect::from_min_max(to_screen(g.rect.min), to_screen(g.rect.max));
                     painter.rect_stroke(r, 5.0, Stroke::new(1.5, theme.active.gamma_multiply(0.6)), egui::StrokeKind::Inside);
                 }
-                Some(Placeable::Example(_)) => {
-                    painter.rect_stroke(cell, 5.0, Stroke::new(1.5, theme.active.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                Some(Placeable::Asset(asset)) => {
+                    let r = match self.catalog.asset(asset) {
+                        Some(a) => {
+                            let g = box_geometry(model::cell_of(world), a.entry.interface.counts());
+                            Rect::from_min_max(to_screen(g.rect.min), to_screen(g.rect.max))
+                        }
+                        None => cell,
+                    };
+                    painter.rect_stroke(r, 5.0, Stroke::new(1.5, theme.active.gamma_multiply(0.6)), egui::StrokeKind::Inside);
                 }
                 None => {}
             }
@@ -678,7 +701,7 @@ impl OpticsPanel {
     }
 
     /// Finish drawing a wire from `from` by dropping it on `to`.
-    fn connect(&mut self, from: Hit, to: Hit) {
+    pub(super) fn connect(&mut self, from: Hit, to: Hit) {
         if let Some((laser, light)) = self.laser_to_input(from, to) {
             self.layout.connect_feed(laser, light);
             return;
@@ -893,6 +916,14 @@ fn draw_leds(painter: &egui::Painter, r: Rect, zoom: f32, lit: impl Iterator<Ite
     }
 }
 
+/// A component's picture in the middle of its box, clear of the port names.
+/// False when it has none (or it isn't ready), for the initials instead.
+fn paint_box_icon(painter: &egui::Painter, r: Rect, d: &BlockDisplay) -> bool {
+    let Some(icon) = &d.appearance.icon else { return false };
+    let side = (r.height() * 0.62).min(r.width() * 0.5);
+    crate::panels::appearance::paint_icon(painter, Rect::from_center_size(r.center(), Vec2::splat(side)), icon)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_box(
     painter: &egui::Painter,
@@ -928,7 +959,13 @@ fn draw_box(
         painter.text(r.center(), Align2::CENTER_CENTER, name, big, Color32::WHITE);
         return;
     }
-    painter.rect(r, rounding, body, Stroke::new(1.2, border), egui::StrokeKind::Inside);
+    // A component's box takes its own outline and colour.
+    let own_fill = d.appearance.color.map(|[r, g, b]| Color32::from_rgb(r, g, b));
+    if d.component.is_some() {
+        painter.add(d.appearance.shape.shape(r, own_fill.unwrap_or(body), Stroke::new(1.2, border)));
+    } else {
+        painter.rect(r, rounding, body, Stroke::new(1.2, border), egui::StrokeKind::Inside);
+    }
     let value_label = |text: String| {
         let font = FontId::monospace((17.0 * zoom).clamp(9.0, 40.0));
         painter.text(r.right_center() + Vec2::new(8.0 * zoom, 0.0), Align2::LEFT_CENTER, text, font, theme.text);
@@ -958,6 +995,17 @@ fn draw_box(
         BlockRef::Builtin(Builtin::FunctionCell { name, .. }) => {
             painter.text(r.center(), Align2::CENTER_CENTER, format!("ƒ {name}"), big, theme.text);
         }
+        _ if d.component.is_some() && own_fill.is_some() => {
+            let fill = own_fill.expect("checked");
+            if !paint_box_icon(painter, r, d) {
+                painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, crate::panels::appearance::text_on(fill));
+            }
+        }
+        _ if d.component.is_some() && d.appearance.shape != crate::panels::appearance::BoxShape::Rectangle => {
+            if !paint_box_icon(painter, r, d) {
+                painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, badge_fill(d));
+            }
+        }
         _ => {
             let color = if d.component.is_some() {
                 let accent = badge_fill(d);
@@ -970,7 +1018,9 @@ fn draw_box(
             } else {
                 theme.text
             };
-            painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, color);
+            if !paint_box_icon(painter, r, d) {
+                painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, color);
+            }
         }
     }
     // Port names, when there is room.

@@ -7,6 +7,8 @@ use std::time::Instant;
 use shine::photonics::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Results go through the logger (stderr; --log-file to keep them).
+    let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let n = 64;
     let batch = 4096;
     let w = Matrix::from_fn(n, n, |i, j| {
@@ -18,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut circuit = Circuit::new();
     let ports = circuit.add_block(&mesh)?;
     let program = circuit.compile(1550.0)?;
-    println!(
+    tracing::info!(
         "{n}x{n} mesh: {} nodes, decomposed + compiled in {:?}",
         circuit.len(),
         t.elapsed()
@@ -28,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t = Instant::now();
     let sol = program.run_batch(&ports.inputs, x.as_ref())?;
     let elapsed = t.elapsed();
-    println!(
+    tracing::info!(
         "ran {batch} input vectors in {elapsed:?} ({:.2} us/vector)",
         elapsed.as_secs_f64() * 1e6 / batch as f64
     );
@@ -40,6 +42,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             err = err.max((sol.output_field_at(port, j) * mesh.scale - reference[(i, j)]).norm());
         }
     }
-    println!("max abs error vs W*x: {err:.2e}");
+    tracing::info!("max abs error vs W*x: {err:.2e}");
     Ok(())
 }

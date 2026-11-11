@@ -130,6 +130,9 @@ pub struct OpticsPanel {
     pub sweep: sweep_ui::SweepState,
     /// The categorised browser of every part and component.
     pub show_browser: bool,
+    /// The script being edited in the inspector: its box, the text, and why
+    /// the last Apply failed.
+    pub script_edit: Option<(model::InstanceId, String, Option<String>)>,
     /// Folder shown in the browser, an index into [`library::SECTIONS`].
     pub browser_section: usize,
     pub browser_search: String,
@@ -151,6 +154,10 @@ pub struct OpticsPanel {
     /// A grab ended with a mouse press: ignore the click it completes.
     swallow_click: bool,
     canvas: Option<Rect>,
+    /// The canvas widget, which takes keyboard focus when clicked.
+    canvas_id: Option<Id>,
+    /// Wiring from the keyboard: the item the wire starts at.
+    wiring_from: Option<Item>,
     mouse_screen: Option<Pos2>,
     mouse_world: Option<Pos2>,
     frame_pending: bool,
@@ -179,6 +186,7 @@ impl Default for OpticsPanel {
             prefs: Preferences::default(),
             sweep: sweep_ui::SweepState::default(),
             show_browser: false,
+            script_edit: None,
             browser_section: 0,
             browser_search: String::new(),
             show_toolbar: true,
@@ -195,6 +203,8 @@ impl Default for OpticsPanel {
             drag: Drag::None,
             swallow_click: false,
             canvas: None,
+            canvas_id: None,
+            wiring_from: None,
             mouse_screen: None,
             mouse_world: None,
             frame_pending: false,
@@ -584,9 +594,47 @@ impl OpticsPanel {
             Action::New => self.new_layout(),
             Action::ConstrainX => self.editor.constrain(Axis::X),
             Action::ConstrainY => self.editor.constrain(Axis::Y),
+            Action::Confirm if self.wiring_from.is_some() => self.finish_keyboard_wire(),
             Action::Confirm => self.confirm_grab(),
-            Action::Cancel => {
+            Action::Wire => match self.wiring_from {
+                Some(_) => self.finish_keyboard_wire(),
+                None => match self.selected_item() {
+                    Some(item) => {
+                        self.wiring_from = Some(item);
+                        self.notify(format!(
+                            "Wiring from {}: select where it goes with ] / [, then Enter (Esc cancels)",
+                            self.item_name(item)
+                        ));
+                    }
+                    None => self.notify("Select the part or box to wire from"),
+                },
+            },
+            Action::Nudge(dx, dy) => {
                 if self.editor.grab.is_some() {
+                    self.editor.nudge_grab(&mut self.layout, (dx, dy));
+                } else if !self.editor.is_empty() {
+                    // A grab moved by the keys and confirmed: the same checks
+                    // for room as moving with the mouse.
+                    self.editor.begin_grab(&self.layout, mouse, false);
+                    self.editor.nudge_grab(&mut self.layout, (dx, dy));
+                    self.confirm_grab();
+                } else {
+                    // The view moves the other way, like scrolling.
+                    self.view.pan_by(-egui::vec2(dx as f32, dy as f32) * 3.0 * GRID * self.view.zoom);
+                }
+            }
+            Action::ZoomIn | Action::ZoomOut => {
+                if let Some(canvas) = self.canvas {
+                    let factor = if action == Action::ZoomIn { 1.25 } else { 0.8 };
+                    self.view.zoom_at(canvas, canvas.center(), factor);
+                }
+            }
+            Action::SelectNext => self.select_step(1),
+            Action::SelectPrevious => self.select_step(-1),
+            Action::Cancel => {
+                if self.wiring_from.take().is_some() {
+                    self.notify("Wiring cancelled");
+                } else if self.editor.grab.is_some() {
                     self.editor.cancel_grab(&mut self.layout);
                 } else {
                     self.menu = None;
@@ -598,8 +646,114 @@ impl OpticsPanel {
         }
     }
 
+    /// The active part or box.
+    fn selected_item(&self) -> Option<Item> {
+        match (self.editor.selection.active(), self.editor.boxes.active()) {
+            (_, Some(b)) => self.layout.instances.get(b).map(|i| Item::Box(i.id)),
+            (Some(i), None) => Some(Item::Part(i)),
+            _ => None,
+        }
+    }
+
+    /// Finish a keyboard wire at the selected item: the first free output of
+    /// the start that matches a free input of the end, light before signals.
+    fn finish_keyboard_wire(&mut self) {
+        let Some(from) = self.wiring_from.take() else { return };
+        let Some(to) = self.selected_item() else {
+            self.notify("Select the part or box to wire to");
+            self.wiring_from = Some(from);
+            return;
+        };
+        let layout = &self.layout;
+        let counts = |item: Item| match item {
+            Item::Box(id) => layout.instance(id).map(|inst| self.catalog.counts(&inst.block)).unwrap_or_default(),
+            Item::Part(i) => layout.components.get(i).map_or_else(PortCounts::default, |c| PortCounts {
+                signal_in: c.kind.signal_inputs().len(),
+                signal_out: c.kind.signal_outputs().len(),
+                ..Default::default()
+            }),
+        };
+        let (out, inp) = (counts(from), counts(to));
+        // Light: a laser's output or a box's light outputs, into a box's light inputs.
+        let light_from: Vec<Hit> = match from {
+            Item::Part(i) if matches!(layout.components.get(i).map(|c| c.kind), Some(OpticComponentKind::Laser { .. })) => {
+                if layout.feed_of(i).is_none() { vec![Hit::LaserOut(i)] } else { Vec::new() }
+            }
+            Item::Box(id) => (0..out.optical_out)
+                .map(|port| model::PortRef { instance: id, port })
+                .filter(|p| !layout.wires.iter().any(|w| w.from == *p))
+                .map(Hit::LightOut)
+                .collect(),
+            _ => Vec::new(),
+        };
+        let light_to: Option<Hit> = match to {
+            Item::Box(id) => (0..inp.optical_in)
+                .map(|port| model::PortRef { instance: id, port })
+                .find(|p| !layout.wires.iter().any(|w| w.to == *p) && !layout.feeds.iter().any(|f| f.to == *p))
+                .map(Hit::LightIn),
+            Item::Part(_) => None,
+        };
+        // Signals: an output may drive many inputs, but prefer an unused one.
+        let mut signal_from: Vec<Terminal> = (0..out.signal_out).map(|port| Terminal { item: from, port }).collect();
+        signal_from.sort_by_key(|t| layout.signals.iter().any(|w| w.from == *t));
+        let signal_to = (0..inp.signal_in).map(|port| Terminal { item: to, port }).find(|t| layout.signal_source(*t).is_none());
+        let pair = match (light_from.first(), light_to, signal_from.first(), signal_to) {
+            (Some(&a), Some(b), _, _) => Some((a, b)),
+            (_, _, Some(&a), Some(b)) => Some((Hit::SignalOut(a), Hit::SignalIn(b))),
+            _ => None,
+        };
+        let (from_name, to_name) = (self.item_name(from), self.item_name(to));
+        match pair {
+            Some((a, b)) if from != to => {
+                self.connect(a, b);
+                self.notify(format!("Wired {from_name} to {to_name}"));
+            }
+            Some(_) => self.notify("Choose another item to wire to"),
+            None => self.notify(format!("No free matching ports from {from_name} to {to_name}")),
+        }
+    }
+
+    /// Select the part or box after (or before) the active one, in order:
+    /// parts, then boxes. Brings it into view.
+    fn select_step(&mut self, step: i32) {
+        let parts = self.layout.components.len();
+        let total = parts + self.layout.instances.len();
+        if total == 0 {
+            self.notify("Nothing to select");
+            return;
+        }
+        let current = match (self.editor.selection.active(), self.editor.boxes.active()) {
+            (Some(i), _) if self.editor.boxes.is_empty() => Some(i),
+            (_, Some(b)) => Some(parts + b),
+            _ => None,
+        };
+        let next = match current {
+            Some(k) => (k as i32 + step).rem_euclid(total as i32) as usize,
+            None if step > 0 => 0,
+            None => total - 1,
+        };
+        self.editor.clear_selection();
+        self.selected_wire = None;
+        if next < parts {
+            self.editor.selection.select_only(next);
+        } else {
+            self.editor.boxes.select_only(next - parts);
+        }
+        if let (Some(canvas), Some(bounds)) = (self.canvas, self.bounds(true))
+            && !self.view.visible(canvas).contains_rect(bounds)
+        {
+            self.view.pan = canvas.size() / 2.0 - bounds.center().to_vec2() * self.view.zoom;
+        }
+    }
+
     fn open_menu(&mut self, target: Option<Hit>) {
-        let (Some(screen), Some(world)) = (self.mouse_screen, self.mouse_world) else {
+        // From the keyboard, with the pointer elsewhere: next to the
+        // selection, or in the middle of the view.
+        let fallback = self.canvas.map(|canvas| {
+            let world = self.bounds(true).map_or_else(|| self.view.to_world(canvas, canvas.center()), |b| b.right_center() + egui::vec2(GRID, 0.0));
+            (self.view.to_screen(canvas, world), world)
+        });
+        let Some((screen, world)) = self.mouse_screen.zip(self.mouse_world).or(fallback) else {
             return;
         };
         self.menu = Some(Menu {
@@ -628,11 +782,11 @@ impl OpticsPanel {
                 return;
             }
             Placeable::Block(block) => self.editor.place_block(&mut self.layout, block, world, &counts).is_some(),
-            Placeable::Example(example) => {
+            Placeable::Asset(asset) => {
                 if self.embedded {
-                    self.requests.push(Request::PlaceExample { example, cell: model::cell_of(world) });
+                    self.requests.push(Request::PlaceAsset { asset, cell: model::cell_of(world) });
                 } else {
-                    self.notify("Example components need a project: use the workspace");
+                    self.notify("Library components need a project: use the workspace");
                 }
                 return;
             }
@@ -778,11 +932,48 @@ impl OpticsPanel {
     }
 
     pub fn handle_keys(&mut self, ui: &Ui) {
-        for (key, modifiers) in ui_kit::shortcut_keys(ui.ctx()) {
+        for (key, modifiers) in ui_kit::shortcut_keys(ui.ctx(), self.canvas_id) {
             if let Some(action) = shortcut(key, modifiers, self.editor.grab.is_some()) {
+                // Tab opens a selected component; otherwise it moves the
+                // keyboard focus on to the next control, as everywhere.
+                if action == Action::Inspect {
+                    if self.selected_component().is_none() {
+                        continue;
+                    }
+                    ui_kit::keep_focus_on_tab(ui.ctx());
+                }
                 self.apply(action);
             }
         }
+    }
+
+    /// What a screen reader says for the canvas: what's on it and what's
+    /// selected, as `]` / `[` step through it.
+    pub fn canvas_description(&self) -> String {
+        let mut text = format!(
+            "Canvas, {} parts and {} boxes",
+            self.layout.components.len(),
+            self.layout.instances.len()
+        );
+        let selected = match (self.editor.selection.active(), self.editor.boxes.active()) {
+            (_, Some(b)) => self.layout.instances.get(b).map(|inst| {
+                format!("{} at cell {}, {}", self.catalog.display(&inst.block).name, inst.cell.0, inst.cell.1)
+            }),
+            (Some(i), None) => self.layout.components.get(i).map(|c| {
+                let (ci, cj) = model::cell_of(c.pos);
+                format!("{} at cell {ci}, {cj}", c.kind.name())
+            }),
+            _ => None,
+        };
+        if let Some(from) = self.wiring_from {
+            text += &format!(". Wiring from {}", self.item_name(from));
+        }
+        match (selected, self.editor.len()) {
+            (Some(item), 1) => text += &format!(". Selected: {item}"),
+            (Some(item), n) => text += &format!(". {n} selected, last {item}"),
+            (None, _) => text += ". Nothing selected; ] selects the first item, Shift+A adds a part",
+        }
+        text
     }
 
     pub fn header_text(&self) -> String {

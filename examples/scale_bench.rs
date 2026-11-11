@@ -10,6 +10,8 @@ use shine::panels::optics::model::{BlockRef, Layout};
 use shine::panels::project::Project;
 
 fn main() {
+    // Results go through the logger (stderr; --log-file to keep them).
+    let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let mut previous: Option<f64> = None;
     for n in [1, 2, 4, 8, 16, 32] {
         let mut p = Project::new();
@@ -28,7 +30,7 @@ fn main() {
         }
         let ms = start.elapsed().as_secs_f64() * 1e3 / reps as f64;
         let growth = previous.map_or_else(String::new, |p| format!("  ×{:.1} for twice the size", ms / p));
-        println!("{n:>3} full adders: {ms:>8.2} ms per simulation ({} sources){growth}", first.wavelengths.len());
+        tracing::info!("{n:>3} full adders: {ms:>8.2} ms per simulation ({} sources){growth}", first.wavelengths.len());
         previous = Some(ms);
     }
 }

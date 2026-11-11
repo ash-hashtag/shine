@@ -58,31 +58,49 @@ pub fn shortcuts_blocked(ctx: &egui::Context) -> bool {
     ctx.text_edit_focused()
 }
 
-/// Key presses mapped to shortcuts, with egui's Tab focus traversal cancelled
-/// when Tab was used as a shortcut. Call before drawing any widget.
-pub fn shortcut_keys(ctx: &egui::Context) -> Vec<(egui::Key, egui::Modifiers)> {
+/// Whether a focused control uses `key` itself: Tab moves focus on,
+/// arrows change a slider, Space and Enter press a button.
+fn used_by_focused_widget(key: egui::Key) -> bool {
+    use egui::Key::*;
+    matches!(key, Tab | ArrowLeft | ArrowRight | ArrowUp | ArrowDown | Space | Enter)
+}
+
+/// Key presses for shortcuts. While a control other than `canvas` has
+/// keyboard focus, the keys it uses itself go to it instead, so the whole
+/// interface works from the keyboard. Call before drawing any widget.
+pub fn shortcut_keys(ctx: &egui::Context, canvas: Option<egui::Id>) -> Vec<(egui::Key, egui::Modifiers)> {
     if shortcuts_blocked(ctx) {
         return Vec::new();
     }
+    let focused = ctx.memory(|m| m.focused());
+    let widget_has_keys = focused.is_some() && focused != canvas;
     let keys: Vec<_> = ctx.input(|i| {
         i.events
             .iter()
             .filter_map(|e| match e {
+                // Held arrow keys repeat, to keep moving or panning.
                 egui::Event::Key {
                     key,
                     pressed: true,
-                    repeat: false,
+                    repeat,
                     modifiers,
                     ..
-                } => Some((*key, *modifiers)),
+                } if (!repeat || matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown))
+                    && !(widget_has_keys && used_by_focused_widget(*key)) =>
+                {
+                    Some((*key, *modifiers))
+                }
                 _ => None,
             })
             .collect()
     });
-    if keys.iter().any(|(k, _)| *k == egui::Key::Tab) {
-        ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
-    }
     keys
+}
+
+/// Cancel egui's Tab focus traversal for this frame, when Tab was used as a
+/// shortcut instead.
+pub fn keep_focus_on_tab(ctx: &egui::Context) {
+    ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
 }
 
 /// Small uppercase section title with breathing room.
@@ -238,6 +256,36 @@ pub fn initials(name: &str) -> String {
             .collect::<String>()
             .to_uppercase(),
     }
+}
+
+/// A slider with its value box, for screen readers named by `label` (the id
+/// of the label next to them): `egui::Slider`'s own value box can't be named.
+/// The value box is named here; name the returned response (the slider's,
+/// reporting a change from either) with `.labelled_by(label)`.
+pub fn slider<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    label: egui::Id,
+    value: &mut N,
+    range: std::ops::RangeInclusive<N>,
+    suffix: &str,
+) -> Response {
+    ui.horizontal(|ui| {
+        let slider = ui.add(egui::Slider::new(value, range.clone()).show_value(false));
+        let span = range.end().to_f64() - range.start().to_f64();
+        let decimals = if N::INTEGRAL { 0 } else { 2 };
+        let number = ui
+            .add(
+                egui::DragValue::new(value)
+                    .range(range)
+                    .speed(if N::INTEGRAL { 0.1 } else { span / 300.0 })
+                    .min_decimals(decimals)
+                    .max_decimals(decimals.max(4))
+                    .suffix(suffix),
+            )
+            .labelled_by(label);
+        slider | number
+    })
+    .inner
 }
 
 #[cfg(test)]

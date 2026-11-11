@@ -8,7 +8,8 @@
 use egui::Pos2;
 use serde::{Deserialize, Serialize};
 
-use super::{ComponentMeta, DocId, DocumentFile};
+use super::v6::Meta6 as ComponentMeta;
+use super::{DocId, DocumentFile};
 use crate::panels::optics::model::{self, Feed, InstanceId, Line, PlacedComponent, SignalWire, Wire};
 use crate::panels::schematic::model::WireSettings;
 use crate::photonics::REFERENCE_NM;
@@ -154,7 +155,7 @@ pub struct Project {
 }
 
 pub fn upgrade(d: Document) -> DocumentFile {
-    DocumentFile { id: d.id, name: d.name, component: d.component, cell_um: d.cell_um, layout: d.layout.upgrade() }
+    DocumentFile { id: d.id, name: d.name, component: d.component.map(ComponentMeta::upgrade), cell_um: d.cell_um, layout: d.layout.upgrade() }
 }
 
 /// A box in a format-1 schematic, placed by position.

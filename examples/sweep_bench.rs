@@ -21,10 +21,12 @@ fn time(name: &str, points: usize, run: impl Fn() -> sweep::SweepResult) {
         assert_eq!(r.xs.len(), points);
     }
     let each = t.elapsed() / rounds;
-    println!("{name:<44} {points:>5} points  {:>9.1} ms  {:>7.1} µs/point", each.as_secs_f64() * 1e3, each.as_secs_f64() * 1e6 / points as f64);
+    tracing::info!("{name:<44} {points:>5} points  {:>9.1} ms  {:>7.1} µs/point", each.as_secs_f64() * 1e3, each.as_secs_f64() * 1e6 / points as f64);
 }
 
 fn main() {
+    // Results go through the logger (stderr; --log-file to keep them).
+    let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let names = |id: shine::panels::optics::model::InstanceId| format!("box {}", id.0);
 
     // Components, rings and electronics: the WDM link example.

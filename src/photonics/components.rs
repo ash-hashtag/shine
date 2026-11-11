@@ -509,6 +509,70 @@ impl Component for Custom {
     }
 }
 
+/// Scattering matrices at a set of wavelengths, ascending: what a measured
+/// or separately simulated component is known by.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Table {
+    pub wavelengths_nm: Vec<f64>,
+    /// `outputs x inputs`, one per wavelength.
+    pub matrices: Vec<Matrix>,
+}
+
+impl Table {
+    /// The matrix at `wavelength_nm`: magnitude and phase interpolated
+    /// linearly between the two nearest wavelengths (phase the short way
+    /// round, so a resonance's phase doesn't jump); outside the table, the
+    /// nearest end.
+    pub fn at(&self, wavelength_nm: f64) -> Matrix {
+        let w = &self.wavelengths_nm;
+        let last = w.len().saturating_sub(1);
+        if w.is_empty() {
+            return Matrix::zeros(0, 0);
+        }
+        if wavelength_nm <= w[0] || last == 0 {
+            return self.matrices[0].clone();
+        }
+        if wavelength_nm >= w[last] {
+            return self.matrices[last].clone();
+        }
+        let k = w.partition_point(|&x| x <= wavelength_nm).clamp(1, last) - 1;
+        let t = (wavelength_nm - w[k]) / (w[k + 1] - w[k]);
+        let (a, b) = (&self.matrices[k], &self.matrices[k + 1]);
+        Matrix::from_fn(a.nrows(), a.ncols(), |r, c| {
+            let (x, y) = (a[(r, c)], b[(r, c)]);
+            let mut turn = y.arg() - x.arg();
+            if turn > PI {
+                turn -= 2.0 * PI;
+            } else if turn < -PI {
+                turn += 2.0 * PI;
+            }
+            C64::from_polar(x.norm() + t * (y.norm() - x.norm()), x.arg() + t * turn)
+        })
+    }
+}
+
+/// A component defined by a [`Table`], shared rather than copied.
+#[derive(Clone, Debug)]
+pub struct Tabulated {
+    pub name: String,
+    pub table: std::sync::Arc<Table>,
+}
+
+impl Component for Tabulated {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn num_inputs(&self) -> usize {
+        self.table.matrices.first().map_or(0, |m| m.ncols())
+    }
+    fn num_outputs(&self) -> usize {
+        self.table.matrices.first().map_or(0, |m| m.nrows())
+    }
+    fn s_matrix(&self, wavelength_nm: f64) -> Matrix {
+        self.table.at(wavelength_nm)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -783,5 +847,30 @@ mod tests {
         let c = Custom::new(String::from("thing"), m.clone());
         assert_eq!(c.s_matrix(1.0), m);
         assert_eq!(c.s_matrix(9999.0), m);
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+
+    #[test]
+    fn tables_interpolate_magnitude_and_phase() {
+        let m = |v: C64| Matrix::from_fn(1, 1, |_, _| v);
+        let t = Table {
+            wavelengths_nm: vec![1500.0, 1510.0, 1520.0],
+            matrices: vec![m(C64::from_polar(1.0, 3.0)), m(C64::from_polar(0.5, -3.0)), m(C64::new(0.2, 0.0))],
+        };
+        // At a table point: exactly it.
+        assert!((t.at(1510.0)[(0, 0)] - C64::from_polar(0.5, -3.0)).norm() < 1e-12);
+        // Halfway: magnitude 0.75, phase the short way across ±π (π, not 0).
+        let mid = t.at(1505.0)[(0, 0)];
+        assert!((mid.norm() - 0.75).abs() < 1e-12);
+        assert!((mid.arg().abs() - PI).abs() < 1e-9, "{}", mid.arg());
+        // Outside: the nearest end.
+        assert_eq!(t.at(1400.0), t.matrices[0]);
+        assert_eq!(t.at(1600.0), t.matrices[2]);
+        let c = Tabulated { name: "measured".into(), table: std::sync::Arc::new(t) };
+        assert_eq!((c.num_inputs(), c.num_outputs(), c.name()), (1, 1, "measured"));
     }
 }

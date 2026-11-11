@@ -14,12 +14,27 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Added
 
+- Export for other tools (File → Export for other tools…, or `shine export`): a design's
+  S-parameters as a Touchstone `.sNp` file for circuit simulators and scikit-rf, and its
+  layout as a gdsfactory YAML circuit, which gdsfactory turns into a GDS or OASIS mask with
+  a foundry's kit: the way towards a tapeout. Both checked with gdsfactory 9.51 and
+  scikit-rf 2.2.
+- Components from S-parameter files: Touchstone (`.sNp`, versions 1 and 2, read with
+  rust-rf) and Lumerical INTERCONNECT `.dat` files, as foundry kits publish their compact
+  models, become black-box components; import them one by one or a folder at a time into
+  the asset library, or drop them on the window. Projects are now format 8.
+- Scripted components: a component's light and signals computed by JavaScript (QuickJS),
+  with its state and the clock, written and applied in the inspector (Component → New
+  scripted component). Scripts run in a sandbox with no files, network or clock and with
+  time and memory limits (desktop app).
+- Resonance readouts on wavelength sweeps: free spectral range, width and Q of each
+  output, in the sweep window and with `shine simulate … --readouts`.
 - Sweeps: plot every output of a design over a range of wavelengths (tune a laser) or of
   one parameter of a part or block, and copy or save the data as CSV. Open from the
   inspector, a part's right-click menu, Analysis → Sweep…, or `?sweep` in a link. Each
   point is a full simulation, components and electronics included.
 - Real units: powers in mW (a laser of amplitude 1 emits 1 mW, 0 dBm). Lasers are set by
-  their power in mW or dBm; readings show mW, µW, nW or W, or dBm (Edit → Preferences…).
+  their power in mW or dBm; readings show W, mW (0.250 mW below a milliwatt) or nW, or dBm (Edit → Preferences…).
   Attenuators show their loss in dB; detector thresholds are in mW.
 - Sweep plots in mW, dBm, or dB relative to the input power, with readouts for every
   curve: peak, minimum, insertion loss and extinction ratio.
@@ -44,11 +59,52 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   Performance graph) of the time between frames and per frame against 60 and 30 fps, to
   tell a real drop in frames from an impression. Slow frames are also logged.
 
+- The editor works from the keyboard: Tab moves through every control, arrow keys move
+  the selection on the canvas (or pan), `]` / `[` select the next or previous part or
+  box, + / − zoom, Shift+A adds a part next to the selection without the mouse, and W
+  wires the selected item to the next one you select.
+- Every control is named for screen readers, and the canvas says what's on it and
+  what's selected.
+- Installing the desktop app: checking a download, and opening the unsigned builds on
+  macOS and Windows (Getting started).
+- An asset library (the new **Assets** tab) keeps components for every project, in
+  folders, with search by name, description, folder, port or parameter. Shine's example
+  components are its *Examples* folder. Add components by dragging them onto a folder,
+  from their right-click menu or the Component menu, or by importing files; drag them onto
+  the grid to place them.
+- Components look the way you choose: a colour, a box shape (rectangle, rounded, capsule,
+  cut corners) and a picture instead of the initials. Pictures are shrunk to 128 px and
+  stored as WebP; SVGs are kept as they are.
+- Ctrl+A (Cmd+A) selects every part and box, as well as A.
+- The waveguide attenuator and phase shifter blocks take a signal on top, like their
+  free-space counterparts: it multiplies what the attenuator passes (0 blocks it) and
+  adds π per unit to the phase. They're now named *Waveguide attenuator* and *Waveguide
+  phase shifter*, apart from the free-space parts. The inspector of a driven part or block
+  says what the signal does now ("0.5 × 50% → passes 25%").
+- The asset library window (View → Asset library…), a window of its own on desktop:
+  folders, search, sorting and a grid of tiles that stays quick with thousands of
+  components; select several to move or remove them, file tiles by dragging them onto
+  folders, and double-click to open one in a tab (as in the Assets tab).
+- Import a folder of components (desktop): every `.shinecomp` and `.shine` file in it and
+  its subfolders, which become library folders. Dropping a folder on the window does the
+  same.
+- Component files (`.shinecomp`): export a component with the components it uses, and
+  import it into the library or open it in a tab.
+- Drag and drop files onto the window: on the left panel they go into the asset library,
+  anywhere else they open (a component in a tab of its own, a project in place of the
+  current one), and a picture goes on the component being edited. Projects are now format
+  7.
+
 ### Changed
 
-- Big designs simulate much faster: 16 Full adders take 11 ms instead of 145 ms. Each
-  feedback loop is solved only for the light sources that reach it, and without the
-  linear-algebra library starting threads inside work that already runs in parallel.
+- Powers below a milliwatt read in mW ("0.501 mW", not "501 µW", which was easy to read
+  as 501 mW), and in nW below a microwatt.
+
+- Big designs simulate much faster, and the time grows about in step with the design:
+  16 Full adders take 4 ms instead of 145 ms, 32 take 10 ms. Light sources in parts of
+  the optics that aren't connected are solved together in one pass, each feedback loop
+  only for the sources that reach it, and without the linear-algebra library starting
+  threads inside work that already runs in parallel.
 - Dragging stays smooth in big designs: when a simulation takes more than about 8 ms, it
   re-runs ten times a second during a drag instead of on every move, and again on
   release.
@@ -60,6 +116,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Fixed
 
+- A waveguide component with Output pins couldn't be used in another design ("output … is
+  already connected"): its pins also shone light into the component itself.
+
 - Dragging a laser's signal pin onto a box's light input warned about connecting a signal
   to light and offered to insert another laser; it now connects the laser's light.
 - Windows (Preferences, Sweep, Examples…) could open over the menu bar and block it; they
@@ -68,6 +127,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   font that has them; the fonts they need are now bundled.
 - Box outputs, beams, ports and waveguides show powers in mW or dBm like everything else.
 - Library rows are visible to screen readers.
+- Tab never moved between controls in the editor: it opens a component only when a
+  component box is selected, and otherwise moves to the next control.
+- The inspector's list of what the simulation assumes still said waveguides had no
+  dispersion or loss and that powers were relative units.
 - Export: every reading as CSV (inspector → Readouts → Copy CSV / Save CSV…), the canvas
   as a PNG image (View → Save canvas image…), and a sweep's plot as a PNG image.
 - `shine simulate PROJECT.shine`: readings, wavelength sweeps and parameter sweeps from

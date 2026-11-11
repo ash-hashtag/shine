@@ -126,6 +126,9 @@ pub enum Builtin {
         light_outputs: Vec<String>,
         wavelength_nm: f64,
     },
+    /// A black box defined by data: S-parameters measured or simulated
+    /// elsewhere, interpolated over wavelength. Shared, not copied.
+    Model(std::sync::Arc<crate::panels::models::ModelSpec>),
 }
 
 fn msb_first(prefix: &str, bits: u32) -> Vec<String> {
@@ -219,7 +222,25 @@ impl Builtin {
                 names
             }
             Self::FunctionCell { inputs, .. } => numbered("in", *inputs as usize),
+            Self::Model(m) => m.signal_inputs.clone(),
+            // Control inputs, as on the free-space parts.
+            Self::Attenuator { .. } => vec!["transmission".into()],
+            Self::PhaseShifter { .. } => vec!["phase".into()],
             _ => Vec::new(),
+        }
+    }
+
+    /// The block as a signal `v` on its control input sets it: an
+    /// attenuator passes `v` times as much power (0 blocks it), a phase
+    /// shifter adds `v`·π. Other blocks are unchanged.
+    pub fn driven(&self, v: f64) -> Builtin {
+        match self {
+            Self::Attenuator { loss_db } => {
+                let passes = (10f64.powf(-loss_db / 10.0) * v).clamp(0.0, 1.0);
+                Self::Attenuator { loss_db: if passes > 0.0 { -10.0 * passes.log10() } else { f64::INFINITY } }
+            }
+            Self::PhaseShifter { phase } => Self::PhaseShifter { phase: phase + std::f64::consts::PI * v },
+            other => other.clone(),
         }
     }
 
@@ -229,6 +250,7 @@ impl Builtin {
             Self::NumberInput { bits, .. } => msb_first("b", *bits),
             Self::Register { bits } => msb_first("q", *bits),
             Self::FunctionCell { outputs, .. } => numbered("out", outputs.len()),
+            Self::Model(m) => m.signal_outputs.clone(),
             _ => Vec::new(),
         }
     }
@@ -266,15 +288,20 @@ impl Builtin {
                 "Two waveguides brought close: splits power between the bar and cross outputs.",
                 Elements,
             ),
+            // "Waveguide": the free-space parts of the same kind are a
+            // different thing (in a beam, not on a waveguide).
             Self::PhaseShifter { .. } => (
-                "Phase shifter",
+                "Waveguide phase shifter",
                 "PS",
-                "Heater or modulator adding a fixed phase.",
+                "A heater or modulator on a waveguide, adding a phase. Wire a signal to its top to add π per unit: 1 flips an interferometer.",
                 Elements,
             ),
-            Self::Attenuator { .. } => {
-                ("Attenuator", "AT", "Wavelength-independent loss.", Elements)
-            }
+            Self::Attenuator { .. } => (
+                "Waveguide attenuator",
+                "AT",
+                "Loss on a waveguide, in dB, the same at every wavelength. Wire a signal to its top to scale how much passes: 0 blocks it, 1 leaves it as set.",
+                Elements,
+            ),
             Self::DelayLine { .. } => (
                 "Delay line",
                 "DL",
@@ -359,6 +386,12 @@ impl Builtin {
                 "Computes outputs from expressions over its inputs: in1… signals, p1… received light power, t clock ticks. Light outputs emit light with the computed amplitude.",
                 Electronics,
             ),
+            Self::Model(_) => (
+                "S-parameter model",
+                "S",
+                "A component known by its S-parameters, measured or simulated elsewhere (Touchstone or Lumerical files), interpolated over wavelength.",
+                Elements,
+            ),
         };
         BlockInfo {
             name,
@@ -372,6 +405,7 @@ impl Builtin {
         match self {
             Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_inputs, .. } => numbered("p", *light_inputs as usize),
+            Self::Model(m) => m.inputs.clone(),
             Self::InputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing => numbered("in", 2),
             Self::YCombiner => numbered("in", 2),
@@ -385,6 +419,7 @@ impl Builtin {
         match self {
             Self::Detector | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_outputs, .. } => numbered("light", light_outputs.len()),
+            Self::Model(m) => m.outputs.clone(),
             Self::OutputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter => {
                 numbered("out", 2)
@@ -518,6 +553,23 @@ impl Builtin {
                         c.add(Laser::new(amplitude, *wavelength_nm)).output(0)
                     })
                     .collect(),
+            },
+            Self::Model(m) => match m.script() {
+                // A script's light depends on its signals: the simulator
+                // builds it (see `sim`); without them, it runs undriven.
+                #[cfg(not(target_arch = "wasm32"))]
+                Some(code) => {
+                    let (engine, declared) = crate::panels::script::engine(code).map_err(|e| CircuitError::Model(format!("“{}”: {e}", m.name)))?;
+                    let signals = vec![None; declared.signal_inputs.len()];
+                    let n = c.add(crate::panels::script::Scripted { name: m.name.clone(), engine, declared, signals });
+                    single(n, m.inputs.len(), m.outputs.len())
+                }
+                #[cfg(target_arch = "wasm32")]
+                Some(_) => return Err(CircuitError::Model("scripted components run in the desktop app".into())),
+                None => {
+                    let n = c.add(crate::photonics::Tabulated { name: m.name.clone(), table: m.table() });
+                    single(n, m.inputs.len(), m.outputs.len())
+                }
             },
         })
     }

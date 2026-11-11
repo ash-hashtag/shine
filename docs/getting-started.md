@@ -20,6 +20,30 @@ order: 1
   [AI assistants](ai.md)).
 - **From source:** `cargo run --release` (Rust 1.88 or newer).
 
+## Installing the desktop app
+
+The desktop builds aren't signed or notarised yet, so the first start needs one extra
+step on macOS and Windows. Signed builds are on the [roadmap](roadmap.md).
+
+1. **Check the download** (optional): each release lists `SHA256SUMS.txt`. Compare it with
+   `sha256sum shine-linux-x86_64.tar.gz` (Linux), `shasum -a 256 shine-macos-arm64.tar.gz`
+   (macOS) or `Get-FileHash shine-windows-x86_64.zip` (Windows PowerShell).
+2. **Unpack it** anywhere, for example into `~/Applications`, `~/.local/bin` or
+   `C:\Program Files`. The folder holds `shine`, `shine-mcp`, the README and the licence;
+   nothing else is installed.
+3. **First start:**
+   - **macOS:** macOS says the app "cannot be opened because Apple cannot check it for
+     malicious software". Remove the download quarantine once in Terminal, from the
+     unpacked folder: `xattr -d com.apple.quarantine shine shine-mcp`. (Or Control-click
+     `shine` in Finder, choose Open, then Open again.) Use the `macos-arm64` build on Apple
+     silicon (M1 and later) and `macos-x86_64` on Intel Macs.
+   - **Windows:** SmartScreen may say "Windows protected your PC". Choose **More info →
+     Run anyway**; it asks only the first time.
+   - **Linux:** run `./shine`. It needs the usual desktop libraries (Wayland or X11 and
+     `libxkbcommon`), which desktop distributions already have.
+4. **Updating:** Help → About Shine → Check for updates says when a newer release is out;
+   unpack it over the old folder. Projects open in every later version.
+
 ## The window
 
 ![The editor window](img/wdm-link.webp)
@@ -40,8 +64,8 @@ order: 1
 
 1. Drag **Laser** from *Light & detection* onto the grid. It points right.
 2. Drag **Detector** to a cell a few cells to the right of the laser, on the same row.
-3. A beam appears and the detector reads `1.000`, the laser's power.
-4. Drag a **Beam Splitter** between them. The beam splits; the detector now reads `0.500`
+3. A beam appears and the detector reads `1.00 mW`, the laser's power.
+4. Drag a **Beam Splitter** between them. The beam splits; the detector now reads `0.500 mW`
    and the reflected half leaves the splitter at 90°.
 5. Press **R** with the splitter selected to rotate it 45°, or **G** to move it.
 

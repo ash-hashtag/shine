@@ -14,10 +14,10 @@ shine simulate wdm.shine
 
 ```text
 4-channel WDM optical link · wdm.shine · settled in 3 rounds
-  Detector 26,5  976 µW (-0.11 dBm)
-  Detector 31,5  2.20 µW (-26.58 dBm)
-  Detector 36,5  977 µW (-0.10 dBm)
-  Detector 41,5  974 µW (-0.12 dBm)
+  Detector 26,5  0.976 mW (-0.11 dBm)
+  Detector 31,5  0.00220 mW (-26.58 dBm)
+  Detector 36,5  0.977 mW (-0.10 dBm)
+  Detector 41,5  0.974 mW (-0.12 dBm)
   Display 26,9   11
 ```
 
@@ -59,12 +59,36 @@ ITEM can be:
 | `--laser ITEM` | the laser to tune |
 | `--sweep ITEM.PARAM=FROM:TO[:POINTS]` | sweep a parameter |
 | `--box-outputs` | include the light leaving boxes |
+| `--readouts` | with a sweep: each output's peak, minimum, insertion loss, extinction, and resonances (FSR, width, Q) as CSV, instead of the curves |
 | `--clock N` | tick the clock N times first, so registers hold values |
 | `--csv` | readings as CSV |
 | `--out FILE` | write to a file instead of the terminal |
 | `--help` | the options |
 
 `shine --version` prints the version.
+
+## Exporting
+
+`shine export` writes a design in a format other tools read (see
+[Other tools and tapeout](interop.md)):
+
+```sh
+shine export ring.shine                                   # S-parameters: ring.s4p
+shine export ring.shine --wavelength 1540:1560:2001 --out ring.s4p
+shine export chip.shine --format gdsfactory               # layout: chip.pic.yml
+```
+
+| Option | Effect |
+|---|---|
+| `--format touchstone` or `gdsfactory` | the format (default: from `--out`'s extension, else touchstone) |
+| `--doc NAME` | the design (default: the first with light ports) |
+| `--wavelength FROM:TO[:POINTS]` | Touchstone: the wavelengths in nm (default 1500:1600:401) |
+| `--spacing UM` | gdsfactory: room between components, µm (default 40) |
+| `--out FILE` | where to write (default: next to the project, named after the design) |
+
+It prints what it wrote, with a note for anything that didn't carry over (free-space parts
+in a layout, for example). A Touchstone file's name must say its port count: `.s4p` for
+four ports.
 
 ## In scripts and CI
 

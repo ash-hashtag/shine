@@ -258,3 +258,42 @@ fn a_components_exported_parameter_is_swept_on_its_box() {
     assert!(set(&mut set_one, item, "phase", 1.0));
     assert_eq!(get_in(&set_one, item, "phase", &p), Some(1.0));
 }
+
+#[test]
+fn a_rings_resonances_match_the_textbook() {
+    use crate::photonics::{Circuit, blocks};
+    // An all-pass ring, 100 µm round, κ = 0.05, 3 dB/cm, n_g = 4.2.
+    let (kappa, length, loss_db_cm, n_g) = (0.05, 100.0, 3.0, 4.2);
+    let mut c = Circuit::new();
+    let ring = c
+        .add_block(&blocks::AllPassRing { coupling: kappa, length_um: length, n_eff: 2.4, loss_db_per_cm: loss_db_cm, n_g, reference_nm: 1550.0 })
+        .unwrap();
+    let xs: Vec<f64> = (0..20001).map(|k| 1540.0 + 20.0 * k as f64 / 20000.0).collect();
+    let ys: Vec<f64> = xs
+        .iter()
+        .map(|&wl| c.transfer_matrix(wl, &[ring.inputs[0]], &[ring.outputs[0]]).unwrap()[(0, 0)].norm_sqr())
+        .collect();
+    let s = spectrum(&xs, &ys).expect("resonances");
+    assert!(s.dips, "a through port dips");
+    let fsr = 1550.0_f64.powi(2) / (n_g * length * 1000.0);
+    let measured = s.fsr_nm.unwrap();
+    assert!((measured - fsr).abs() / fsr < 0.01, "FSR {measured} vs λ²/(n_g L) = {fsr}");
+    // Half depth between the dip and the shoulders.
+    let r = (1.0 - kappa).sqrt();
+    let a = 10f64.powf(-loss_db_cm * length * 1e-4 / 20.0);
+    let fwhm = (1.0 - r * a) * 1550.0_f64.powi(2) / (std::f64::consts::PI * n_g * length * 1000.0 * (r * a).sqrt());
+    let w = s.fwhm_nm.unwrap();
+    assert!((w - fwhm).abs() / fwhm < 0.05, "FWHM {w} vs {fwhm}");
+    let q = s.q.unwrap();
+    assert!((q - 1550.0 / fwhm).abs() / (1550.0 / fwhm) < 0.05, "Q {q}");
+}
+
+#[test]
+fn spectra_without_clear_resonances_say_so() {
+    let xs: Vec<f64> = (0..100).map(|k| 1500.0 + k as f64).collect();
+    assert_eq!(spectrum(&xs, &vec![1.0; 100]), None, "flat");
+    // One dip cut off by the end of the sweep: where it is, but no width.
+    let ys: Vec<f64> = xs.iter().map(|&x| if x > 1595.0 { 0.1 } else { 1.0 }).collect();
+    let s = spectrum(&xs, &ys).unwrap();
+    assert_eq!((s.resonances.len(), s.fsr_nm, s.fwhm_nm), (1, None, None));
+}

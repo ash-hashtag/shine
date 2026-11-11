@@ -21,7 +21,7 @@ pub struct Reading {
 }
 
 impl Reading {
-    /// The value as people read it: "976 µW (-0.11 dBm)", or the number.
+    /// The value as people read it: "0.976 mW (-0.11 dBm)", or the number.
     pub fn shown(&self, unit: PowerUnit) -> String {
         if self.unit == "mW" { units::format_both(self.value, unit) } else { format!("{}", self.value) }
     }
@@ -72,7 +72,7 @@ mod tests {
         let display = r.iter().find(|r| r.name.starts_with("Display")).unwrap();
         assert_eq!((display.value, display.unit, display.shown(PowerUnit::Dbm).as_str()), (11.0, "", "11"));
         let detector = r.iter().find(|r| r.name == "Detector 26,5").unwrap();
-        assert!(detector.value > 0.9 && detector.shown(PowerUnit::MilliWatt).contains("µW"));
+        assert!(detector.value > 0.9 && detector.shown(PowerUnit::MilliWatt).contains("0.9"));
         assert!(r.iter().any(|r| r.from_box), "box outputs are there, marked");
         let csv = to_csv(&r);
         assert!(csv.starts_with("\"reading\",\"value\",\"unit\"\n"));

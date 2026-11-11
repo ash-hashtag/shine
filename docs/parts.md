@@ -27,7 +27,7 @@ right edge = out); **signal terminals** are square (top edge = in, bottom edge =
 | **Beam Splitter** | Partially reflecting mirror; reflectivity sets the split. Rotates in 45° steps. | — |
 | **Mirror** | Reflects light; the dark side absorbs. Rotates in 45° steps. | — |
 | **Phase Shifter** | Adds a phase to light passing through. | in: *phase*, adds π per unit (1 flips an interferometer) |
-| **Attenuator** | Passes a fraction of the power (transmission 0–1); the inspector shows it as a loss in dB. | in: *transmission*, multiplies it |
+| **Attenuator** | Passes a fraction of the power (transmission 0–1) of a beam; the inspector shows it as a loss in dB. For light in a waveguide, use the *Waveguide attenuator* block. | in: *transmission*, multiplies it (0 blocks, 1 as set) |
 
 Older projects can contain a *Lens*; it is no longer in the library because a ray-on-grid
 model can't focus, so it only passes light through.
@@ -43,8 +43,9 @@ model can't focus, so it only passes light through.
 
 ## Example components
 
-Ready-made [components](components.md) built from the parts above. Placing one adds a
-copy to your project that you can open with Tab and change.
+Ready-made [components](components.md) built from the parts above, in the **Assets** tab's
+*Examples* folder. Placing one adds a copy to your project that you can open with Tab and
+change.
 
 | Component | Ports |
 |---|---|
@@ -53,9 +54,11 @@ copy to your project that you can open with Tab and change.
 | **Fabry–Pérot filter** | light in, out. Passes only resonant wavelengths. |
 | **1→4 splitter** | light in; four outputs with a quarter of the power each. |
 
-## My components
+## Your components
 
-Every layout you save as a component appears here. See [Components](components.md).
+Every layout you save as a component appears under **Assets → This project**, and the
+ones you keep in the [asset library](components.md#the-asset-library) in its folders,
+for every project.
 
 ## Waveguide blocks
 
@@ -64,8 +67,8 @@ On-chip building blocks, drawn as boxes and connected with waveguides.
 | Block | Light ports | Parameters |
 |---|---|---|
 | **Directional coupler** | 2 in, 2 out (bar and cross) | coupling (power to the cross port) |
-| **Phase shifter** | 1 in, 1 out | phase |
-| **Attenuator** | 1 in, 1 out | loss in dB |
+| **Waveguide phase shifter** | 1 in, 1 out | phase; signal *phase* on top adds π per unit (a modulator) |
+| **Waveguide attenuator** | 1 in, 1 out | loss in dB; signal *transmission* on top multiplies how much passes (0 blocks, 1 as set) |
 | **Delay line** | 1 in, 1 out | length (µm), effective and group index at a wavelength, loss (dB/cm); the inspector shows its delay |
 | **MZI switch** | 2 in, 2 out | θ (internal: π = bar, all of in1 to out1; 0 = cross, all to out2; π/2 = half to each, the default), φ (input phase); the inspector shows the split |
 | **Y-splitter** | 1 in, 2 out | — (equal split) |

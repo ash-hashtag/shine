@@ -88,7 +88,7 @@ impl OpticsPanel {
             .collect()
     }
 
-    fn item_name(&self, item: Item) -> String {
+    pub(super) fn item_name(&self, item: Item) -> String {
         match item {
             Item::Part(i) => self.layout.components.get(i).map_or_else(String::new, |c| {
                 let (x, y) = cell_of(c.pos);
@@ -232,23 +232,27 @@ impl OpticsPanel {
         egui::Grid::new("sweep_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
             match s.mode {
                 SweepMode::Wavelength => {
-                    ui.label("Tune");
+                    let tune = ui.label("Tune").id;
                     if names.is_empty() {
                         ui.label(RichText::new("Add a laser to sweep its wavelength").weak());
                     } else {
                         let current = s.laser.and_then(|i| names.iter().find(|n| n.0 == i)).map_or("Choose a laser", |n| n.1.as_str());
-                        egui::ComboBox::from_id_salt("sweep_laser").selected_text(current).show_ui(ui, |ui| {
-                            for (i, name) in &names {
-                                ui.selectable_value(&mut s.laser, Some(*i), name);
-                            }
-                        });
+                        egui::ComboBox::from_id_salt("sweep_laser")
+                            .selected_text(current)
+                            .show_ui(ui, |ui| {
+                                for (i, name) in &names {
+                                    ui.selectable_value(&mut s.laser, Some(*i), name);
+                                }
+                            })
+                            .response
+                            .labelled_by(tune);
                     }
                     ui.end_row();
                     ui.label("From");
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut s.start).speed(0.1).suffix(" nm"));
+                        ui.add(egui::DragValue::new(&mut s.start).speed(0.1).suffix(" nm")).accessible_name("From wavelength");
                         ui.label("to");
-                        ui.add(egui::DragValue::new(&mut s.stop).speed(0.1).suffix(" nm"));
+                        ui.add(egui::DragValue::new(&mut s.stop).speed(0.1).suffix(" nm")).accessible_name("To wavelength");
                     });
                     ui.end_row();
                 }
@@ -270,29 +274,35 @@ impl OpticsPanel {
                         }
                     });
                     ui.end_row();
-                    ui.label("Parameter");
-                    egui::ComboBox::from_id_salt("sweep_param").selected_text(s.param.as_str()).show_ui(ui, |ui| {
-                        for p in &params {
-                            if ui.selectable_label(s.param == p.name, &p.name).clicked() {
-                                s.param = p.name.clone();
-                                s.start = p.min;
-                                s.stop = p.max;
+                    let label = ui.label("Parameter").id;
+                    egui::ComboBox::from_id_salt("sweep_param")
+                        .selected_text(s.param.as_str())
+                        .show_ui(ui, |ui| {
+                            for p in &params {
+                                if ui.selectable_label(s.param == p.name, &p.name).clicked() {
+                                    s.param = p.name.clone();
+                                    s.start = p.min;
+                                    s.stop = p.max;
+                                }
                             }
-                        }
-                    });
+                        })
+                        .response
+                        .labelled_by(label);
                     ui.end_row();
                     let unit = params.iter().find(|p| p.name == s.param).map_or("", |p| p.unit);
                     ui.label("From");
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut s.start).speed(0.01).suffix(format!(" {unit}")));
+                        ui.add(egui::DragValue::new(&mut s.start).speed(0.01).suffix(format!(" {unit}")))
+                            .accessible_name(format!("From {}", s.param));
                         ui.label("to");
-                        ui.add(egui::DragValue::new(&mut s.stop).speed(0.01).suffix(format!(" {unit}")));
+                        ui.add(egui::DragValue::new(&mut s.stop).speed(0.01).suffix(format!(" {unit}")))
+                            .accessible_name(format!("To {}", s.param));
                     });
                     ui.end_row();
                 }
             }
-            ui.label("Points");
-            ui.add(egui::DragValue::new(&mut s.points).range(2..=5001));
+            let label = ui.label("Points").id;
+            ui.add(egui::DragValue::new(&mut s.points).range(2..=5001)).labelled_by(label);
             ui.end_row();
         });
         ui.horizontal(|ui| {
@@ -391,14 +401,25 @@ impl OpticsPanel {
 
 /// One row per curve: peak, minimum, insertion loss, extinction ratio.
 fn readouts_table(ui: &mut Ui, readouts: &[sweep::Readout], unit: PowerUnit) {
+    // Resonance columns only when some curve has resonances.
+    let spectral = readouts.iter().any(|r| r.spectrum.is_some());
+    let dash = || "–".to_owned();
     egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
-        egui::Grid::new("sweep_readouts_grid").striped(true).num_columns(5).spacing([14.0, 2.0]).show(ui, |ui| {
+        egui::Grid::new("sweep_readouts_grid").striped(true).num_columns(if spectral { 8 } else { 5 }).spacing([14.0, 2.0]).show(ui, |ui| {
             ui.label(RichText::new("Output").strong());
             ui.label(RichText::new("Peak").strong()).on_hover_text("Highest power, and where");
             ui.label(RichText::new("Minimum").strong()).on_hover_text("Lowest power, and where");
             ui.label(RichText::new("Insertion loss").strong())
                 .on_hover_text("Input power over the peak power, in dB: how much is lost on the best path");
             ui.label(RichText::new("Extinction").strong()).on_hover_text("Peak over minimum, in dB");
+            if spectral {
+                ui.label(RichText::new("FSR").strong())
+                    .on_hover_text("Free spectral range: the spacing of neighbouring resonances (dips or peaks)");
+                ui.label(RichText::new("Width").strong()).on_hover_text(
+                    "Full width of the strongest resonance at half its depth (or height); '–' when the sweep has too few points across it",
+                );
+                ui.label(RichText::new("Q").strong()).on_hover_text("Quality factor: the resonance's wavelength over its width");
+            }
             ui.end_row();
             for r in readouts {
                 ui.label(&r.name);
@@ -406,6 +427,19 @@ fn readouts_table(ui: &mut Ui, readouts: &[sweep::Readout], unit: PowerUnit) {
                 ui.label(RichText::new(format!("{} at {}", units::format_power(r.min, unit), fmt_x(r.min_at))).monospace());
                 ui.label(RichText::new(r.insertion_loss_db.map_or_else(|| "–".into(), |d| format!("{d:.2} dB"))).monospace());
                 ui.label(RichText::new(format!("{:.1} dB", r.extinction_db)).monospace());
+                if spectral {
+                    let s = r.spectrum.as_ref();
+                    let fsr = s.and_then(|s| s.fsr_nm).map_or_else(dash, |v| format!("{v:.3} nm"));
+                    let width = s.and_then(|s| s.fwhm_nm).map_or_else(dash, |v| if v < 0.01 { format!("{:.1} pm", v * 1e3) } else { format!("{v:.3} nm") });
+                    let q = s.and_then(|s| s.q).map_or_else(dash, |q| format!("{q:.0}"));
+                    let kind = s.map_or("", |s| if s.dips { " (dips)" } else { " (peaks)" });
+                    ui.label(RichText::new(fsr).monospace()).on_hover_text(format!(
+                        "{} resonance(s){kind}",
+                        s.map_or(0, |s| s.resonances.len())
+                    ));
+                    ui.label(RichText::new(width).monospace());
+                    ui.label(RichText::new(q).monospace());
+                }
                 ui.end_row();
             }
         });

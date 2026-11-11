@@ -26,12 +26,14 @@ fn report(name: &str, times: &[Duration]) {
     let mut ms: Vec<f64> = times.iter().map(|d| d.as_secs_f64() * 1e3).collect();
     ms.sort_by(f64::total_cmp);
     let mean = ms.iter().sum::<f64>() / ms.len() as f64;
-    println!("{name:<40} mean {mean:>7.2} ms   median {:>7.2} ms   worst {:>7.2} ms", ms[ms.len() / 2], ms[ms.len() - 1]);
+    tracing::info!("{name:<40} mean {mean:>7.2} ms   median {:>7.2} ms   worst {:>7.2} ms", ms[ms.len() / 2], ms[ms.len() - 1]);
 }
 
 fn main() {
+    // Results go through the logger (stderr; --log-file to keep them).
+    let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let which: usize = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(1);
-    println!("example component {which} (0 full adder, 1 Mach–Zehnder, 2 Fabry–Pérot, 3 splitter)");
+    tracing::info!("example component {which} (0 full adder, 1 Mach–Zehnder, 2 Fabry–Pérot, 3 splitter)");
     for components in [1, 3, 6] {
         let mut ws = Workspace::default();
         // Lasers wired into Mach–Zehnder components, one per row.
@@ -57,7 +59,7 @@ fn main() {
         }
         // Idle frames: nothing changes, and nothing should ask for more.
         let idle: Vec<Duration> = (0..30).map(|_| frame(&ctx, &mut ws, &mut t, Vec::new())).collect();
-        println!("  idle frames keep asking to repaint: {}", ctx.has_requested_repaint());
+        tracing::info!("  idle frames keep asking to repaint: {}", ctx.has_requested_repaint());
 
         // Drag the first box across the grid with the mouse.
         let id = ws.active.unwrap();
@@ -80,7 +82,7 @@ fn main() {
         let moved = ws.project.doc(id).unwrap().layout().instances[0].cell;
         assert_ne!(moved, first, "the drag moved the box");
 
-        println!("\n{components} component(s), {} documents", ws.project.documents.len());
+        tracing::info!("\n{components} component(s), {} documents", ws.project.documents.len());
         report("idle frame", &idle);
         report("frame while dragging", &drag);
 
@@ -93,9 +95,9 @@ fn main() {
             }
             s.elapsed() / n
         };
-        println!("  project.catalog()      {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.catalog()); }).as_secs_f64() * 1e3);
-        println!("  project.fingerprint()  {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.fingerprint()); }).as_secs_f64() * 1e3);
+        tracing::info!("  project.catalog()      {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.catalog()); }).as_secs_f64() * 1e3);
+        tracing::info!("  project.fingerprint()  {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.fingerprint()); }).as_secs_f64() * 1e3);
         let machine = Default::default();
-        println!("  project.simulate()     {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.simulate(id, &machine)); }).as_secs_f64() * 1e3);
+        tracing::info!("  project.simulate()     {:>9.3} ms", time(&mut || { std::hint::black_box(ws.project.simulate(id, &machine)); }).as_secs_f64() * 1e3);
     }
 }

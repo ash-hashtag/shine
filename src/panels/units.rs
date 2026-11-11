@@ -43,15 +43,20 @@ fn round3(v: f64) -> f64 {
     (v * scale).round() / scale
 }
 
-/// A power in mW with a fitting prefix: "1.00 mW", "250 µW", "1.20 W".
-/// The prefix is chosen after rounding, so 0.99999 mW reads "1.00 mW".
+/// A power with three significant figures: "1.20 W", "1.00 mW", "0.250 mW",
+/// "0.00123 mW", "500 nW". Below a milliwatt it stays in mW down to a
+/// microwatt (µ beside W is easily read as m). Rounding comes first, so
+/// 0.99999 mW reads "1.00 mW".
 pub fn format_mw(mw: f64) -> String {
     let mw = round3(mw);
     match mw.abs() {
         a if a < 1e-9 => "0 mW".into(),
         a if a >= 1e3 => format!("{} W", sig3(mw / 1e3)),
         a if a >= 1.0 => format!("{} mW", sig3(mw)),
-        a if a >= 1e-3 => format!("{} µW", sig3(mw * 1e3)),
+        a if a >= 1e-3 => {
+            let decimals = (2 - a.log10().floor() as i32).max(0) as usize;
+            format!("{mw:.decimals$} mW")
+        }
         _ => format!("{} nW", sig3(mw * 1e6)),
     }
 }
@@ -68,7 +73,7 @@ pub fn format_power(mw: f64, unit: PowerUnit) -> String {
     }
 }
 
-/// Both units, the chosen one first: "500 µW (-3.01 dBm)".
+/// Both units, the chosen one first: "0.500 mW (-3.01 dBm)".
 pub fn format_both(mw: f64, unit: PowerUnit) -> String {
     match unit {
         PowerUnit::MilliWatt => format!("{} ({})", format_mw(mw), format_dbm(mw)),
@@ -132,22 +137,24 @@ mod tests {
     #[test]
     fn formatting() {
         assert_eq!(format_mw(1.0), "1.00 mW");
-        assert_eq!(format_mw(0.25), "250 µW");
+        assert_eq!(format_mw(0.25), "0.250 mW");
         assert_eq!(format_mw(1234.0), "1.23 W");
-        assert_eq!(format_mw(0.0123), "12.3 µW");
+        assert_eq!(format_mw(0.0123), "0.0123 mW");
+        assert_eq!(format_mw(0.501_187), "0.501 mW", "3 dB off 1 mW");
+        assert_eq!(format_mw(0.000_5), "500 nW");
         assert_eq!(format_mw(2e-6), "2.00 nW");
         assert_eq!(format_mw(0.0), "0 mW");
-        // Rounding decides the prefix: no "1000 µW" or "1000 mW".
+        // Rounding decides the unit: no "1000 nW" or "1000 mW".
         assert_eq!(format_mw(0.999_999), "1.00 mW");
         assert_eq!(format_mw(999.9), "1.00 W");
-        assert_eq!(format_mw(0.000_999_96), "1.00 µW");
-        assert_eq!(format_mw(0.5), "500 µW");
+        assert_eq!(format_mw(0.000_999_96), "0.00100 mW");
+        assert_eq!(format_mw(0.5), "0.500 mW");
         assert_eq!(format_dbm(1.0), "0.00 dBm");
         assert_eq!(format_dbm(0.5), "-3.01 dBm");
         assert_eq!(format_dbm(0.0), "-∞ dBm");
         assert_eq!(format_power(10.0, PowerUnit::Dbm), "10.00 dBm");
-        assert_eq!(format_both(0.5, PowerUnit::MilliWatt), "500 µW (-3.01 dBm)");
-        assert_eq!(format_both(0.5, PowerUnit::Dbm), "-3.01 dBm (500 µW)");
+        assert_eq!(format_both(0.5, PowerUnit::MilliWatt), "0.500 mW (-3.01 dBm)");
+        assert_eq!(format_both(0.5, PowerUnit::Dbm), "-3.01 dBm (0.500 mW)");
     }
 
     #[test]

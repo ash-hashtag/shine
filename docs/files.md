@@ -40,8 +40,24 @@ smaller than the same project as JSON. Files from older versions are converted w
 opened: format 1's separate schematics become layouts of boxes, and format 2's lasers
 (which all interfered with each other) go onto shared source A so they simulate as before.
 Format 4 added waveguides from lasers into boxes; format 5 added group indices to
-delay lines and rings (older ones keep a constant index, so they simulate as before); the
-current format, 6, added components' exported parameters.
+delay lines and rings (older ones keep a constant index, so they simulate as before);
+format 6 added components' exported parameters; format 7 added how components look
+(colour, shape and picture); the current format, 8, added components defined by
+S-parameter data or a script.
+
+A **component file** (`.shinecomp`) is the same format holding one component first and
+then the components it uses. The **asset library** is a file of its own,
+`library.shinelib`, next to Shine's settings on desktop (in the browser it's kept in the
+page's storage); an unreadable library file is set aside as `library.shinelib.unreadable`
+rather than overwritten.
+
+### Dropping files on the window
+
+| Dropped | On the left panel | Anywhere else |
+|---|---|---|
+| `.shinecomp` | kept in the asset library | opened in a tab of its own, added to the project |
+| `.shine` project | its components kept in the library | opened in place of the current project (asking about unsaved changes) |
+| A picture | used on the component being edited, if its dialog is open | the same |
 A file from a *newer* Shine than yours is refused with a message to update. Preferences
 are not part of a project; they're saved with the app. JSON layouts from early
 versions can still be opened.

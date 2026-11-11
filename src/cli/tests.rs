@@ -49,7 +49,7 @@ fn readings_of_the_wdm_link() {
     let (dir, path) = saved("wdm", examples::wdm_link);
     let text = simulate(&parse(&args(&[&path])).unwrap()).unwrap();
     assert!(text.contains("4-channel WDM optical link"), "{text}");
-    assert!(text.contains("Detector 26,5") && text.contains("µW"), "{text}");
+    assert!(text.contains("Detector 26,5") && text.contains(" mW"), "{text}");
     assert!(text.lines().any(|l| l.contains("Display") && l.trim_end().ends_with("11")), "the display decodes 11: {text}");
     // As CSV.
     let csv = simulate(&parse(&args(&[&path, "--csv"])).unwrap()).unwrap();
@@ -141,4 +141,37 @@ fn a_components_exported_parameter_sweeps_from_the_command_line() {
     assert!(csv.starts_with("\"phase (rad)\""), "{csv}");
     assert_eq!(csv.lines().count(), 4);
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn export_writes_touchstone_and_gdsfactory_files() {
+    use super::export::{self, Format};
+    let (dir, path) = saved("export", examples::wdm_link);
+    // The WDM link has no light pins: S-parameters need them; the layout doesn't.
+    let args = |format, out: &str| export::Args { project: path.clone(), format, out: Some(dir.join(out).to_string_lossy().into_owned()), ..Default::default() };
+    let err = export::export(&args(Some(Format::Touchstone), "wdm.s2p")).unwrap_err();
+    assert!(matches!(&err, Failure::Simulation(m) if m.contains("Input and Output")), "{err:?}");
+    let w = export::export(&args(None, "wdm.pic.yml")).expect("the format from the extension");
+    let yaml = std::fs::read_to_string(&w.path).unwrap();
+    assert!(yaml.contains("component: ring_double") && yaml.contains("routes:"), "{yaml}");
+    assert!(w.notes.iter().any(|n| n.contains("free-space")), "{:?}", w.notes);
+    std::fs::remove_dir_all(&dir).ok();
+
+    let parsed = export::parse(&["p.shine".into(), "--format=gdsfactory".into(), "--spacing".into(), "25".into()]).unwrap();
+    assert_eq!((parsed.format, parsed.spacing), (Some(Format::Gdsfactory), Some(25.0)));
+    assert!(export::parse(&["p.shine".into(), "--format".into(), "gerber".into()]).is_err());
+}
+
+#[test]
+fn a_wavelength_sweep_reports_the_rings_resonances() {
+    let (dir, path) = saved("readouts", examples::wdm_link);
+    let args = parse(&[path, "--wavelength".into(), "1520:1570:2001".into(), "--readouts".into()]).unwrap();
+    let csv = simulate(&args).unwrap();
+    let header = csv.lines().next().unwrap();
+    assert!(header.contains("\"FSR (nm)\"") && header.contains("\"Q\""), "{header}");
+    // A detector behind a drop port: peaks, with a width and a Q.
+    let row = csv.lines().find(|l| l.contains("peaks") && !l.ends_with(",,")).unwrap_or_else(|| panic!("{csv}"));
+    let q: f64 = row.rsplit(',').next().unwrap().parse().unwrap();
+    assert!(q > 100.0, "a ring's Q: {row}");
+    std::fs::remove_dir_all(&dir).ok();
 }

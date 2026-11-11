@@ -12,6 +12,8 @@ use super::optics::input::{Action, SHORTCUTS};
 use super::optics::model::{self, BlockRef, Layout, OpticComponentKind, PlacedComponent, cell_center};
 use super::optics::{OpticsPanel, Placeable};
 use super::project::{Catalog, ComponentMeta, DocId, Project};
+use super::appearance::Appearance;
+use super::assets::{AssetRef, Library};
 use super::prefs::{LightColors, PowerUnit, Preferences, Theme, WAVELENGTH_PRESETS};
 use super::{Request, ui_kit};
 
@@ -22,8 +24,31 @@ pub enum ExamplesTab {
     Chips,
 }
 
-/// Files (name, bytes) handed over from asynchronous browser file pickers.
-pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+mod assets_ui;
+mod export_window;
+mod files;
+pub use export_window::{ExportFormat, ExportWindow};
+mod library_window;
+pub use library_window::LibraryWindow;
+pub use files::{DropTarget, FilePurpose, IncomingFile};
+
+/// Files handed over from asynchronous browser file pickers.
+pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<IncomingFile>>>;
+
+/// What the left panel shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LeftTab {
+    #[default]
+    Parts,
+    Assets,
+}
+
+/// A name as a file name or URL part: "Mach–Zehnder switch" → "mach-zehnder-switch".
+pub(crate) fn slug(name: &str) -> String {
+    let words: Vec<String> =
+        name.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect();
+    if words.is_empty() { "component".into() } else { words.join("-") }
+}
 
 /// "Save as component" / rename dialog.
 #[derive(Clone, Debug, PartialEq)]
@@ -36,6 +61,10 @@ pub struct DocumentDialog {
     pub initials_edited: bool,
     /// Publish (or keep) the document as a component; otherwise only rename.
     pub component: bool,
+    /// Its boxes' colour, outline and picture.
+    pub appearance: Appearance,
+    /// Why the last picture couldn't be used.
+    pub picture_error: Option<String>,
 }
 
 /// Above this, a simulation is too slow to repeat on every mouse move.
@@ -55,6 +84,21 @@ pub struct Workspace {
     pub show_examples: bool,
     pub examples_tab: ExamplesTab,
     pub chips: ChipBrowser,
+    /// Components kept across projects.
+    pub library: Library,
+    pub left_tab: LeftTab,
+    /// Search text of the Assets tab.
+    pub asset_search: String,
+    /// Where the left panel is on screen: files dropped there go to the library.
+    pub library_rect: Option<egui::Rect>,
+    /// Files are being dragged over the window.
+    pub files_hovering: bool,
+    /// The asset library window.
+    pub library_window: LibraryWindow,
+    /// File → Export for other tools….
+    pub export_window: ExportWindow,
+    /// The library asset being moved to another folder, with the folder typed so far.
+    pub moving_asset: Option<(super::assets::AssetId, String)>,
     pub dialog: Option<DocumentDialog>,
     pub status: Option<(String, f64)>,
     /// Files read asynchronously (browser file picker), opened next frame.
@@ -98,6 +142,14 @@ impl Default for Workspace {
             show_examples: false,
             examples_tab: ExamplesTab::Demos,
             chips: ChipBrowser::default(),
+            library: Library::new(),
+            left_tab: LeftTab::Parts,
+            asset_search: String::new(),
+            library_rect: None,
+            files_hovering: false,
+            moving_asset: None,
+            library_window: LibraryWindow::default(),
+            export_window: ExportWindow::default(),
             dialog: None,
             status: None,
             incoming: Default::default(),
@@ -195,6 +247,30 @@ impl Workspace {
         self.open_tab(id);
         self.open_document_dialog(id, true);
         id
+    }
+
+    /// A component written in JavaScript, from the template, opened with its
+    /// script ready to edit.
+    pub fn new_scripted_component(&mut self) -> Option<DocId> {
+        match super::models::ModelSpec::from_script(super::script::TEMPLATE) {
+            Ok(spec) => {
+                let id = self.project.import(&super::models::component(spec))?;
+                let name = self.project.unique_name("Scripted component");
+                if let Some(doc) = self.project.doc_mut(id) {
+                    doc.name = name;
+                    let p = doc.panel_mut();
+                    if let Some(b) = p.layout.instances.iter().position(|i| matches!(i.block, BlockRef::Builtin(model::Builtin::Model(_)))) {
+                        p.editor.boxes.select_only(b);
+                    }
+                }
+                self.open_tab(id);
+                Some(id)
+            }
+            Err(e) => {
+                self.notify(format!("Can't make a scripted component: {e}"));
+                None
+            }
+        }
     }
 
     pub fn delete_document(&mut self, id: DocId) {
@@ -486,15 +562,6 @@ impl Workspace {
         }
     }
 
-    /// Files picked in the browser arrive asynchronously; open them here.
-    fn receive_files(&mut self) {
-        let files: Vec<(String, Vec<u8>)> =
-            std::mem::take(&mut *self.incoming.lock().expect("not poisoned"));
-        for (name, bytes) in files {
-            self.request_open(name, bytes, None);
-        }
-    }
-
     #[cfg(not(target_arch = "wasm32"))]
     fn save(&mut self, choose_path: bool) {
         let path = match (&self.project.path, choose_path) {
@@ -569,12 +636,8 @@ impl Workspace {
                 return;
             };
             let name = file.file_name();
-            let name = name
-                .rsplit_once('.')
-                .map_or(name.as_str(), |(stem, _)| stem)
-                .to_owned();
             let bytes = file.read().await;
-            incoming.lock().expect("not poisoned").push((name, bytes));
+            incoming.lock().expect("not poisoned").push(IncomingFile::new(FilePurpose::Open, name, bytes));
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }
@@ -599,6 +662,8 @@ impl Workspace {
             description: meta.description,
             initials_edited: !meta.initials.is_empty(),
             component: component || doc.component.is_some(),
+            appearance: meta.appearance,
+            picture_error: None,
         });
     }
 
@@ -625,10 +690,11 @@ impl Workspace {
             doc.component = Some(ComponentMeta {
                 initials: d.initials.trim().chars().take(4).collect(),
                 description: d.description.trim().to_owned(),
+                appearance: d.appearance,
             });
         }
         if newly_published {
-            self.notify(format!("“{name}” is now in My components"));
+            self.notify(format!("“{name}” is now a component: find it under Assets → This project"));
         }
     }
 
@@ -677,7 +743,7 @@ impl Workspace {
                 Request::NewComponent => {
                     self.new_component();
                 }
-                Request::PlaceExample { example, cell } => self.place_example(example, cell),
+                Request::PlaceAsset { asset, cell } => self.place_asset(asset, cell),
                 Request::Tick => self.tick(),
                 Request::RunSweep => self.run_sweep(),
                 Request::SaveImage { name, rect } => self.capture(name, rect),
@@ -685,13 +751,37 @@ impl Workspace {
         }
     }
 
+    /// The project's catalog with the asset library's components.
+    pub fn catalog(&self) -> Catalog {
+        let mut catalog = self.project.catalog();
+        catalog.assets = self.library.summaries();
+        catalog
+    }
+
     /// Add an example component to the project (once) and place it in the active document.
     pub fn place_example(&mut self, example: usize, cell: (i32, i32)) {
+        self.place_asset(AssetRef::Example(example), cell);
+    }
+
+    /// The project's copy of an asset, made on first use.
+    pub fn import_asset(&mut self, asset: AssetRef) -> Option<DocId> {
+        match asset {
+            AssetRef::Example(i) => examples::import_component(&mut self.project, i),
+            AssetRef::Saved(_) => {
+                let bundle = self.library.bundle(asset)?;
+                self.project.import(&bundle)
+            }
+        }
+    }
+
+    /// Copy an asset into the project (once) and place it in the active document.
+    pub fn place_asset(&mut self, asset: AssetRef, cell: (i32, i32)) {
         let Some(into) = self.active else { return };
-        let Some(component) = examples::import_component(&mut self.project, example) else {
+        let Some(component) = self.import_asset(asset) else {
+            self.notify("That library component can't be read");
             return;
         };
-        let catalog = self.project.catalog();
+        let catalog = self.catalog();
         if !catalog.can_place(component, into) {
             self.notify("A component can't contain itself");
             return;
@@ -707,7 +797,7 @@ impl Workspace {
         let Some(id) = self.active else { return };
         let Some(panel) = self.project.doc(id).map(|d| d.panel()) else { return };
         let Some(spec) = panel.sweep_spec() else { return };
-        let catalog = self.project.catalog();
+        let catalog = self.catalog();
         let layout = &panel.layout;
         let names = |inst| layout.instance(inst).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
         let start = web_time::Instant::now();
@@ -775,10 +865,13 @@ impl Workspace {
         self.time = ui.input(|i| i.time);
         if self.ctx.is_none() {
             ui_kit::install_fonts(ui.ctx());
+            // Component pictures: WebP and SVG.
+            egui_extras::install_image_loaders(ui.ctx());
         }
         self.ctx = Some(ui.ctx().clone());
         self.apply_theme(ui.ctx());
         self.receive_files();
+        self.receive_dropped_files(&ui.ctx().clone());
         self.receive_screenshot(ui);
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
@@ -792,7 +885,7 @@ impl Workspace {
         self.handle_requests();
         self.sync_catalog();
         self.refresh_simulation();
-        let catalog = self.project.catalog();
+        let catalog = self.catalog();
 
         egui::Panel::top("menu_bar").show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| self.menus(ui));
@@ -831,13 +924,15 @@ impl Workspace {
 
         let ctx = ui.ctx().clone();
         self.windows(&ctx);
+        self.library_window_ui(&ctx);
+        self.drop_overlay(&ctx);
         self.stats.record(started.elapsed().as_secs_f64() * 1e3, self.time);
     }
 
     /// Give the active editor the project's components, and tell it which
     /// document it edits (it refuses to place a document inside itself).
     fn sync_catalog(&mut self) {
-        let catalog = self.project.catalog();
+        let catalog = self.catalog();
         let id = self.active;
         let prefs = self.prefs.clone();
         if let Some(p) = self.active_panel() {
@@ -867,7 +962,7 @@ impl Workspace {
     }
 
     fn global_keys(&mut self, ui: &Ui) {
-        for (key, modifiers) in ui_kit::shortcut_keys(ui.ctx()) {
+        for (key, modifiers) in ui_kit::shortcut_keys(ui.ctx(), None) {
             if modifiers.command {
                 match key {
                     Key::N => {
@@ -900,19 +995,31 @@ impl Workspace {
         let mut dialog = None;
         let mut delete = None;
         if self.show_library {
-            egui::Panel::left("library")
+            let shown = egui::Panel::left("library")
                 .default_size(230.0)
                 .resizable(true)
                 .show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        if let Some(doc) = self.project.doc_mut(id) {
-                            doc.panel_mut().palette_ui(ui);
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.left_tab, LeftTab::Parts, "Parts").on_hover_text("Parts and blocks, and the project's documents");
+                        ui.selectable_value(&mut self.left_tab, LeftTab::Assets, "Assets")
+                            .on_hover_text("Components: this project's, Shine's examples and your asset library");
+                    });
+                    ui.separator();
+                    egui::ScrollArea::vertical().show(ui, |ui| match self.left_tab {
+                        LeftTab::Parts => {
+                            if let Some(doc) = self.project.doc_mut(id) {
+                                doc.panel_mut().palette_ui(ui);
+                            }
+                            ui.add_space(8.0);
+                            ui.separator();
+                            self.project_list(ui, catalog, &mut open, &mut dialog, &mut delete);
                         }
-                        ui.add_space(8.0);
-                        ui.separator();
-                        self.project_list(ui, catalog, &mut open, &mut dialog, &mut delete);
+                        LeftTab::Assets => self.assets_ui(ui, catalog),
                     });
                 });
+            self.library_rect = Some(shown.response.rect);
+        } else {
+            self.library_rect = None;
         }
         if self.show_inspector {
             egui::Panel::right("inspector")
@@ -958,16 +1065,9 @@ impl Workspace {
         let initials = doc.initials();
         ui_kit::section(ui, kind);
         ui.horizontal(|ui| {
-            if component.is_some() {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(30.0, 20.0), egui::Sense::hover());
-                ui_kit::badge(
-                    ui.painter(),
-                    rect,
-                    &initials,
-                    ui_kit::accent(&doc.name),
-                    Color32::WHITE,
-                );
+            if let Some(meta) = &component {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 22.0), egui::Sense::hover());
+                super::appearance::paint_badge(ui.painter(), rect, &meta.appearance, &doc.name, &initials);
             }
             ui.strong(&doc.name);
         });
@@ -1022,13 +1122,11 @@ impl Workspace {
             };
             let kind = "layout";
             let response = ui_kit::item_row(ui, active, &entry.name, |painter, rect| {
-                ui_kit::badge(
-                    painter,
-                    rect.shrink(1.0),
-                    &entry.initials,
-                    fill,
-                    Color32::WHITE,
-                );
+                if entry.is_component {
+                    super::appearance::paint_badge(painter, rect, &entry.appearance, &entry.name, &entry.initials);
+                } else {
+                    ui_kit::badge(painter, rect.shrink(1.0), &entry.initials, fill, Color32::WHITE);
+                }
             });
             if response.clicked() {
                 *open = Some(entry.id);
@@ -1090,6 +1188,7 @@ impl Workspace {
                     }
                     if ui
                         .add(egui::Button::new(egui::RichText::new("×").weak()).frame(false))
+                        .accessible_name(format!("Close {}", doc.name))
                         .on_hover_text("Close tab")
                         .clicked()
                     {
@@ -1104,7 +1203,10 @@ impl Workspace {
                     if ui.button("New component").clicked() {
                         self.new_component();
                     }
-                });
+                })
+                .response
+                .accessible_name("New tab")
+                .on_hover_text("New layout or component");
             });
         });
         if let Some(id) = activate {
@@ -1141,6 +1243,14 @@ impl Workspace {
                 self.save(true);
             }
             ui.separator();
+            if ui
+                .button("Export for other tools…")
+                .on_hover_text("S-parameters (Touchstone) for circuit simulators, or a layout for gdsfactory (towards a mask)")
+                .clicked()
+            {
+                self.open_export_window(ExportFormat::Touchstone);
+            }
+            ui.separator();
             if ui.button("Examples…").clicked() {
                 self.show_examples = true;
             }
@@ -1168,6 +1278,9 @@ impl Workspace {
         ui.menu_button("View", |ui| {
             ui.checkbox(&mut self.show_library, "Library");
             ui.checkbox(&mut self.show_inspector, "Inspector");
+            if ui.button("Asset library…").on_hover_text("Every component you keep, in a searchable grid").clicked() {
+                self.open_library_window();
+            }
             if let Some(on) = self.simulation_flag() {
                 ui.checkbox(on, "Live simulation");
             }
@@ -1234,6 +1347,49 @@ impl Workspace {
             {
                 self.open_document_dialog(id, false);
             }
+            ui.separator();
+            if ui
+                .add_enabled(is_component, egui::Button::new("Add to asset library"))
+                .on_hover_text("Keep it for every project (Assets tab)")
+                .clicked()
+                && let Some(id) = active
+            {
+                self.add_to_library(id, "");
+            }
+            if ui
+                .add_enabled(is_component, egui::Button::new("Export component…"))
+                .on_hover_text("Save it, with the components it uses, as a .shinecomp file to share")
+                .clicked()
+                && let Some(id) = active
+            {
+                self.export_component(id);
+            }
+            if ui
+                .button("Import to asset library…")
+                .on_hover_text("Add .shinecomp files, or every component of a .shine project")
+                .clicked()
+            {
+                self.pick_library_files();
+            }
+            if cfg!(not(target_arch = "wasm32"))
+                && ui
+                    .button("Import folder to asset library…")
+                    .on_hover_text("Every component file in a folder and its subfolders")
+                    .clicked()
+            {
+                self.pick_library_folder();
+            }
+            if ui.button("Asset library…").clicked() {
+                self.open_library_window();
+            }
+            ui.separator();
+            if ui
+                .button("New scripted component")
+                .on_hover_text("A component whose light and signals a JavaScript program computes, run in a sandbox")
+                .clicked()
+            {
+                self.new_scripted_component();
+            }
         });
         ui.menu_button("Help", |ui| {
             if ui.button("Keyboard & mouse").clicked() {
@@ -1279,6 +1435,7 @@ impl Workspace {
     }
 
     fn empty_ui(&mut self, ui: &mut Ui) {
+        self.library_rect = None;
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(ui.available_height() * 0.3);
@@ -1409,6 +1566,7 @@ impl Workspace {
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
+        self.export_window_ui(ctx);
         if self.about.open {
             self.about.ui(ctx);
         }
@@ -1578,16 +1736,18 @@ impl Workspace {
                     .response
                     .on_hover_text("For readings and laser power. A laser of amplitude 1 emits 1 mW (0 dBm).");
                     ui.end_row();
-                    ui.label("New lasers");
+                    let l = ui.label("New lasers").id;
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut p.default_wavelength_nm).range(200.0..=2000.0).suffix(" nm"));
+                        ui.add(egui::DragValue::new(&mut p.default_wavelength_nm).range(200.0..=2000.0).suffix(" nm")).labelled_by(l);
                         egui::ComboBox::from_id_salt("prefs_wavelength")
                             .selected_text("Presets")
                             .show_ui(ui, |ui| {
                                 for &(nm, what) in WAVELENGTH_PRESETS {
                                     ui.selectable_value(&mut p.default_wavelength_nm, nm, format!("{nm:.0} nm  {what}"));
                                 }
-                            });
+                            })
+                            .response
+                            .accessible_name("Wavelength presets for new lasers");
                     });
                     ui.end_row();
                 });
@@ -1596,8 +1756,10 @@ impl Workspace {
                     ui.label("New documents");
                     ui.checkbox(&mut p.live_simulation, "Simulate live");
                     ui.end_row();
-                    ui.label("Clock");
-                    ui.add(egui::Slider::new(&mut p.tick_seconds, 0.05..=2.0).suffix(" s per tick").logarithmic(true));
+                    let l = ui.label("Clock").id;
+                    ui.add(egui::Slider::new(&mut p.tick_seconds, 0.05..=2.0).show_value(false).logarithmic(true)).labelled_by(l);
+                    ui.add(egui::DragValue::new(&mut p.tick_seconds).range(0.05..=2.0).speed(0.01).min_decimals(2).suffix(" s per tick"))
+                        .labelled_by(l);
                     ui.end_row();
                 });
                 ui.add_space(8.0);
@@ -1624,28 +1786,38 @@ impl Workspace {
             .map(|doc| doc.interface());
         let mut save = false;
         let mut cancel = false;
+        let mut pick_picture = false;
         let modal = egui::Modal::new(egui::Id::unique("document_dialog")).show(ctx, |ui| {
-            ui.set_width(360.0);
+            ui.set_width(380.0);
             ui.heading(if d.component { "Component" } else { "Rename" });
             ui.add_space(6.0);
             egui::Grid::new("dialog_fields").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
-                ui.label("Name");
-                let name = ui.text_edit_singleline(&mut d.name);
+                let l = ui.label("Name").id;
+                let name = ui.text_edit_singleline(&mut d.name).labelled_by(l);
                 if name.changed() && !d.initials_edited {
                     d.initials = ui_kit::initials(&d.name);
                 }
                 ui.end_row();
                 if d.component {
-                    ui.label("Initials");
-                    if ui.add(egui::TextEdit::singleline(&mut d.initials).char_limit(4).desired_width(60.0)).changed() {
+                    let l = ui.label("Initials").id;
+                    if ui.add(egui::TextEdit::singleline(&mut d.initials).char_limit(4).desired_width(60.0)).labelled_by(l).changed() {
                         d.initials_edited = true;
                     }
                     ui.end_row();
-                    ui.label("Description");
-                    ui.add(egui::TextEdit::multiline(&mut d.description).desired_rows(3).hint_text("Shown when hovering an instance"));
+                    let l = ui.label("Description").id;
+                    ui.add(egui::TextEdit::multiline(&mut d.description).desired_rows(3).hint_text("Shown when hovering an instance"))
+                        .labelled_by(l);
                     ui.end_row();
+                    pick_picture = appearance_rows(ui, &mut d);
                 }
             });
+            if d.component {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Its boxes look like").weak());
+                    box_preview(ui, &d);
+                });
+            }
             if d.component
                 && let Some(interface) = &interface
             {
@@ -1683,11 +1855,96 @@ impl Workspace {
             cancel = true;
         }
         self.dialog = Some(d);
+        if pick_picture {
+            self.pick_picture();
+        }
         if save {
             self.apply_document_dialog();
         } else if cancel {
             self.dialog = None;
         }
+    }
+}
+
+/// Colour, shape and picture rows of the component dialog; true when the
+/// picture picker should open.
+fn appearance_rows(ui: &mut Ui, d: &mut DocumentDialog) -> bool {
+    use super::appearance::BoxShape;
+    // These controls carry their own names ("Own colour", "Rounded"…):
+    // naming them by the row's label would hide what each one is.
+    ui.label("Colour");
+    ui.horizontal(|ui| {
+        let mut own = d.appearance.color.is_some();
+        if ui.checkbox(&mut own, "Own colour").on_hover_text("Otherwise one is picked from the name").changed() {
+            let c = ui_kit::accent(&d.name);
+            d.appearance.color = own.then_some([c.r(), c.g(), c.b()]);
+        }
+        if let Some(c) = &mut d.appearance.color {
+            ui.color_edit_button_srgb(c).accessible_name("Box colour");
+        }
+    });
+    ui.end_row();
+    ui.label("Shape");
+    ui.horizontal_wrapped(|ui| {
+        for shape in BoxShape::ALL {
+            ui.selectable_value(&mut d.appearance.shape, shape, shape.label()).on_hover_text("Outline of its boxes");
+        }
+    });
+    ui.end_row();
+    ui.label("Picture");
+    let mut pick = false;
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let choose = if d.appearance.icon.is_some() { "Change…" } else { "Choose…" };
+            pick = ui
+                .button(choose)
+                .accessible_name(format!("{choose} picture"))
+                .on_hover_text("Shown on its boxes instead of the initials")
+                .clicked();
+            if d.appearance.icon.is_some() && ui.button("Remove").accessible_name("Remove picture").on_hover_text("Show the initials again").clicked() {
+                d.appearance.icon = None;
+            }
+        });
+        if let Some(icon) = &d.appearance.icon {
+            let kind = match icon.format {
+                super::appearance::IconFormat::Svg => "SVG",
+                super::appearance::IconFormat::WebP => "WebP",
+            };
+            ui.label(egui::RichText::new(format!("{kind}, {:.1} KB", icon.bytes.len() as f64 / 1024.0)).small().weak());
+        } else {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Or drop one here. Pictures are shrunk to {} px and saved as WebP; SVGs are kept as they are.",
+                    super::appearance::ICON_PX
+                ))
+                .small()
+                .weak(),
+            );
+        }
+        if let Some(e) = &d.picture_error {
+            ui.colored_label(ui.visuals().error_fg_color, e);
+        }
+    });
+    ui.end_row();
+    pick
+}
+
+/// The component's box as it will look on the grid.
+fn box_preview(ui: &mut Ui, d: &DocumentDialog) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(96.0, 48.0), egui::Sense::hover());
+    let painter = ui.painter();
+    let fill = super::appearance::fill(&d.appearance, &d.name);
+    let body = match d.appearance.color {
+        Some(_) => fill,
+        None => ui.visuals().faint_bg_color,
+    };
+    painter.add(d.appearance.shape.shape(rect, body, egui::Stroke::new(1.2, ui.visuals().weak_text_color())));
+    let drawn = d.appearance.icon.as_ref().is_some_and(|icon| {
+        super::appearance::paint_icon(painter, egui::Rect::from_center_size(rect.center(), egui::vec2(30.0, 30.0)), icon)
+    });
+    if !drawn {
+        let color = if d.appearance.color.is_some() { super::appearance::text_on(fill) } else { fill };
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, d.initials.trim(), egui::FontId::proportional(17.0), color);
     }
 }
 
