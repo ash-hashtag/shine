@@ -70,7 +70,9 @@ want them.
 - [x] **Validation page**: results against textbook formulas (couplers, MZIs, rings,
       Fabry–Pérot, waveguides, the DFT mesh), checked with every build, and against
       PhotonForge ([Validation](validation.md))
-- [ ] **More independent comparisons**: SAX and Lumerical INTERCONNECT
+- [x] **SAX comparison**: Shine's netlists solved in SAX agree to 10⁻¹⁰
+      ([Validation](validation.md))
+- [ ] **More independent comparisons**: Lumerical INTERCONNECT
 - [ ] **Foundry libraries included**: the open kits' compact models (SiEPIC EBeam,
       gdsfactory's generic kit) ready in the asset library, not only importable
 - [x] **Optimisation**: Shine finds the parameter values (couplings, lengths, phases) that
@@ -98,8 +100,9 @@ and feed it their components.
 - [x] **S-parameter import**: Touchstone `.sNp` (versions 1 and 2) and Lumerical `.dat`
       files from a foundry kit (PDK), an FDTD tool or a measurement, used as black boxes;
       a folder of them becomes an asset library folder
-- [ ] **Netlist export** for circuit simulators that take one (gdsfactory/SAX netlists,
-      Lumerical INTERCONNECT)
+- [x] **SAX netlist export**: the circuit as a SAX netlist with models that compute what
+      Shine does, to run as it is or with a foundry kit's models
+- [ ] **Netlist export for Lumerical INTERCONNECT**
 - [ ] **Choose a foundry kit** when exporting a layout: its component names and sizes
       instead of the generic ones
 

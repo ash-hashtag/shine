@@ -80,13 +80,14 @@ ITEM can be:
 shine export ring.shine                                   # S-parameters: ring.s4p
 shine export ring.shine --wavelength 1540:1560:2001 --out ring.s4p
 shine export chip.shine --format gdsfactory               # layout: chip.pic.yml
+shine export ring.shine --format sax                      # SAX netlist: ring.py
 ```
 
 | Option | Effect |
 |---|---|
-| `--format touchstone` or `gdsfactory` | the format (default: from `--out`'s extension, else touchstone) |
+| `--format touchstone`, `sax` or `gdsfactory` | the format (default: from `--out`'s extension, else touchstone) |
 | `--doc NAME` | the design (default: the first with light ports) |
-| `--wavelength FROM:TO[:POINTS]` | Touchstone: the wavelengths in nm (default 1500:1600:401) |
+| `--wavelength FROM:TO[:POINTS]` | Touchstone and SAX: the wavelengths in nm (default 1500:1600:401); a SAX file prints the transmission at them |
 | `--spacing UM` | gdsfactory: room between components, µm (default 40) |
 | `--out FILE` | where to write (default: next to the project, named after the design) |
 

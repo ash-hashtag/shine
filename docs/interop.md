@@ -1,18 +1,19 @@
 ---
 title: Other tools and tapeout
-description: Export S-parameters (Touchstone) for circuit simulators, and a layout description that gdsfactory turns into a GDS or OASIS mask for a foundry.
+description: Export S-parameters (Touchstone) for circuit simulators, a SAX netlist, and a layout description that gdsfactory turns into a GDS or OASIS mask for a foundry.
 order: 10.5
 ---
 
 # Other tools and tapeout
 
-Shine is circuit first: it makes a design work quickly. Two exports take a working design
-to the tools the rest of the industry uses. Both are in **File → Export for other tools…**
-and on the [command line](command-line.md#exporting).
+Shine is circuit first: it makes a design work quickly. Three exports take a working
+design to the tools the rest of the industry uses. All are in **File → Export for other
+tools…** and on the [command line](command-line.md#exporting).
 
 | Export | File | For |
 |---|---|---|
 | **S-parameters** | Touchstone `.sNp` | circuit simulators (Lumerical INTERCONNECT, SAX, OptiSPICE…), scikit-rf, measurement software, and other designs as a black box |
+| **Netlist for SAX** | Python `.py` | [SAX](https://github.com/flaport/sax), the circuit simulator of the gdsfactory family: the design's circuit with models you can swap for a foundry kit's |
 | **Layout for gdsfactory** | `.pic.yml` | [gdsfactory](https://gdsfactory.github.io), which draws the mask (GDS or OASIS) with a foundry's process kit (PDK) |
 
 ## S-parameters (Touchstone)
@@ -33,6 +34,40 @@ named after the design, `.s4p` for four ports and so on.
 
 It needs at least one light input and output: a design lit by free-space beams has none.
 Turn the part you want into a [component](components.md) with pins, and export that.
+
+## Netlist for SAX
+
+The circuit Shine simulates, as a SAX netlist in a Python file: its instances (couplers,
+waveguides, phase shifters, MZIs, Y-junctions, crossings), how they connect, and its ports,
+named as the design names its light inputs and outputs. With it come models, plain Python
+functions of the wavelength, that compute exactly what Shine does, so the file runs as it
+is:
+
+```sh
+pip install sax
+python my_design.py        # prints the power between each input and output, as CSV
+```
+
+or from your own scripts, with your foundry kit's models in place of Shine's:
+
+```python
+from my_design import netlist, models
+import sax, jax.numpy as jnp
+
+models["coupler"] = my_pdk.coupler       # a real coupler instead of the ideal one
+circuit, _ = sax.circuit(netlist=netlist, models=models)
+s = circuit(wl=jnp.linspace(1.5, 1.6, 1001))   # wavelengths in µm
+```
+
+- Components inside the design are flattened; rings and trees are their couplers and
+  waveguides; signals inside (heaters, switches) are at the values they settle to.
+- Components known by their S-parameters (imported Touchstone or Lumerical files) go in as
+  tables, interpolated as Shine interpolates them; others are sampled at the wavelengths
+  you choose.
+- Lasers and detectors aren't components in SAX: the netlist's ports are where light goes
+  in and comes out. The models are reciprocal and reflect nothing, as in Shine.
+
+It needs light inputs and outputs, as S-parameters do.
 
 ## Layout for gdsfactory: towards a chip
 

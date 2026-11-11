@@ -130,7 +130,7 @@ fn coord(v: i32) -> String {
 }
 
 /// A name gdsfactory accepts: letters, digits and underscores.
-fn ident(text: &str) -> String {
+pub(super) fn ident(text: &str) -> String {
     let s: String = text.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
     let s = s.trim_matches('_').to_owned();
     let mut collapsed = String::new();

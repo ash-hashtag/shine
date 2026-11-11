@@ -45,6 +45,18 @@ lattices' power at exactly 1. One convention to know when moving designs between
 two: PhotonForge's ring coupling is a field coefficient with its phase, so Shine's power
 coupling κ corresponds to `kappa1 = i√κ`.
 
+SAX 0.16 checks the other half, the circuit solver. Shine's SAX export of each circuit
+(above, at 2001 wavelengths from 1540 to 1560 nm) was run in SAX and compared with Shine's
+S-parameters. The models are Shine's, written in Python, so this tests how the netlist is
+connected and solved, rings' loops included, not the component formulas:
+
+| Circuit | Largest difference in power | Largest difference in field |
+|---|---|---|
+| All-pass ring | 1.2 × 10⁻¹⁰ | 7 × 10⁻¹¹ |
+| 1 stage | 1.3 × 10⁻¹⁰ | 7 × 10⁻¹¹ |
+| 8 stages | 1.3 × 10⁻¹⁰ | 7 × 10⁻¹¹ |
+| 32 stages (101 instances, 132 connections) | 1.3 × 10⁻¹⁰ | 8 × 10⁻¹¹ |
+
 ## What the models leave out
 
 Circuit-level simulation describes each component by how it passes light, so it is only

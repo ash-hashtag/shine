@@ -822,6 +822,23 @@ pub fn transmission(
     Ok(Transmission { wavelengths_nm: wavelengths_nm.to_vec(), matrices })
 }
 
+/// The circuit a layout simulates as, with signals inside at the values they
+/// settle to, and the circuit's ends for the layout's light inputs and
+/// outputs: what netlists for other simulators are written from.
+pub fn circuit(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &dyn Documents,
+    machine: &Machine,
+    root: Option<DocId>,
+) -> Result<(Circuit, crate::photonics::Ports), String> {
+    let settled = settle(layout, cell_um, docs, machine, root, &Options::default())?;
+    if !settled.stable {
+        return Err("The circuit did not settle; a feedback loop may be oscillating".into());
+    }
+    Ok((settled.circuit, settled.built.ports))
+}
+
 /// The circuit of a layout once its electronics and light agree, with the
 /// light of its sources.
 struct Settled {

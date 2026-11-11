@@ -27,6 +27,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- SAX netlist export (File → Export for other tools…, `shine export --format sax`): the
+  circuit as a Python file for the SAX circuit simulator, with models that compute what
+  Shine does; it runs as it is, or with a foundry kit's models swapped in. Checked against
+  SAX 0.16 to 10⁻¹⁰.
 - Analysis → Optimise… (desktop): Shine adjusts chosen parameters to maximise, minimise
   or reach a power at an output (Nelder–Mead, from argmin), and applies the result.
 - A [validation page](validation.md): results against textbook formulas, checked by tests

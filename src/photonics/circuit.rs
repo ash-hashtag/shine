@@ -164,6 +164,11 @@ impl Circuit {
         block.build(self)
     }
 
+    /// Every node, in the order added.
+    pub fn nodes(&self) -> impl Iterator<Item = NodeId> + use<> {
+        (0..self.nodes.len() as u32).map(NodeId)
+    }
+
     pub fn component(&self, id: NodeId) -> &dyn Component {
         self.nodes[id.index()].component.as_ref()
     }

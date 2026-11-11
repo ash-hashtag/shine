@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{Failure, choose_doc, range};
-use crate::panels::interop::{self, gdsfactory, touchstone};
+use crate::panels::interop::{self, gdsfactory, sax, touchstone};
 use crate::panels::project::Project;
 
 pub const USAGE: &str = "\
@@ -16,12 +16,15 @@ Formats:
                for circuit simulators and measurement tools
   gdsfactory   a layout description (.pic.yml) that gdsfactory turns into a mask
                layout (GDS or OASIS) with a foundry's process kit
+  sax          a netlist for the SAX circuit simulator (.py), with models that
+               compute what Shine does; swap them for a foundry kit's
 
 Options:
-  --format FORMAT                 touchstone or gdsfactory (default: from --out's
-                                  extension, else touchstone)
+  --format FORMAT                 touchstone, gdsfactory or sax (default: from
+                                  --out's extension, else touchstone)
   --doc NAME                      the document (default: the first with light ports)
-  --wavelength FROM:TO[:POINTS]   touchstone: the wavelengths in nm (default 1500:1600:401)
+  --wavelength FROM:TO[:POINTS]   touchstone, sax: the wavelengths in nm (default
+                                  1500:1600:401); sax prints the transmission at them
   --spacing UM                    gdsfactory: room between components in µm (default 40)
   --out FILE                      where to write (default: next to the project, named
                                   after the document)
@@ -33,6 +36,7 @@ Exit status: 0 on success, 1 if the design can't be exported, 2 for a usage erro
 pub enum Format {
     Touchstone,
     Gdsfactory,
+    Sax,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -61,7 +65,8 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 a.format = Some(match value("--format")?.to_lowercase().as_str() {
                     "touchstone" | "snp" => Format::Touchstone,
                     "gdsfactory" | "gf" | "yaml" => Format::Gdsfactory,
-                    other => return Err(format!("unknown format “{other}” (touchstone or gdsfactory)")),
+                    "sax" | "py" | "python" => Format::Sax,
+                    other => return Err(format!("unknown format “{other}” (touchstone, gdsfactory or sax)")),
                 })
             }
             "--doc" => a.doc = Some(value("--doc")?),
@@ -93,6 +98,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
 fn format_of(args: &Args) -> Format {
     args.format.unwrap_or_else(|| match &args.out {
         Some(out) if out.ends_with(".yml") || out.ends_with(".yaml") => Format::Gdsfactory,
+        Some(out) if out.ends_with(".py") => Format::Sax,
         _ => Format::Touchstone,
     })
 }
@@ -132,6 +138,17 @@ pub fn export(args: &Args) -> Result<Written, Failure> {
             };
             std::fs::write(&path, text).map_err(|e| Failure::Usage(format!("can't write {}: {e}", path.display())))?;
             Ok(Written { summary: format!("S-parameters of “{}”: {ports} ports, {points} wavelengths", doc.name), path, notes: Vec::new() })
+        }
+        Format::Sax => {
+            let (from, to, points) = args.wavelength.unwrap_or((1500.0, 1600.0, 401));
+            let e = sax::export(&project, id, &interop::wavelengths(from, to, points), &source).map_err(|e| Failure::Simulation(format!("“{}”: {e}", doc.name)))?;
+            let path = args.out.as_ref().map_or_else(|| next_to_project(format!("{}.py", stem.replace('-', "_"))), PathBuf::from);
+            std::fs::write(&path, &e.python).map_err(|err| Failure::Usage(format!("can't write {}: {err}", path.display())))?;
+            Ok(Written {
+                summary: format!("SAX netlist of “{}”: {} components, {} connections, {} ports", doc.name, e.instances, e.connections, e.ports),
+                path,
+                notes: Vec::new(),
+            })
         }
         Format::Gdsfactory => {
             let e = gdsfactory::export(&project, id, args.spacing.unwrap_or(gdsfactory::DEFAULT_SPACING_UM), &source).map_err(Failure::Simulation)?;

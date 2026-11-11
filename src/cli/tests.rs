@@ -144,13 +144,15 @@ fn a_components_exported_parameter_sweeps_from_the_command_line() {
 }
 
 #[test]
-fn export_writes_touchstone_and_gdsfactory_files() {
+fn export_writes_touchstone_sax_and_gdsfactory_files() {
     use super::export::{self, Format};
     let (dir, path) = saved("export", examples::wdm_link);
     // The WDM link has no light pins: S-parameters need them; the layout doesn't.
     let args = |format, out: &str| export::Args { project: path.clone(), format, out: Some(dir.join(out).to_string_lossy().into_owned()), ..Default::default() };
     let err = export::export(&args(Some(Format::Touchstone), "wdm.s2p")).unwrap_err();
     assert!(matches!(&err, Failure::Simulation(m) if m.contains("Input and Output")), "{err:?}");
+    let err = export::export(&args(None, "wdm.py")).unwrap_err();
+    assert!(matches!(&err, Failure::Simulation(m) if m.contains("netlist")), "a SAX netlist, from the extension: {err:?}");
     let w = export::export(&args(None, "wdm.pic.yml")).expect("the format from the extension");
     let yaml = std::fs::read_to_string(&w.path).unwrap();
     assert!(yaml.contains("component: ring_double") && yaml.contains("routes:"), "{yaml}");
@@ -159,6 +161,7 @@ fn export_writes_touchstone_and_gdsfactory_files() {
 
     let parsed = export::parse(&["p.shine".into(), "--format=gdsfactory".into(), "--spacing".into(), "25".into()]).unwrap();
     assert_eq!((parsed.format, parsed.spacing), (Some(Format::Gdsfactory), Some(25.0)));
+    assert_eq!(export::parse(&["p.shine".into(), "--format".into(), "SAX".into()]).unwrap().format, Some(Format::Sax));
     assert!(export::parse(&["p.shine".into(), "--format".into(), "gerber".into()]).is_err());
 }
 

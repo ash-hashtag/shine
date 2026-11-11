@@ -1,10 +1,10 @@
-//! File → Export for other tools…: S-parameters for circuit simulators, and
-//! a layout description for gdsfactory (towards a mask).
+//! File → Export for other tools…: S-parameters for circuit simulators, a
+//! netlist for SAX, and a layout description for gdsfactory (towards a mask).
 
 use egui::RichText;
 
 use super::Workspace;
-use crate::panels::interop::{self, gdsfactory};
+use crate::panels::interop::{self, gdsfactory, sax};
 use crate::panels::project::DocId;
 use crate::panels::ui_kit;
 
@@ -13,6 +13,7 @@ pub enum ExportFormat {
     #[default]
     Touchstone,
     Gdsfactory,
+    Sax,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +70,13 @@ impl Workspace {
                     (format!("{stem}.{ext}"), "Touchstone S-parameters", ext, text, format!("{ports} ports, {} wavelengths", w.points), Vec::new())
                 })
             }
+            ExportFormat::Sax => {
+                let wavelengths = interop::wavelengths(w.from_nm, w.to_nm, w.points);
+                sax::export(&self.project, id, &wavelengths, &source).map(|e| {
+                    let summary = format!("{} components, {} connections, {} ports", e.instances, e.connections, e.ports);
+                    (format!("{}.py", stem.replace('-', "_")), "SAX netlist", "py".to_owned(), e.python, summary, Vec::new())
+                })
+            }
             ExportFormat::Gdsfactory => gdsfactory::export(&self.project, id, w.spacing_um, &source).map(|e| {
                 let summary = format!("{} components, {} waveguides, {} ports", e.instances, e.routes, e.ports);
                 (format!("{stem}.pic.yml"), "gdsfactory layout", "yml".to_owned(), e.yaml, summary, e.notes)
@@ -107,12 +115,16 @@ impl Workspace {
                 let w = &mut self.export_window;
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut w.format, ExportFormat::Touchstone, "S-parameters (Touchstone)");
+                    ui.selectable_value(&mut w.format, ExportFormat::Sax, "Netlist for SAX");
                     ui.selectable_value(&mut w.format, ExportFormat::Gdsfactory, "Layout for gdsfactory");
                 });
                 ui.label(
                     RichText::new(match w.format {
                         ExportFormat::Touchstone => {
                             "How light passes between the design's Input and Output ports at each wavelength, as a .sNp file for circuit simulators (Lumerical, OptiSPICE, SAX…), scikit-rf and measurement tools."
+                        }
+                        ExportFormat::Sax => {
+                            "The circuit as a SAX netlist (Python), with models that compute what Shine does: run it, swap in your foundry kit's models, or use it inside a larger SAX circuit. The wavelengths are what it prints when run, and where S-parameter components are sampled."
                         }
                         ExportFormat::Gdsfactory => {
                             "The design's waveguide blocks as gdsfactory components with their places and connections. gdsfactory draws the mask layout (GDS or OASIS) from it with your foundry's process kit: the way to a chip."
@@ -136,7 +148,7 @@ impl Workspace {
                         .labelled_by(l);
                     ui.end_row();
                     match w.format {
-                        ExportFormat::Touchstone => {
+                        ExportFormat::Touchstone | ExportFormat::Sax => {
                             ui.label("Wavelengths");
                             ui.horizontal(|ui| {
                                 ui.add(egui::DragValue::new(&mut w.from_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm")).accessible_name("From wavelength");

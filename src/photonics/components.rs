@@ -33,6 +33,32 @@ pub trait Component: Debug + Send + Sync {
     fn source_id(&self) -> u32 {
         0
     }
+
+    /// What the component is, with its parameters, for tools that rebuild
+    /// it from a netlist; [`Kind::Other`] when it's only known by its matrix.
+    fn kind(&self) -> Kind<'_> {
+        Kind::Other
+    }
+}
+
+/// A component's model and parameters (see [`Component::kind`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Kind<'a> {
+    Waveguide(&'a Waveguide),
+    PhaseShifter { phase: f64 },
+    Attenuator { amplitude: f64 },
+    Coupler { coupling: f64 },
+    Mzi { theta: f64, phi: f64 },
+    YSplitter,
+    YCombiner,
+    Crossing,
+    Mirror { reflectivity: f64 },
+    Laser,
+    Detector,
+    /// The same matrix at every wavelength.
+    Constant(&'a Matrix),
+    Table(&'a Table),
+    Other,
 }
 
 /// Amplitude transmission for a loss given in dB.
@@ -130,6 +156,9 @@ impl Waveguide {
 }
 
 impl Component for Waveguide {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Waveguide(self)
+    }
     fn name(&self) -> &str {
         "Waveguide"
     }
@@ -157,6 +186,9 @@ impl PhaseShifter {
 }
 
 impl Component for PhaseShifter {
+    fn kind(&self) -> Kind<'_> {
+        Kind::PhaseShifter { phase: self.phase }
+    }
     fn name(&self) -> &str {
         "PhaseShifter"
     }
@@ -197,6 +229,9 @@ impl Attenuator {
 }
 
 impl Component for Attenuator {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Attenuator { amplitude: self.amplitude }
+    }
     fn name(&self) -> &str {
         "Attenuator"
     }
@@ -234,6 +269,9 @@ impl DirectionalCoupler {
 }
 
 impl Component for DirectionalCoupler {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Coupler { coupling: self.coupling }
+    }
     fn name(&self) -> &str {
         "DirectionalCoupler"
     }
@@ -276,6 +314,9 @@ impl Mzi {
 }
 
 impl Component for Mzi {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Mzi { theta: self.theta, phi: self.phi }
+    }
     fn name(&self) -> &str {
         "Mzi"
     }
@@ -295,6 +336,9 @@ impl Component for Mzi {
 pub struct YSplitter;
 
 impl Component for YSplitter {
+    fn kind(&self) -> Kind<'_> {
+        Kind::YSplitter
+    }
     fn name(&self) -> &str {
         "YSplitter"
     }
@@ -315,6 +359,9 @@ impl Component for YSplitter {
 pub struct YCombiner;
 
 impl Component for YCombiner {
+    fn kind(&self) -> Kind<'_> {
+        Kind::YCombiner
+    }
     fn name(&self) -> &str {
         "YCombiner"
     }
@@ -334,6 +381,9 @@ impl Component for YCombiner {
 pub struct Crossing;
 
 impl Component for Crossing {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Crossing
+    }
     fn name(&self) -> &str {
         "Crossing"
     }
@@ -367,6 +417,9 @@ impl Mirror {
 }
 
 impl Component for Mirror {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Mirror { reflectivity: self.reflectivity }
+    }
     fn name(&self) -> &str {
         "Mirror"
     }
@@ -415,6 +468,9 @@ impl Laser {
 }
 
 impl Component for Laser {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Laser
+    }
     fn name(&self) -> &str {
         "Laser"
     }
@@ -464,6 +520,9 @@ impl Default for Detector {
 }
 
 impl Component for Detector {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Detector
+    }
     fn name(&self) -> &str {
         "Detector"
     }
@@ -495,6 +554,9 @@ impl Custom {
 }
 
 impl Component for Custom {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Constant(&self.matrix)
+    }
     fn name(&self) -> &str {
         &self.name
     }
@@ -559,6 +621,9 @@ pub struct Tabulated {
 }
 
 impl Component for Tabulated {
+    fn kind(&self) -> Kind<'_> {
+        Kind::Table(&self.table)
+    }
     fn name(&self) -> &str {
         &self.name
     }
