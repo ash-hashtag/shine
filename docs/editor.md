@@ -99,6 +99,8 @@ sessions (a settings file on desktop, the browser's storage on the web):
 | Setting | Options |
 |---|---|
 | Theme | System, light or dark |
+| Interface size | The size of menus, panels and text, 50 to 250% (Ctrl+= and Ctrl+− change it too); the canvas zooms separately |
+| Canvas zoom | Open designs at the zoom you last used on the canvas (wheel, pinch, + and −), or fit each design to the window |
 | Grid, port names | Show or hide the grid and the names on component boxes |
 | Performance | Frames per second, frame time (drawing included) and simulation time in the status bar; the performance graph (also View → Performance graph) |
 | Light colours | Real colours where visible (infrared and ultraviolet in distinct false colours), a distinct colour per wavelength, or one colour; use lasers' own colours |

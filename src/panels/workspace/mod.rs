@@ -78,6 +78,9 @@ const SMOOTH_DRAG_BUDGET_MS: f64 = 8.0;
 /// How often a slow design re-simulates while something is being dragged.
 const DRAG_SIMULATIONS_PER_SECOND: f64 = 10.0;
 
+/// The interface size range, as a factor.
+const UI_SCALES: (f32, f32) = (0.5, 2.5);
+
 /// Above this, a design simulates on another thread (desktop), so edits
 /// never wait for it; the last result stays on screen until the new one
 /// arrives. Below it, results are ready on the same frame.
@@ -155,6 +158,8 @@ pub struct Workspace {
     pub screenshot: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<egui::ColorImage>>>>,
     /// Theme last applied to the context.
     applied_theme: Option<Theme>,
+    /// The interface size last applied to the window.
+    applied_ui_scale: Option<f32>,
     ctx: Option<egui::Context>,
     time: f64,
 }
@@ -201,6 +206,7 @@ impl Default for Workspace {
             pending_image: None,
             screenshot: Default::default(),
             applied_theme: None,
+            applied_ui_scale: None,
             ctx: None,
             time: 0.0,
         };
@@ -1010,6 +1016,7 @@ impl Workspace {
         }
         self.ctx = Some(ui.ctx().clone());
         self.apply_theme(ui.ctx());
+        self.apply_ui_scale(ui.ctx());
         self.receive_files();
         self.receive_dropped_files(&ui.ctx().clone());
         self.receive_screenshot(ui);
@@ -1057,6 +1064,10 @@ impl Workspace {
         }
         self.handle_requests();
         self.sync_catalog();
+        // Remember the canvas zoom the user chose.
+        if let Some(zoom) = self.active_panel().and_then(|p| p.user_zoom.take()) {
+            self.prefs.canvas_zoom = Some(zoom);
+        }
         // Edits made this frame show on the next one.
         if self.refresh_simulation() {
             ui.ctx().request_repaint();
@@ -1087,6 +1098,28 @@ impl Workspace {
         self.prefs = prefs;
         for doc in &mut self.project.documents {
             doc.panel_mut().simulation_active = self.prefs.live_simulation;
+        }
+    }
+
+    /// Keep the interface size and the preference in step: a change in the
+    /// preferences resizes the interface; Ctrl+= / Ctrl+− (egui's own
+    /// shortcuts) change the preference.
+    fn apply_ui_scale(&mut self, ctx: &egui::Context) {
+        let scale = self.prefs.ui_scale.clamp(UI_SCALES.0, UI_SCALES.1);
+        match self.applied_ui_scale {
+            Some(applied) if (applied - scale).abs() > 1e-4 => {
+                ctx.set_zoom_factor(scale);
+                self.applied_ui_scale = Some(scale);
+            }
+            Some(applied) if (ctx.zoom_factor() - applied).abs() > 1e-4 => {
+                self.prefs.ui_scale = ctx.zoom_factor();
+                self.applied_ui_scale = Some(self.prefs.ui_scale);
+            }
+            Some(_) => {}
+            None => {
+                ctx.set_zoom_factor(scale);
+                self.applied_ui_scale = Some(scale);
+            }
         }
     }
 
@@ -1857,6 +1890,30 @@ impl Workspace {
                         ui.selectable_value(&mut p.theme, Theme::System, "System");
                         ui.selectable_value(&mut p.theme, Theme::Light, "Light");
                         ui.selectable_value(&mut p.theme, Theme::Dark, "Dark");
+                    });
+                    ui.end_row();
+                    let l = ui.label("Interface size").id;
+                    ui.horizontal(|ui| {
+                        let mut percent = p.ui_scale * 100.0;
+                        let changed = ui
+                            .add(egui::Slider::new(&mut percent, UI_SCALES.0 * 100.0..=UI_SCALES.1 * 100.0).step_by(5.0).suffix("%"))
+                            .labelled_by(l)
+                            .on_hover_text("Menus, panels and text; Ctrl+= and Ctrl+− change it too. The canvas zooms on its own.")
+                            .changed();
+                        if changed {
+                            p.ui_scale = percent / 100.0;
+                        }
+                        if ui.small_button("100%").clicked() {
+                            p.ui_scale = 1.0;
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Canvas zoom");
+                    ui.vertical(|ui| {
+                        let last = p.canvas_zoom.map_or("100%".to_owned(), |z| format!("{:.0}%", z * 100.0));
+                        ui.radio_value(&mut p.remember_canvas_zoom, true, format!("Open designs at the last zoom ({last})"))
+                            .on_hover_text("The zoom you last used on the canvas (wheel, pinch, + and −)");
+                        ui.radio_value(&mut p.remember_canvas_zoom, false, "Fit designs to the window");
                     });
                     ui.end_row();
                     ui.label("Grid");

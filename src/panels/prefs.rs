@@ -57,6 +57,14 @@ pub struct Preferences {
     pub tick_seconds: f64,
     /// Live simulation on for new documents.
     pub live_simulation: bool,
+    /// Size of the whole interface (menus, panels, text), as a factor:
+    /// 1 is normal. Ctrl+= and Ctrl+− change it too.
+    pub ui_scale: f32,
+    /// Open designs at the canvas zoom last used ([`Self::canvas_zoom`])
+    /// rather than fitted to the window.
+    pub remember_canvas_zoom: bool,
+    /// The canvas zoom last used (1 is 100%), once there is one.
+    pub canvas_zoom: Option<f32>,
 }
 
 impl Default for Preferences {
@@ -77,6 +85,9 @@ impl Default for Preferences {
             default_wavelength_nm: 650.0,
             tick_seconds: 0.5,
             live_simulation: true,
+            ui_scale: 1.0,
+            remember_canvas_zoom: true,
+            canvas_zoom: None,
         }
     }
 }

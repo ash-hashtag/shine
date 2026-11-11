@@ -162,6 +162,9 @@ pub struct OpticsPanel {
     mouse_screen: Option<Pos2>,
     mouse_world: Option<Pos2>,
     frame_pending: bool,
+    /// The zoom the user last chose on this canvas (wheel, pinch or keys),
+    /// for the workspace to remember; framing doesn't count.
+    pub user_zoom: Option<f32>,
     time: f64,
 }
 
@@ -209,6 +212,7 @@ impl Default for OpticsPanel {
             mouse_screen: None,
             mouse_world: None,
             frame_pending: false,
+            user_zoom: None,
             time: 0.0,
         }
     }
@@ -242,6 +246,7 @@ impl OpticsPanel {
             cell_um,
             embedded: true,
             frame_pending: true,
+            user_zoom: None,
             ..Self::default()
         }
     }
@@ -486,6 +491,17 @@ impl OpticsPanel {
         }
     }
 
+    /// How a design looks when first drawn: at the zoom the preferences
+    /// remember, centred on it, or fitted to the window.
+    fn open_view(&mut self) {
+        let zoom = self.prefs.canvas_zoom.filter(|_| self.prefs.remember_canvas_zoom);
+        let (Some(zoom), Some(canvas), Some(bounds)) = (zoom, self.canvas, self.bounds(false)) else {
+            return self.frame(false);
+        };
+        self.view.zoom = zoom.clamp(view::MIN_ZOOM, view::MAX_ZOOM);
+        self.view.pan = canvas.size() / 2.0 - bounds.center().to_vec2() * self.view.zoom;
+    }
+
     fn frame(&mut self, selected_only: bool) {
         match (self.canvas, self.bounds(selected_only)) {
             (Some(canvas), Some(bounds)) => self.view.frame(canvas, bounds, 40.0),
@@ -628,6 +644,7 @@ impl OpticsPanel {
                 if let Some(canvas) = self.canvas {
                     let factor = if action == Action::ZoomIn { 1.25 } else { 0.8 };
                     self.view.zoom_at(canvas, canvas.center(), factor);
+                    self.user_zoom = Some(self.view.zoom);
                 }
             }
             Action::SelectNext => self.select_step(1),

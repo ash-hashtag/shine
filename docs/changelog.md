@@ -44,6 +44,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - A Laser block's wavelength can be swept.
 - Detector blocks show the power they read beside them, and glow with it; Laser blocks show
   their power and wavelength.
+- The interface size (menus, panels, text; also Ctrl+= and Ctrl+−) and the canvas zoom are
+  separate preferences, both remembered: designs open at the canvas zoom you last used, or
+  fitted to the window if you prefer.
 - A **Value input** block: one value you set (usually 0 to 1) for analog control of
   heaters, modulators and attenuators; click along it to set it.
 - Designs that take longer than about 12 ms to simulate do so in the background (desktop):

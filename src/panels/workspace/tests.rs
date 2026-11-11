@@ -542,6 +542,50 @@ fn simulation_is_cached_by_fingerprint_and_registers() {
 }
 
 #[test]
+fn the_canvas_zoom_is_remembered_and_designs_open_at_it() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    ws.load_demo(0);
+    h.frame(&mut ws, Vec::new());
+    // Zoom in on the canvas: the preference follows.
+    let middle = Pos2::new(700.0, 450.0);
+    h.frame(&mut ws, vec![Event::PointerMoved(middle), Event::Zoom(1.5)]);
+    let zoom = ws.active_panel().unwrap().view.zoom;
+    assert_eq!(ws.prefs.canvas_zoom, Some(zoom));
+    // The next design opens at it, not fitted.
+    ws.load_demo(1);
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(ws.active_panel().unwrap().view.zoom, zoom);
+    // Unless the preference is to fit.
+    ws.prefs.remember_canvas_zoom = false;
+    ws.load_demo(2);
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    assert_ne!(ws.active_panel().unwrap().view.zoom, zoom, "fitted");
+    // Zooming the canvas leaves the interface size alone.
+    assert_eq!(h.ctx.zoom_factor(), 1.0);
+}
+
+#[test]
+fn the_interface_size_follows_the_preference_and_the_shortcuts() {
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    h.frame(&mut ws, Vec::new());
+    ws.prefs.ui_scale = 1.5;
+    h.frame(&mut ws, Vec::new());
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(h.ctx.zoom_factor(), 1.5);
+    assert_eq!(ws.prefs.ui_scale, 1.5, "kept while the window catches up");
+    // Ctrl+= changes the window's size; the preference keeps it.
+    h.ctx.set_zoom_factor(1.2);
+    h.frame(&mut ws, Vec::new());
+    assert!((ws.prefs.ui_scale - 1.2).abs() < 1e-6);
+    let canvas_zoom = ws.active_panel().unwrap().view.zoom;
+    assert_eq!(ws.prefs.canvas_zoom, None, "the canvas zoom is separate: {canvas_zoom}");
+}
+
+#[test]
 fn slow_designs_simulate_in_the_background() {
     let mut ws = Workspace::default();
     let id = demo(&mut ws, "16×16 photonic matrix processor");

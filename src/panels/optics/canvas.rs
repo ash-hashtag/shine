@@ -357,7 +357,7 @@ impl OpticsPanel {
         let response = response.accessible_name(description);
         if self.frame_pending {
             self.frame_pending = false;
-            self.frame(false);
+            self.open_view();
         }
         // The canvas only has the pointer when nothing (a menu, a popup, a
         // window) is on top of it there; otherwise wheel and clicks are theirs.
@@ -368,7 +368,11 @@ impl OpticsPanel {
         self.mouse_screen = pointer;
         self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
 
+        let zoom_before = self.view.zoom;
         super::view::navigate(&mut self.view, ui, rect, &response, pointer);
+        if self.view.zoom != zoom_before {
+            self.user_zoom = Some(self.view.zoom);
+        }
         self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
         self.interact(ui, rect, &response, pointer);
 
