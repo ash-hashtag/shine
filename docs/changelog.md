@@ -27,6 +27,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   with its state and the clock, written and applied in the inspector (Component → New
   scripted component). Scripts run in a sandbox with no files, network or clock and with
   time and memory limits (desktop app).
+- Analysis → Transmission…: a design's S-matrix at any wavelength, and the power, phase
+  and group delay of its paths over the wavelengths, plotted and saved as CSV.
 - Resonance readouts on wavelength sweeps: free spectral range, width and Q of each
   output, in the sweep window and with `shine simulate … --readouts`.
 - Sweeps: plot every output of a design over a range of wavelengths (tune a laser) or of

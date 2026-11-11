@@ -29,6 +29,8 @@ mod export_window;
 mod files;
 pub use export_window::{ExportFormat, ExportWindow};
 mod library_window;
+mod transmission_window;
+pub use transmission_window::{Quantity, TransmissionWindow};
 pub use library_window::LibraryWindow;
 pub use files::{DropTarget, FilePurpose, IncomingFile};
 
@@ -97,6 +99,8 @@ pub struct Workspace {
     pub library_window: LibraryWindow,
     /// File → Export for other tools….
     pub export_window: ExportWindow,
+    /// Analysis → Transmission….
+    pub transmission_window: TransmissionWindow,
     /// The library asset being moved to another folder, with the folder typed so far.
     pub moving_asset: Option<(super::assets::AssetId, String)>,
     pub dialog: Option<DocumentDialog>,
@@ -150,6 +154,7 @@ impl Default for Workspace {
             moving_asset: None,
             library_window: LibraryWindow::default(),
             export_window: ExportWindow::default(),
+            transmission_window: TransmissionWindow::default(),
             dialog: None,
             status: None,
             incoming: Default::default(),
@@ -1319,6 +1324,13 @@ impl Workspace {
                     .or(p.editor.selection.active().map(super::optics::model::Item::Part));
                 p.open_sweep(selected);
             }
+            if ui
+                .add_enabled(active.is_some(), egui::Button::new("Transmission…"))
+                .on_hover_text("Power, phase and group delay between the design's light ports; its S-matrix")
+                .clicked()
+            {
+                self.open_transmission_window();
+            }
         });
         ui.menu_button("Component", |ui| {
             let label = if is_component {
@@ -1567,6 +1579,7 @@ impl Workspace {
 
     fn windows(&mut self, ctx: &egui::Context) {
         self.export_window_ui(ctx);
+        self.transmission_window_ui(ctx);
         if self.about.open {
             self.about.ui(ctx);
         }

@@ -84,6 +84,25 @@ Each point is a full simulation: light and electronics settle together, and comp
 simulated through. Coarse sweeps (tens of points) are instant; thousands of points on a big
 design take a few seconds.
 
+## Transmission: S-matrix, phase and group delay
+
+**Analysis → Transmission…** characterises a design with light ports (Input and Output
+ports or pins), the way a datasheet does: how much of the light entering each input
+leaves each output, and with what phase and delay. Choose the design and the wavelengths
+and press **Compute**.
+
+- The **grid** is the S-matrix at one wavelength (move **At** to change it): a cell for
+  each input and output, its power in dB, darker for more light.
+- **Click** a cell to plot that path, **Ctrl+click** to add more (up to eight). The plot
+  shows **Power (dB)**, **Phase** (unwrapped, without 2π jumps) or **Group delay**: the
+  time a pulse takes along the path, dφ/dω, in ps. A waveguide's delay is n_g·L/c (1 mm
+  of silicon strip, n_g 4.2: 14.0 ps); a ring holds light longest at its resonances.
+- **Copy CSV** and **Save CSV…** give every wavelength with the power, dB, phase and
+  delay of each plotted path. **File → Export for other tools…** writes the full
+  S-parameters as a Touchstone file.
+
+Lasers inside the design are off; signals inside are at the values they settle to.
+
 ## Exporting
 
 **Copy CSV** puts the data on the clipboard, ready to paste into a spreadsheet. **Save

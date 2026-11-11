@@ -104,9 +104,11 @@ and feed it their components.
 - [x] **Resonance readouts** on wavelength sweeps: FSR, width and Q, checked against the
       textbook ring
 - [x] **Readouts from the command line** (`shine simulate … --readouts`)
-- [ ] **Phase and group delay** plots, from the same sweep
+- [x] **Phase and group delay** of every path between a design's ports, checked against
+      a waveguide's n_g·L/c and a ring's resonant delay
 - [ ] **Two-parameter sweeps**: a map of an output over two parameters
-- [ ] **S-matrix view**: how every input reaches every output, at a wavelength
+- [x] **S-matrix view**: how every input reaches every output, at a wavelength
+      (Analysis → Transmission…)
 - [ ] **Monte Carlo**: how a design holds up to fabrication variation; histograms and yield
 
 ## Milestone: custom components

@@ -647,6 +647,7 @@ fn every_control_is_named_for_screen_readers() {
         ws.library_window.open = true;
     }
     h.state_mut().open_export_window(shine::panels::workspace::ExportFormat::Gdsfactory);
+    h.state_mut().open_transmission_window();
     active_mut(&mut h).show_browser = true;
     h.run_steps(4);
     missing.extend(unnamed_controls(&h, "windows"));
@@ -1274,4 +1275,38 @@ fn a_scripted_component_is_written_and_applied_in_the_inspector() {
     h.run_steps(3);
     assert!(h.query_by_label_contains("line 1").is_some(), "the error says where");
     assert_eq!(h.state().project.doc(id).unwrap().interface().outputs.len(), 3);
+}
+
+#[test]
+fn the_transmission_window_shows_the_s_matrix_and_paths() {
+    // Pins around a 30 % coupler: bar 70 % (−1.55 dB), cross 30 % (−5.23 dB).
+    let mut h = app();
+    let p = active_mut(&mut h);
+    let pr = |instance, port| PortRef { instance, port };
+    let a = p.layout.add_instance(BlockRef::Builtin(Builtin::InputPin { name: "a".into() }), (0, 0));
+    let b = p.layout.add_instance(BlockRef::Builtin(Builtin::InputPin { name: "b".into() }), (0, 2));
+    let dc = p.layout.add_instance(BlockRef::Builtin(Builtin::Coupler { coupling: 0.3 }), (4, 0));
+    let bar = p.layout.add_instance(BlockRef::Builtin(Builtin::OutputPin { name: "bar".into() }), (8, 0));
+    let cross = p.layout.add_instance(BlockRef::Builtin(Builtin::OutputPin { name: "cross".into() }), (8, 2));
+    p.layout.connect_optical(pr(a, 0), pr(dc, 0));
+    p.layout.connect_optical(pr(b, 0), pr(dc, 1));
+    p.layout.connect_optical(pr(dc, 0), pr(bar, 0));
+    p.layout.connect_optical(pr(dc, 1), pr(cross, 0));
+    h.run_steps(2);
+    click_menu(&mut h, "Analysis", "Transmission…");
+    h.get_by_label("Compute").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("a → bar: -1.55 dB").is_some(), "the grid names each cell");
+    assert!(h.query_by_label("a → cross: -5.23 dB").is_some());
+
+    // Ctrl+click adds a path to the plot; the CSV has both.
+    h.get_by_label("a → cross: -5.23 dB").click_modifiers(egui::Modifiers::COMMAND);
+    h.run_steps(2);
+    assert_eq!(h.state().transmission_window.selected, vec![(0, 0), (0, 1)]);
+    h.get_by_label("Group delay (ps)").click();
+    h.run_steps(2);
+    let csv = h.state().transmission_csv().unwrap();
+    let header = csv.lines().next().unwrap();
+    assert!(header.contains("a → bar group delay (ps)") && header.contains("a → cross power (dB)"), "{header}");
+    assert_eq!(csv.lines().count(), 2002, "a row per wavelength");
 }
