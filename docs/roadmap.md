@@ -82,7 +82,7 @@ want them.
 ## Milestone: design at scale
 
 - [x] **A reference design at a real size**: a 16×16 programmable photonic processor
-      (136 MZI cells, 1442 parts), checked against its matrices with every build and
+      (120 MZIs, 1 410 parts), checked against its matrices with every build and
       measured up to 128×128 (83 000 parts) ([Reference design](reference-design.md))
 - [x] **Large designs stay quick to look at**: drawing and navigating a design of 8 600
       boxes and 16 600 waveguides takes a few milliseconds a frame

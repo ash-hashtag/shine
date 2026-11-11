@@ -13,7 +13,7 @@ use egui::{Event, Pos2, Rect, Vec2};
 use shine::panels::circuit::sim::{self, Machine, Options};
 use shine::panels::circuit::sweep::{self, SweepKind, SweepSpec};
 use shine::panels::interop::{self, gdsfactory, sax};
-use shine::panels::optics::model::{BlockRef, InstanceId};
+use shine::panels::optics::model::{BlockRef, Builtin, InstanceId};
 use shine::panels::optics::reference;
 use shine::panels::project::Project;
 use shine::panels::workspace::Workspace;
@@ -64,8 +64,8 @@ fn measure(n: usize, editor_only: bool) {
     };
     let mesh_doc = project.documents.iter().find(|d| d.name.contains("mesh")).unwrap();
     tracing::info!(
-        "\n{n}×{n} processor: {} MZI cells, {} parts when opened up; the mesh document has {} boxes and {} waveguides",
-        n * (n - 1) / 2 + n,
+        "\n{n}×{n} processor: {} MZI cells and {n} modulators, {} parts when opened up; the mesh document has {} boxes and {} waveguides",
+        n * (n - 1) / 2,
         leaf(&project),
         mesh_doc.layout().instances.len(),
         mesh_doc.layout().wires.len()
@@ -128,15 +128,17 @@ fn editor(project: &Project, bytes: &[u8]) {
     let centre = Pos2::new(800.0, 500.0);
     let zoom: Vec<f64> = (0..20).map(|k| frame(&ctx, &mut ws, &mut t, vec![Event::PointerMoved(centre), Event::Zoom(if k % 2 == 0 { 1.1 } else { 1.0 / 1.1 })])).collect();
     tracing::info!("  editor, processor: open {open_ws:>6.1} ms   first frame {first:>8.1} ms   idle {}   zooming {}", stats(&idle), stats(&zoom));
-    // Edit: change a modulator, as dragging its θ would. The frame shouldn't
-    // wait for the simulation; the result arrives when it's ready.
+    // Edit: click an input bit. The frame shouldn't wait for the
+    // simulation; the result arrives when it's ready.
     let mut edits = Vec::new();
     let mut results = Vec::new();
     for k in 0..6 {
         let id = ws.active.unwrap();
         let p = ws.project.doc_mut(id).unwrap().panel_mut();
-        let m = p.layout.instances.iter_mut().find(|i| i.param("θ").is_some()).unwrap();
-        m.set_param("θ", Some(1.0 + 0.01 * k as f64));
+        let bit = p.layout.instances.iter_mut().filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { .. }))).nth(k).unwrap();
+        if let BlockRef::Builtin(Builtin::NumberInput { value, .. }) = &mut bit.block {
+            *value ^= 1;
+        }
         let start = Instant::now();
         edits.push(frame(&ctx, &mut ws, &mut t, Vec::new()));
         // Frames go on (as they would, at 60 a second) until the result is in.
@@ -153,7 +155,7 @@ fn editor(project: &Project, bytes: &[u8]) {
         }
         results.push(ms(start.elapsed()));
     }
-    tracing::info!("  editing a modulator: frames {}   result shown after {}", stats(&edits), stats(&results));
+    tracing::info!("  clicking an input bit: frames {}   result shown after {}", stats(&edits), stats(&results));
     let mesh_id = ws.project.documents.iter().find(|d| d.name.contains("mesh")).unwrap().id;
     ws.open_tab(mesh_id);
     let first = frame(&ctx, &mut ws, &mut t, Vec::new());

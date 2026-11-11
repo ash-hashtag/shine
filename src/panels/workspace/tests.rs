@@ -551,8 +551,14 @@ fn slow_designs_simulate_in_the_background() {
     // Pretend it's slow: the next edit's simulation runs on another thread.
     ws.background_after_ms = 0.0;
     ws.stats.last_simulation_ms = 1.0;
-    let modulator = panel(&mut ws, id).layout.instances.iter().position(|i| i.param("θ").is_some()).unwrap();
-    panel(&mut ws, id).layout.instances[modulator].set_param("θ", Some(0.0));
+    // Switch an input off.
+    let bit = panel(&mut ws, id)
+        .layout
+        .instances
+        .iter()
+        .position(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { value: 1, .. })))
+        .unwrap();
+    panel(&mut ws, id).layout.instances[bit].block = BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 0 });
     ws.refresh_simulation();
     if !cfg!(target_arch = "wasm32") {
         assert!(ws.simulating_in_background());

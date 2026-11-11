@@ -4,7 +4,7 @@
 //! opens and works as Shine's file format moves on.
 
 use shine::panels::circuit::sim::{self, Machine, Options};
-use shine::panels::optics::model::{BlockRef, InstanceId};
+use shine::panels::optics::model::{BlockRef, Builtin, InstanceId};
 use shine::panels::optics::reference::{self, SIZE};
 use shine::panels::project::{DocId, Project};
 use shine::photonics::{C64, Matrix};
@@ -49,7 +49,7 @@ fn a_small_processor_multiplies_by_a_random_unitary() {
     // 4×4, a unitary with no special structure.
     let a = Matrix::from_fn(4, 4, |r, c| C64::new(((r * 7 + c * 3) as f64).sin(), ((r * 5 + c * 11) as f64).cos()));
     let u = a.svd().unwrap().U().to_owned();
-    let x = [0.9, 0.2, 0.0, 0.6];
+    let x = [true, false, true, true];
     let mut p = Project::new();
     reference::processor(&mut p, &u, &x).unwrap();
     assert_powers(&detected(&p), &reference::expected_powers(&u, &x));
@@ -59,13 +59,34 @@ fn a_small_processor_multiplies_by_a_random_unitary() {
 fn the_reference_design_is_an_optical_fourier_transform() {
     let p = reference::reference_project();
     let got = detected(&p);
-    let want = reference::expected_powers(&reference::dft(SIZE), &reference::input_vector(SIZE));
+    let want = reference::expected_powers(&reference::dft(SIZE), &reference::input_bits(SIZE));
     assert_powers(&got, &want);
-    // A cosine with two periods: bins 0, 2 and N − 2 light up, the rest stay dark.
+    // A square wave with period 4: bins 0, N/4 and 3N/4 light up (its even
+    // harmonic, N/2, cancels), the rest stay dark.
     for (j, w) in got.iter().enumerate() {
-        let bright = [0, 2, SIZE - 2].contains(&j);
+        let bright = [0, SIZE / 4, 3 * SIZE / 4].contains(&j);
         assert_eq!(*w > 1e-6, bright, "bin {j}: {w} mW");
     }
+}
+
+#[test]
+fn clicking_an_input_bit_changes_the_spectrum() {
+    // One bit on: an impulse, whose transform is flat: every bin the same.
+    let mut p = reference::reference_project();
+    let id = top(&p);
+    let layout = &mut p.doc_mut(id).unwrap().panel_mut().layout;
+    for inst in &mut layout.instances {
+        if let BlockRef::Builtin(Builtin::NumberInput { value, .. }) = &mut inst.block {
+            *value = 0;
+        }
+    }
+    let first = layout.instances.iter_mut().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { .. }))).unwrap();
+    first.block = BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 1 });
+    let mut impulse = vec![false; SIZE];
+    impulse[0] = true;
+    let got = detected(&p);
+    assert_powers(&got, &reference::expected_powers(&reference::dft(SIZE), &impulse));
+    assert!(got.iter().all(|w| (w - got[0]).abs() < 1e-12 && *w > 0.0), "flat: {got:?}");
 }
 
 #[test]

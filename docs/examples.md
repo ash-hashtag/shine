@@ -47,19 +47,19 @@ tick adds the step (3) to the running total, wrapping at 256. Press **Step** or 
 ### 16×16 photonic matrix processor
 
 The core of programmable photonic processors, the chips behind optical neural-network
-accelerators and optical signal processing, at a realistic size: 136 MZI cells, 1442 parts
-once every component is opened up. A 1550 nm laser is split 16 ways; a row of MZI
-modulators sets the input vector; a 16×16 mesh of MZIs multiplies it by a matrix; 16
-detectors read the result.
+accelerators and optical signal processing, at a realistic size: a 16×16 mesh of 120 MZIs,
+1 410 parts once every component is opened up. A 1550 nm laser is split 16 ways; **the 16
+bits on the left** each switch a modulator on or off, setting the input vector; the mesh,
+programmed as the discrete Fourier transform, multiplies it; **the 16 detectors on the
+right** show the result, with their readings.
 
-The mesh is programmed to the discrete Fourier transform and the input is a cosine with
-two periods across the 16 inputs, so the detectors at frequency bins 0, 2 and 14 light up
-and the rest stay dark: an optical FFT.
+It starts with the bits 1100 1100 1100 1100, a square wave, so the 1st, 5th and 13th
+detectors light up and the rest stay dark: an optical FFT.
 
-Try: press Tab on the mesh to look inside (and Tab on an MZI cell to see its couplers,
-heaters and arms); change a modulator's θ and watch the spectrum change; export the mesh's
-S-parameters or SAX netlist. It is also Shine's [reference design](reference-design.md):
-how we measure what Shine can do with a large design.
+Try: click the bits (one bit on gives a flat spectrum; all on lights only the first
+detector); press Tab on the mesh to look inside; export the mesh's S-parameters or SAX
+netlist. It is also Shine's [reference design](reference-design.md): how we measure what
+Shine can do with a large design.
 
 ### Cascaded interferometers
 

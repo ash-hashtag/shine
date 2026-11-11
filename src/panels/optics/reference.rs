@@ -10,17 +10,20 @@
 //!   arrangement, N columns deep, with a matching waveguide wherever a mode
 //!   skips a column (so every path has the same length and loss) and an
 //!   output phase on each mode. It is programmed to a unitary matrix.
-//! - **Processor**: a 1550 nm laser, a 1×N splitter tree, a row of MZI
-//!   modulators that set the input vector, the mesh, and a detector per
-//!   output: the detectors read |U x|².
+//! - **Modulator**: a Mach–Zehnder modulator (Y-splitter, a heater, two arms,
+//!   Y-combiner) that a signal switches on or off.
+//! - **Processor**: a 1550 nm laser, a 1×N splitter tree, a modulator per
+//!   input with a clickable bit above it (the input vector), the mesh, and a
+//!   detector per output showing its reading: the detectors read |U x|².
 //!
 //! As shipped, the mesh is programmed to the N-point discrete Fourier
-//! transform and the modulators to a cosine with two periods across the
-//! inputs, so the detectors light up at frequency bins 0, 2 and N − 2.
+//! transform and the input bits to a square wave with period 4
+//! (1100 1100 …), so the detectors light up at frequency bins 0, N/4 and
+//! 3N/4. Click the bits to change the input and watch the spectrum.
 
 use std::f64::consts::PI;
 
-use super::model::{BlockRef, Builtin, Export, InstanceId, Item, Layout, PortRef};
+use super::model::{BlockRef, Builtin, Export, InstanceId, Item, Layout, OpticComponentKind, PlacedComponent, PortRef, Terminal, cell_center};
 use crate::panels::project::{DocId, Project};
 use crate::photonics::{C64, Matrix, UnitaryMesh};
 
@@ -35,6 +38,7 @@ pub const LOSS_DB_PER_CM: f64 = 2.0;
 pub const WAVELENGTH_NM: f64 = 1550.0;
 
 pub const MZI_CELL: &str = "MZI cell";
+pub const MODULATOR: &str = "Modulator";
 
 fn arm() -> Builtin {
     Builtin::DelayLine { length_um: ARM_UM, n_eff: N_EFF, n_g: N_G, reference_nm: WAVELENGTH_NM, loss_db_per_cm: LOSS_DB_PER_CM }
@@ -143,28 +147,53 @@ pub fn dft(n: usize) -> Matrix {
     Matrix::from_fn(n, n, |j, k| C64::from_polar(1.0 / (n as f64).sqrt(), -2.0 * PI * (j * k) as f64 / n as f64))
 }
 
-/// The shipped input vector: a cosine with two periods across the inputs,
-/// from 0 to 1.
-pub fn input_vector(n: usize) -> Vec<f64> {
-    (0..n).map(|k| 0.5 * (1.0 + (2.0 * PI * 2.0 * k as f64 / n as f64).cos())).collect()
+/// The modulator: light in, Y-splitter, a heater on the top arm, two arms,
+/// Y-combiner, light out. Its signal `on` adds π to the heater's phase θ
+/// (π unless set otherwise): off, the arms cancel; on, they add up.
+pub fn modulator(project: &mut Project) -> DocId {
+    if let Some(id) = project.find(MODULATOR).filter(|&id| project.doc(id).is_some_and(|d| d.component.is_some())) {
+        return id;
+    }
+    let mut l = Layout::default();
+    let input = add(&mut l, Builtin::InputPin { name: "in".into() }, (0, 0));
+    let split = add(&mut l, Builtin::YSplitter, (3, 0));
+    let heater = add(&mut l, Builtin::PhaseShifter { phase: PI }, (6, -1));
+    let upper = add(&mut l, arm(), (9, -1));
+    let lower = add(&mut l, arm(), (9, 1));
+    let join = add(&mut l, Builtin::YCombiner, (12, 0));
+    let output = add(&mut l, Builtin::OutputPin { name: "out".into() }, (15, 0));
+    link(&mut l, (input, 0), (split, 0));
+    link(&mut l, (split, 0), (heater, 0));
+    link(&mut l, (heater, 0), (upper, 0));
+    link(&mut l, (split, 1), (lower, 0));
+    link(&mut l, (upper, 0), (join, 0));
+    link(&mut l, (lower, 0), (join, 1));
+    link(&mut l, (join, 0), (output, 0));
+    // The control: a signal pin above the heater.
+    l.components.push(PlacedComponent { kind: OpticComponentKind::SignalIn, pos: cell_center(6, -4) });
+    let on = l.components.len() - 1;
+    l.set_label(on, "on");
+    l.connect_signal(Terminal { item: Item::Part(on), port: 0 }, Terminal { item: Item::Box(heater), port: 0 });
+    l.exports.push(Export { name: "θ".into(), item: Item::Box(heater), param: "phase".into() });
+    project.add_component(
+        MODULATOR,
+        "MOD",
+        "A thermo-optic Mach–Zehnder modulator: the light is split between two 100 µm arms and joined again. With the heater at θ = π (as it starts) the arms cancel and nothing comes out; a 1 on the “on” signal adds π, the arms add up and the light passes. Set θ between for any amplitude in between.",
+        l,
+        10.0,
+    )
 }
 
-/// The modulator settings that send field `x` (0…1) out of a cell's top
-/// output with the same phase for every `x`: (θ, φ).
-pub fn modulator(x: f64) -> (f64, f64) {
-    let theta = 2.0 * x.clamp(0.0, 1.0).asin();
-    (theta, -theta / 2.0)
-}
-
-/// The whole processor: laser, splitter tree, modulators set to `inputs`,
-/// the mesh programmed to `u`, and detectors. Returns the top document.
-pub fn processor(project: &mut Project, u: &Matrix, inputs: &[f64]) -> Result<DocId, String> {
+/// The whole processor: laser, splitter tree, a modulator per input with a
+/// clickable bit (`bits`, the input vector), the mesh programmed to `u`, and
+/// detectors. Returns the top document.
+pub fn processor(project: &mut Project, u: &Matrix, bits: &[bool]) -> Result<DocId, String> {
     let n = u.nrows();
     if !n.is_power_of_two() || n < 2 {
         return Err(format!("the splitter tree needs a power of two inputs, not {n}"));
     }
     let programmed = UnitaryMesh::decompose_rectangular(u).map_err(|e| e.to_string())?;
-    let cell = mzi_cell(project);
+    let modulator = modulator(project);
     let mesh_doc = mesh(project, &programmed);
     let mut l = Layout::default();
     let rows = 2 * n as i32;
@@ -173,12 +202,11 @@ pub fn processor(project: &mut Project, u: &Matrix, inputs: &[f64]) -> Result<Do
     link(&mut l, (laser, 0), (tree, 0));
     let mesh_box = l.add_instance(BlockRef::Component(mesh_doc), (18, rows / 2 - n as i32 / 2));
     for k in 0..n {
-        let m = l.add_instance(BlockRef::Component(cell), (10, 2 * k as i32));
-        let (theta, phi) = modulator(inputs.get(k).copied().unwrap_or(0.0));
-        if let Some(inst) = l.instances.iter_mut().find(|i| i.id == m) {
-            inst.set_param("θ", Some(theta));
-            inst.set_param("φ", Some(phi));
-        }
+        let row = 2 * k as i32;
+        let m = l.add_instance(BlockRef::Component(modulator), (11, row));
+        // Its input bit, just above it: click it to switch the input.
+        let bit = add(&mut l, Builtin::NumberInput { bits: 1, value: u64::from(bits.get(k).copied().unwrap_or(false)) }, (11, row - 1));
+        l.connect_signal(Terminal { item: Item::Box(bit), port: 0 }, Terminal { item: Item::Box(m), port: 0 });
         link(&mut l, (tree, k), (m, 0));
         link(&mut l, (m, 0), (mesh_box, k));
         let d = add(&mut l, Builtin::Detector, (24, 2 * k as i32));
@@ -187,7 +215,12 @@ pub fn processor(project: &mut Project, u: &Matrix, inputs: &[f64]) -> Result<Do
     Ok(project.add_layout(&format!("{n}×{n} photonic matrix processor"), l, 10.0))
 }
 
-/// The shipped design, in a new project: the 16-point DFT applied to a cosine.
+/// The shipped input: a square wave with period 4 (1100 1100 …).
+pub fn input_bits(n: usize) -> Vec<bool> {
+    (0..n).map(|k| k % 4 < 2).collect()
+}
+
+/// The shipped design, in a new project: the 16-point DFT of a square wave.
 pub fn reference_project() -> Project {
     sized_project(SIZE)
 }
@@ -195,7 +228,7 @@ pub fn reference_project() -> Project {
 /// The design at another size (a power of two), for finding Shine's limits.
 pub fn sized_project(n: usize) -> Project {
     let mut p = Project::new();
-    processor(&mut p, &dft(n), &input_vector(n)).expect("the DFT is unitary and n a power of two");
+    processor(&mut p, &dft(n), &input_bits(n)).expect("the DFT is unitary and n a power of two");
     // The processor first: it's what opens.
     p.documents.rotate_right(1);
     p
@@ -203,13 +236,14 @@ pub fn sized_project(n: usize) -> Project {
 
 /// The demo: the reference design added to a project.
 pub fn demo(project: &mut Project) -> DocId {
-    processor(project, &dft(SIZE), &input_vector(SIZE)).expect("the DFT is unitary and 16 a power of two")
+    processor(project, &dft(SIZE), &input_bits(SIZE)).expect("the DFT is unitary and 16 a power of two")
 }
 
 /// The power each detector should read, from the matrices alone: the
-/// laser's 1 mW split N ways, each modulator's field, the unitary, and the
-/// waveguide loss of the N + 1 columns every path crosses.
-pub fn expected_powers(u: &Matrix, inputs: &[f64]) -> Vec<f64> {
+/// laser's 1 mW split N ways, each modulator on (1) or off (0), the unitary,
+/// and the waveguide loss of the N + 1 columns every path crosses.
+pub fn expected_powers(u: &Matrix, bits: &[bool]) -> Vec<f64> {
+    let inputs: Vec<f64> = bits.iter().map(|&b| f64::from(u8::from(b))).collect();
     let n = u.nrows();
     let split = 1.0 / (n as f64).sqrt();
     let loss = 10f64.powf(-LOSS_DB_PER_CM * ARM_UM * 1e-4 / 20.0).powi(n as i32 + 1);

@@ -442,7 +442,8 @@ impl OpticsPanel {
                 continue;
             }
             let d = self.catalog.display(&inst.block);
-            draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, hovered == Hit::Box(b), self.prefs.show_port_names);
+            let style = BoxStyle { hovered: hovered == Hit::Box(b), port_names: self.prefs.show_port_names, readings: self.prefs.show_readings, unit: self.prefs.power_unit };
+            draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, style);
             if self.editor.boxes.contains(b) {
                 let active = self.editor.boxes.active() == Some(b);
                 painter.rect_stroke(
@@ -947,6 +948,25 @@ fn paint_box_icon(painter: &egui::Painter, r: Rect, d: &BlockDisplay) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// How to draw a box, beyond what it is.
+#[derive(Clone, Copy)]
+struct BoxStyle {
+    hovered: bool,
+    port_names: bool,
+    /// Show detector boxes' readings.
+    readings: bool,
+    unit: crate::panels::prefs::PowerUnit,
+}
+
+/// The power arriving at a top-level box's light input `port`, from the
+/// waveguide feeding it.
+fn power_into(layout: &model::Layout, outcome: &Outcome, inst: model::InstanceId, port: usize) -> Option<f64> {
+    let to = model::PortRef { instance: inst, port };
+    let wire = layout.wires.iter().find(|w| w.to == to)?;
+    outcome.port_power.get(&(wire.from.instance, wire.from.port)).copied()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_box(
     painter: &egui::Painter,
     r: Rect,
@@ -956,9 +976,9 @@ fn draw_box(
     layout: &model::Layout,
     theme: &CanvasTheme,
     zoom: f32,
-    hovered: bool,
-    port_names: bool,
+    style: BoxStyle,
 ) {
+    let BoxStyle { hovered, port_names, .. } = style;
     let dark = theme.background.r() < 100;
     let body = if dark { Color32::from_rgb(50, 53, 60) } else { Color32::from_rgb(232, 235, 241) };
     let border = if hovered {
@@ -1016,6 +1036,21 @@ fn draw_box(
         }
         BlockRef::Builtin(Builtin::FunctionCell { name, .. }) => {
             painter.text(r.center(), Align2::CENTER_CENTER, format!("ƒ {name}"), big, theme.text);
+        }
+        BlockRef::Builtin(Builtin::Detector) => {
+            // How much light it reads, glowing with it and written beside it.
+            let p = outcome.and_then(|o| power_into(layout, o, inst.id, 0));
+            if let Some(p) = p.filter(|p| *p > 1e-12) {
+                let glow = (p.sqrt() as f32).clamp(0.0, 1.0);
+                painter.rect_filled(r.shrink(3.0 * zoom), rounding, crate::panels::optics::render::SIGNAL_HIGH.gamma_multiply(0.15 + 0.6 * glow));
+            }
+            painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, theme.text);
+            if style.readings
+                && let Some(p) = p
+            {
+                let font = FontId::monospace((12.0 * zoom).clamp(8.0, 30.0));
+                painter.text(r.right_center() + Vec2::new(8.0 * zoom, 0.0), Align2::LEFT_CENTER, crate::panels::units::format_power(p, style.unit), font, theme.text);
+            }
         }
         _ if d.component.is_some() && own_fill.is_some() => {
             let fill = own_fill.expect("checked");

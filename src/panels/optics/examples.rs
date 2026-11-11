@@ -468,7 +468,7 @@ pub fn demos() -> Vec<Demo> {
         },
         Demo {
             name: "16×16 photonic matrix processor",
-            description: "The core of optical neural-network and signal-processing chips, at a real size: 136 thermally tuned MZI cells (1442 parts). A laser is split 16 ways, MZI modulators set the input vector, and a 16×16 mesh of MZIs in the rectangular (Clements) arrangement multiplies it by a matrix before 16 detectors. The mesh is programmed to the discrete Fourier transform and the input to a cosine with two periods, so the detectors at frequency bins 0, 2 and 14 light up. Press Tab on the mesh to see inside; change a modulator's θ to change the input.",
+            description: "The core of optical neural-network and signal-processing chips, at a real size: a 16×16 mesh of 120 MZIs. A laser is split 16 ways; the 16 bits on the left (click them) each switch a modulator on or off, setting the input vector; the mesh, programmed as the discrete Fourier transform, multiplies it; the 16 detectors on the right show the result. The input starts as a square wave (1100 1100 …), so the 1st, 5th and 13th detectors light up; turn on a single bit for a flat spectrum. Press Tab on the mesh to see inside.",
             build: super::reference::demo,
         },
         Demo {
