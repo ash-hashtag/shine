@@ -383,6 +383,23 @@ mod tests {
     use super::tests_support::splitter_s3p;
 
     #[test]
+    fn nearly_reciprocal_parts_take_their_first_ports_as_inputs() {
+        // A simulated Y-branch: port 1 → 2, 3 carries 1.3% less than back,
+        // which is noise, not direction.
+        let mut m = Matrix::zeros(3, 3);
+        for o in [1, 2] {
+            m[(o, 0)] = C64::new(0.481f64.sqrt(), 0.0);
+            m[(0, o)] = C64::new(0.4878f64.sqrt(), 0.0);
+        }
+        assert_eq!(split_ports(&[m.clone()]), vec![0]);
+        // A part that really is one-way (an isolator-like 2:1 difference) keeps its direction.
+        for o in [1, 2] {
+            m[(0, o)] = C64::new(0.9f64.sqrt(), 0.0);
+        }
+        assert_eq!(split_ports(&[m]), vec![1, 2]);
+    }
+
+    #[test]
     fn a_touchstone_splitter_has_one_input_and_two_outputs() {
         let model = ModelSpec::from_file("y-branch.s3p", splitter_s3p().as_bytes()).unwrap();
         assert_eq!(model.name, "y-branch");

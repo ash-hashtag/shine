@@ -100,12 +100,6 @@ a file next to Shine's settings, in the browser in the page's storage. It has fo
 - **This project**: the open project's components.
 - **Examples**: the components that ship with Shine (Full adder, Mach–Zehnder
   interferometer, Fabry–Pérot filter, 1→4 splitter).
-- **SiEPIC EBeam**: real foundry components, the compact models of the open
-  [SiEPIC EBeam PDK](https://github.com/SiEPIC/SiEPIC_EBeam_PDK) for its nominal process
-  (220 nm silicon, 500 nm waveguides, TE, C band): a broadband 50:50 coupler, a Y-branch,
-  directional couplers from 0 to 30 µm long and three ring couplers. They are FDTD
-  simulations, so they have the real parts' loss, imbalance and wavelength dependence. They
-  ship with Shine under the kit's MIT licence (`library/siepic-ebeam` in the source).
 - Your own folders, *My components* to start with.
 
 Drag a component onto the grid (or click it, then the grid) to place it, and

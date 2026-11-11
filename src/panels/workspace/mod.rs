@@ -803,7 +803,7 @@ impl Workspace {
     pub fn import_asset(&mut self, asset: AssetRef) -> Option<DocId> {
         match asset {
             AssetRef::Example(i) => examples::import_component(&mut self.project, i),
-            AssetRef::Kit(_) | AssetRef::Saved(_) => {
+            AssetRef::Saved(_) => {
                 let bundle = self.library.bundle(asset)?;
                 self.project.import(&bundle)
             }

@@ -4,8 +4,7 @@
 //! small project whose first document is the component (the same bytes as a
 //! `.shinecomp` file). Placing one copies it into the open project. The
 //! components that ship with Shine are listed as the read-only "Examples"
-//! folder, and the SiEPIC EBeam foundry kit's compact models (MIT licence)
-//! as the read-only "SiEPIC EBeam" folder. The library lives in a file next to the app's settings on
+//! folder. The library lives in a file next to the app's settings on
 //! desktop, and in the page's storage in the browser.
 
 use std::path::PathBuf;
@@ -24,54 +23,6 @@ pub const LIBRARY_FILE: &str = "library.shinelib";
 pub const STORAGE_KEY: &str = "shine.library";
 /// Folder of the components that ship with Shine.
 pub const EXAMPLES_FOLDER: &str = "Examples";
-/// Folder of the SiEPIC EBeam kit's compact models that ship with Shine.
-pub const KIT_FOLDER: &str = "SiEPIC EBeam";
-
-/// Folders that ship with Shine: read-only, always listed first.
-pub const BUILT_IN_FOLDERS: [&str; 2] = [EXAMPLES_FOLDER, KIT_FOLDER];
-
-/// The SiEPIC EBeam PDK's compact models for its nominal process (220 nm
-/// silicon, 500 nm strip waveguides, TE, C band), as published in
-/// github.com/SiEPIC/SiEPIC_EBeam_PDK under the MIT licence (see
-/// library/siepic-ebeam/README.md for where each comes from).
-const KIT_FILES: &[(&str, &[u8])] = &[
-    ("Broadband 50-50 coupler.sparam", include_bytes!("../../library/siepic-ebeam/Broadband 50-50 coupler.sparam")),
-    ("Y-branch.sparam", include_bytes!("../../library/siepic-ebeam/Y-branch.sparam")),
-    ("Directional coupler, gap 200 nm, length 0 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 0 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 5 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 5 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 10 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 10 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 15 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 15 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 20 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 20 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 25 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 25 µm.sparam")),
-    ("Directional coupler, gap 200 nm, length 30 µm.sparam", include_bytes!("../../library/siepic-ebeam/Directional coupler, gap 200 nm, length 30 µm.sparam")),
-    ("Ring coupler, gap 100 nm, radius 10 µm.dat", include_bytes!("../../library/siepic-ebeam/Ring coupler, gap 100 nm, radius 10 µm.dat")),
-    ("Ring coupler, gap 100 nm, radius 5 µm.dat", include_bytes!("../../library/siepic-ebeam/Ring coupler, gap 100 nm, radius 5 µm.dat")),
-    ("Ring coupler, gap 150 nm, radius 10 µm.dat", include_bytes!("../../library/siepic-ebeam/Ring coupler, gap 150 nm, radius 10 µm.dat")),
-];
-
-const KIT_CREDIT: &str = "From the SiEPIC EBeam PDK (FDTD-simulated compact model; MIT licence, © 2016–2020 Lukas Chrostowski and contributors).";
-
-/// The kit's components as bundles (bytes) with their summaries, read once.
-fn kit() -> &'static [(Vec<u8>, AssetSummary)] {
-    static KIT: std::sync::OnceLock<Vec<(Vec<u8>, AssetSummary)>> = std::sync::OnceLock::new();
-    KIT.get_or_init(|| {
-        KIT_FILES
-            .iter()
-            .enumerate()
-            .filter_map(|(i, (name, bytes))| {
-                let model = super::models::ModelSpec::from_file(name, bytes).map_err(|e| tracing::error!("{name}: {e}")).ok()?;
-                let mut bundle = super::models::component(model);
-                let root = bundle.documents.first_mut()?;
-                if let Some(meta) = root.component.as_mut() {
-                    meta.description = format!("{} {KIT_CREDIT}", meta.description);
-                }
-                let summary = summarize(AssetRef::Kit(i), KIT_FOLDER, &bundle).ok()?;
-                Some((bundle.to_bytes(), summary))
-            })
-            .collect()
-    })
-}
-
 /// Folder for assets added without one.
 pub const DEFAULT_FOLDER: &str = "My components";
 
@@ -85,16 +36,7 @@ pub struct AssetId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AssetRef {
     Example(usize),
-    /// One of the bundled foundry kit's components.
-    Kit(usize),
     Saved(AssetId),
-}
-
-impl AssetRef {
-    /// Whether it ships with Shine (read-only, never moved or deleted).
-    pub fn is_built_in(self) -> bool {
-        !matches!(self, Self::Saved(_))
-    }
 }
 
 /// What the library shows about an asset, without decoding it again.
@@ -201,7 +143,6 @@ impl Library {
                 let id = import_component(&mut p, i)?;
                 summarize(AssetRef::Example(i), EXAMPLES_FOLDER, &p.extract(id)?).ok()
             })
-            .chain(kit().iter().map(|(_, s)| s.clone()))
             .collect();
         let mut library = Self { assets: Vec::new(), next_id: 1, examples, path: None, dirty: false, summaries: Arc::default(), generation: 0 };
         library.refresh();
@@ -270,7 +211,6 @@ impl Library {
                 let id = import_component(&mut p, i)?;
                 p.extract(id)
             }
-            AssetRef::Kit(_) => Project::from_bytes(&kit().iter().find(|k| k.1.asset == asset)?.0).ok(),
             AssetRef::Saved(id) => Project::from_bytes(&self.assets.iter().find(|a| a.id == id)?.bundle).ok(),
         }
     }
@@ -279,7 +219,6 @@ impl Library {
     pub fn file_bytes(&self, asset: AssetRef) -> Option<Vec<u8>> {
         match asset {
             AssetRef::Saved(id) => self.assets.iter().find(|a| a.id == id).map(|a| a.bundle.clone()),
-            AssetRef::Kit(_) => kit().iter().find(|k| k.1.asset == asset).map(|k| k.0.clone()),
             AssetRef::Example(_) => self.bundle(asset).map(|p| p.to_bytes()),
         }
     }
@@ -517,11 +456,8 @@ mod tests {
     fn examples_are_listed_first_and_searchable() {
         let library = Library::new();
         let all = library.summaries();
-        let examples = component_examples().len();
-        assert_eq!(all.len(), examples + KIT_FILES.len(), "the examples, then the foundry kit");
-        assert!(all[..examples].iter().all(|s| s.folder == EXAMPLES_FOLDER && matches!(s.asset, AssetRef::Example(_))));
-        assert!(all[examples..].iter().all(|s| s.folder == KIT_FOLDER && matches!(s.asset, AssetRef::Kit(_))));
-        assert!(library.is_empty(), "none of them are the user's");
+        assert_eq!(all.len(), component_examples().len());
+        assert!(all.iter().all(|s| s.folder == EXAMPLES_FOLDER && matches!(s.asset, AssetRef::Example(_))));
         let mz: Vec<_> = all.iter().filter(|s| s.matches("phase")).map(|s| s.entry.name.as_str()).collect();
         assert_eq!(mz, vec!["Mach–Zehnder interferometer"], "by exported parameter");
         assert!(all.iter().any(|s| s.matches("EXAMPLES")), "by folder, any case");
