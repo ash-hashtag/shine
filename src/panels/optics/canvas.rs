@@ -84,8 +84,8 @@ impl OpticsPanel {
 
     /// Where a box's light port sits, in world units.
     pub fn light_port_pos(&self, p: PortRef, output: bool) -> Option<Pos2> {
-        let g = self.geometry(self.layout.instance(p.instance)?);
-        if output { g.optical_out.get(p.port).copied() } else { g.optical_in.get(p.port).copied() }
+        let inst = self.layout.instance(p.instance)?;
+        model::box_light_port(inst.cell, self.counts(&inst.block), output, p.port)
     }
 
     /// Every port and terminal with its world position.
@@ -118,6 +118,19 @@ impl OpticsPanel {
     /// both are numbered together, as in [`Outcome::wire_fields`].
     pub fn waveguide_count(&self) -> usize {
         self.layout.wires.len() + self.layout.feeds.len()
+    }
+
+    /// Where waveguide `w` starts and ends, in world units.
+    pub fn waveguide_ends(&self, w: usize) -> Option<(Pos2, Pos2)> {
+        match self.layout.wires.get(w) {
+            Some(wire) => Some((self.light_port_pos(wire.from, true)?, self.light_port_pos(wire.to, false)?)),
+            None => {
+                let feed = self.layout.feeds.get(w - self.layout.wires.len())?;
+                let c = self.layout.components.get(feed.laser)?;
+                let OpticComponentKind::Laser { dir, .. } = c.kind else { return None };
+                Some((model::laser_light_out(c.pos, dir), self.light_port_pos(feed.to, false)?))
+            }
+        }
     }
 
     pub fn waveguide_points(&self, w: usize) -> Option<Vec<Pos2>> {
@@ -452,7 +465,16 @@ impl OpticsPanel {
         );
 
         // Waveguides, one coloured strand per lit channel.
+        let visible = Rect::from_min_max(self.view.to_world(rect, rect.min), self.view.to_world(rect, rect.max)).expand(GRID);
         for w in 0..self.waveguide_count() {
+            // A waveguide's curve stays within its ends' box, widened by
+            // its control points' reach (at most half its length, and a cell).
+            if let Some((a, b)) = self.waveguide_ends(w) {
+                let reach = ((b.x - a.x).abs() / 2.0).max(GRID);
+                if !visible.intersects(Rect::from_two_pos(a, b).expand(reach)) {
+                    continue;
+                }
+            }
             let Some(path) = self.waveguide_points(w) else { continue };
             let base = theme.major_line.gamma_multiply(1.6);
             let mut lit: Vec<(f64, Color32)> = outcome

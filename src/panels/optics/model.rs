@@ -279,6 +279,17 @@ pub fn box_geometry(cell: (i32, i32), counts: PortCounts) -> BoxGeometry {
     }
 }
 
+/// Where a box's light port `k` sits (inputs on the left edge, outputs on
+/// the right), without working out the rest of its geometry.
+pub fn box_light_port(cell: (i32, i32), counts: PortCounts, output: bool, k: usize) -> Option<Pos2> {
+    if k >= if output { counts.optical_out } else { counts.optical_in } {
+        return None;
+    }
+    let (w, _) = box_size(counts);
+    let x = if output { cell.0 + w } else { cell.0 };
+    Some(Pos2::new(x as f32 * GRID, (cell.1 as f32 + k as f32 + 0.5) * GRID))
+}
+
 /// Where a primitive's electrical input (top edge) and output (bottom edge) sit.
 pub fn part_signal_in(pos: Pos2) -> Pos2 {
     pos - Vec2::new(0.0, GRID / 2.0)
@@ -347,11 +358,17 @@ impl Layout {
     }
 
     pub fn instance(&self, id: InstanceId) -> Option<&Instance> {
-        self.instances.iter().find(|i| i.id == id)
+        self.instance_index(id).map(|k| &self.instances[k])
     }
 
+    /// Where box `id` is in [`Self::instances`]. Boxes are added with rising
+    /// ids and removed without reordering, so they're normally in id order
+    /// and found by bisection; a list in any other order is searched.
     pub fn instance_index(&self, id: InstanceId) -> Option<usize> {
-        self.instances.iter().position(|i| i.id == id)
+        match self.instances.binary_search_by_key(&id, |i| i.id) {
+            Ok(k) => Some(k),
+            Err(_) => self.instances.iter().position(|i| i.id == id),
+        }
     }
 
     /// Instance covering world position `p`, given each block's port counts.

@@ -541,7 +541,10 @@ impl Catalog {
     }
 
     pub fn counts(&self, block: &BlockRef) -> PortCounts {
-        self.display(block).counts()
+        match block {
+            BlockRef::Builtin(b) => b.port_counts(),
+            BlockRef::Component(id) => self.get(*id).map(|e| e.interface.counts()).unwrap_or_default(),
+        }
     }
 
     pub fn display(&self, block: &BlockRef) -> BlockDisplay {
@@ -796,11 +799,39 @@ impl Project {
 
     /// Changes whenever any document's content or component info changes.
     pub fn fingerprint(&self) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for d in &self.documents {
-            postcard::to_allocvec(&d.to_file()).expect("serialisable").hash(&mut hasher);
+        // Every frame asks, so the documents are serialised straight into a
+        // fast hasher, without copying them or the bytes.
+        use std::hash::BuildHasher;
+        struct Hashing(foldhash::fast::FoldHasher<'static>);
+        impl postcard::ser_flavors::Flavor for Hashing {
+            type Output = u64;
+            fn try_push(&mut self, b: u8) -> postcard::Result<()> {
+                self.0.write_u8(b);
+                Ok(())
+            }
+            fn try_extend(&mut self, bytes: &[u8]) -> postcard::Result<()> {
+                self.0.write(bytes);
+                Ok(())
+            }
+            fn finalize(self) -> postcard::Result<u64> {
+                Ok(self.0.finish())
+            }
         }
-        hasher.finish()
+        #[derive(Serialize)]
+        struct DocumentRef<'a> {
+            id: DocId,
+            name: &'a str,
+            component: &'a Option<ComponentMeta>,
+            cell_um: f64,
+            layout: &'a Layout,
+        }
+        let documents: Vec<DocumentRef> = self
+            .documents
+            .iter()
+            .map(|d| DocumentRef { id: d.id, name: &d.name, component: &d.component, cell_um: d.panel().cell_um, layout: d.layout() })
+            .collect();
+        let hasher = Hashing(foldhash::fast::FixedState::with_seed(0x5348_494e).build_hasher());
+        postcard::serialize_with_flavor(&documents, hasher).expect("serialisable")
     }
 
     /// Encode the project in Shine's binary file format.

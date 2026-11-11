@@ -4516,6 +4516,7 @@ dependencies = [
  "egui_plot",
  "ehttp",
  "faer",
+ "foldhash 0.2.0",
  "image",
  "js-sys",
  "num-complex",

@@ -401,6 +401,43 @@ impl Builtin {
         }
     }
 
+    /// How many ports of each kind, as [`Self::inputs`] and the others list
+    /// them, without naming them (editors ask for every box, every frame).
+    pub fn port_counts(&self) -> crate::panels::optics::model::PortCounts {
+        let optical_in = match self {
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => 0,
+            Self::FunctionCell { light_inputs, .. } => *light_inputs as usize,
+            Self::Model(m) => m.inputs.len(),
+            Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YCombiner | Self::AddDropRing { .. } => 2,
+            Self::Dft { n } => *n as usize,
+            _ => 1,
+        };
+        let optical_out = match self {
+            Self::Detector | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => 0,
+            Self::FunctionCell { light_outputs, .. } => light_outputs.len(),
+            Self::Model(m) => m.outputs.len(),
+            Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter | Self::AddDropRing { .. } => 2,
+            Self::SplitterTree { levels } | Self::SwitchTree { levels, .. } => 1 << levels,
+            Self::Dft { n } => *n as usize,
+            _ => 1,
+        };
+        let signal_in = match self {
+            Self::Display { bits } => *bits as usize,
+            Self::Register { bits } => *bits as usize + 1,
+            Self::FunctionCell { inputs, .. } => *inputs as usize,
+            Self::Model(m) => m.signal_inputs.len(),
+            Self::Attenuator { .. } | Self::PhaseShifter { .. } => 1,
+            _ => 0,
+        };
+        let signal_out = match self {
+            Self::NumberInput { bits, .. } | Self::Register { bits } => *bits as usize,
+            Self::FunctionCell { outputs, .. } => outputs.len(),
+            Self::Model(m) => m.signal_outputs.len(),
+            _ => 0,
+        };
+        crate::panels::optics::model::PortCounts { optical_in, optical_out, signal_in, signal_out }
+    }
+
     pub fn inputs(&self) -> Vec<String> {
         match self {
             Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
@@ -784,6 +821,22 @@ impl Schematic {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn port_counts_match_the_port_names() {
+        use super::Builtin;
+        let mut all = Builtin::palette();
+        all.extend(Builtin::electronic_palette());
+        all.extend([Builtin::SplitterTree { levels: 5 }, Builtin::Dft { n: 7 }, Builtin::Register { bits: 3 }, Builtin::Display { bits: 9 }]);
+        for b in all {
+            let c = b.port_counts();
+            assert_eq!(
+                (c.optical_in, c.optical_out, c.signal_in, c.signal_out),
+                (b.inputs().len(), b.outputs().len(), b.signal_inputs().len(), b.signal_outputs().len()),
+                "{b:?}"
+            );
+        }
+    }
+
     use super::*;
     use crate::photonics::C64;
 
