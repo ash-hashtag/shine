@@ -337,7 +337,7 @@ impl Electronics<'_> {
                     BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
                         (0..*bits).rev().map(|k| ((value >> k) & 1) as f64).collect()
                     }
-                    BlockRef::Builtin(Builtin::Value { value }) => vec![*value],
+                    BlockRef::Builtin(Builtin::Value { value, .. }) => vec![*value],
                     BlockRef::Builtin(Builtin::Register { bits }) => self
                         .machine
                         .registers

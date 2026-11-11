@@ -136,7 +136,7 @@ fn editor(project: &Project, bytes: &[u8]) {
         let id = ws.active.unwrap();
         let p = ws.project.doc_mut(id).unwrap().panel_mut();
         let input = p.layout.instances.iter_mut().filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::Value { .. }))).nth(k).unwrap();
-        if let BlockRef::Builtin(Builtin::Value { value }) = &mut input.block {
+        if let BlockRef::Builtin(Builtin::Value { value, .. }) = &mut input.block {
             *value = 0.5;
         }
         let start = Instant::now();

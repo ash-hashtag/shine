@@ -16,8 +16,10 @@ A **Number input** sends a number as bits, most significant first (leftmost term
 Click its lamps to toggle bits, or set the value in the inspector. A **Value input**
 sends one value, usually between 0 and 1, for analog control: driving a heater (it adds
 value × π to a phase shifter) or a modulator, or setting an attenuator (it passes that
-share of the light). It shows its value as a filled bar; click along it to set it (left
-end 0, right end 1, in steps of 0.05), or set it exactly in the inspector. A **Display** shows
+share of the light). It shows its value as a filled bar, with its name (set in the inspector); when it
+drives a box with one light output, such as a modulator, it also shows the light that
+box lets out. Click along it to set it (left end 0, right end 1, in steps of 0.05), or
+set it exactly in the inspector. A **Display** shows
 the bits on its inputs as lamps and as a decimal number; the inspector lists every
 display's value under *Displays*.
 

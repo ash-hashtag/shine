@@ -18,11 +18,17 @@ Open **File → Examples… → 16×16 photonic matrix processor**. Light flows 
 
 1. **The laser** (*LS*, far left) shows its power and wavelength beneath it: 1 mW at
    1550 nm. **Select it** to change its power, wavelength or phase in the inspector on the
-   right. The splitter tree (*1×N*) shares its light between the 16 inputs.
-2. **The inputs**: the column of 16 value inputs, each just above a modulator (*MOD*),
-   with a bar showing its value. **Click along a bar** to set it (left end 0, right end 1,
-   in steps of 0.05), or select it and use the slider. Together they are the input vector:
-   a modulator at 0 passes nothing, at 1 everything, at 0.5 half the power.
+   right. The splitter tree (*1×N*) splits it into 16 lights of 1/16 each.
+2. **The 16 lights**: each has a modulator (*MOD*) and, just above it, a value input
+   labelled *Light 1* to *Light 16*, showing its setting and the power that light sends
+   into the mesh (*Light 1 1.00 → 0.0622 mW*). **Click along a bar** to set it (left end 0,
+   right end 1, in steps of 0.05), or select it and use the slider: at 0 that light is
+   off, at 1 it carries its full share, at 0.5 half of it. Together they are the input
+   vector.
+
+   Why one laser and not 16: the mesh works by making the 16 lights interfere, and only
+   light from one laser does that reliably; separate lasers drift in phase against each
+   other. Real photonic processors split one laser in the same way.
 3. **The mesh** (*U16*, the tall box) multiplies the input vector by the matrix it is
    programmed with, here the 16-point discrete Fourier transform.
 4. **The outputs**: the 16 detectors (*PD*, right), each showing the power it reads and

@@ -203,16 +203,16 @@ pub fn processor(project: &mut Project, u: &Matrix, inputs: &[f64]) -> Result<Do
     let laser = add(&mut l, Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: WAVELENGTH_NM }, (0, rows / 2 - 1));
     let tree = add(&mut l, Builtin::SplitterTree { levels: n.trailing_zeros() }, (4, rows / 2 - n as i32 / 2));
     link(&mut l, (laser, 0), (tree, 0));
-    let mesh_box = l.add_instance(BlockRef::Component(mesh_doc), (18, rows / 2 - n as i32 / 2));
+    let mesh_box = l.add_instance(BlockRef::Component(mesh_doc), (26, rows / 2 - n as i32 / 2));
     for k in 0..n {
         let row = 2 * k as i32;
         let m = l.add_instance(BlockRef::Component(modulator), (11, row));
         // Its input, just above it: click along it to set it.
-        let input = add(&mut l, Builtin::Value { value: inputs.get(k).copied().unwrap_or(0.0) }, (11, row - 1));
+        let input = add(&mut l, Builtin::Value { name: format!("Light {}", k + 1), value: inputs.get(k).copied().unwrap_or(0.0) }, (11, row - 1));
         l.connect_signal(Terminal { item: Item::Box(input), port: 0 }, Terminal { item: Item::Box(m), port: 0 });
         link(&mut l, (tree, k), (m, 0));
         link(&mut l, (m, 0), (mesh_box, k));
-        let d = add(&mut l, Builtin::Detector, (24, 2 * k as i32));
+        let d = add(&mut l, Builtin::Detector, (32, 2 * k as i32));
         link(&mut l, (mesh_box, k), (d, 0));
     }
     Ok(project.add_layout(&format!("{n}×{n} photonic matrix processor"), l, 10.0))

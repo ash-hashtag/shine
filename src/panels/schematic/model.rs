@@ -130,9 +130,9 @@ pub enum Builtin {
     /// elsewhere, interpolated over wavelength. Shared, not copied.
     Model(std::sync::Arc<crate::panels::models::ModelSpec>),
     /// External input: a value set by the user (usually 0 to 1), out on one
-    /// signal, e.g. to drive a heater or a modulator. (Last, so files that
-    /// predate it read unchanged.)
-    Value { value: f64 },
+    /// signal, e.g. to drive a heater or a modulator; `name` says what it
+    /// sets. (Last, so files that predate it read unchanged.)
+    Value { name: String, value: f64 },
 }
 
 fn msb_first(prefix: &str, bits: u32) -> Vec<String> {
@@ -203,7 +203,7 @@ impl Builtin {
     pub fn electronic_palette() -> Vec<Builtin> {
         vec![
             Self::NumberInput { bits: 8, value: 0 },
-            Self::Value { value: 0.5 },
+            Self::Value { name: String::new(), value: 0.5 },
             Self::Display { bits: 8 },
             Self::Register { bits: 8 },
             Self::FunctionCell {

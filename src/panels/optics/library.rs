@@ -1406,7 +1406,8 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
             Builtin::Dft { n } => {
                 row(ui, "Modes", &mut |ui, l| ui_kit::slider(ui, l, n, 2..=16, ""));
             }
-            Builtin::Value { value } => {
+            Builtin::Value { name, value } => {
+                row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name).on_hover_text("What it sets, shown beside it"));
                 row(ui, "Value", &mut |ui, l| ui_kit::slider(ui, l, value, 0.0..=1.0, ""));
             }
             Builtin::NumberInput { bits, value } => {

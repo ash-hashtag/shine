@@ -1025,12 +1025,12 @@ fn registers_tick_in_a_standalone_panel() {
 #[test]
 fn clicking_along_a_value_input_sets_it() {
     let mut panel = OpticsPanel::default();
-    add_box(&mut panel, Builtin::Value { value: 0.0 }, (0, 0));
+    add_box(&mut panel, Builtin::Value { name: "Light 1".into(), value: 0.0 }, (0, 0));
     let mut h = Harness::new(&mut panel);
     // Three quarters of the way along: 0.75.
     let at = Pos2::new(1.5 * GRID, 0.5 * GRID);
     h.click(scr(&panel, at), &mut panel, PointerButton::Primary);
-    assert_eq!(panel.layout.instances[0].block, BlockRef::Builtin(Builtin::Value { value: 0.75 }));
+    assert_eq!(panel.layout.instances[0].block, BlockRef::Builtin(Builtin::Value { name: "Light 1".into(), value: 0.75 }));
     assert!(panel.hover_text(Hit::Box(0)).unwrap().contains("Click along it"));
     // It drives what it's wired to, as a signal.
     let o = crate::panels::circuit::sim::simulate(&panel.layout, 10.0, &crate::panels::circuit::sim::NoDocuments, &Default::default(), None, &Default::default());

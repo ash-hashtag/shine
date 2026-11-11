@@ -78,7 +78,7 @@ fn setting_the_inputs_and_the_laser_changes_the_readings() {
     // One input on: an impulse, whose transform is flat, every bin the same.
     let mut first = true;
     for inst in &mut layout.instances {
-        if let BlockRef::Builtin(Builtin::Value { value }) = &mut inst.block {
+        if let BlockRef::Builtin(Builtin::Value { value, .. }) = &mut inst.block {
             *value = if first { 1.0 } else { 0.0 };
             first = false;
         }

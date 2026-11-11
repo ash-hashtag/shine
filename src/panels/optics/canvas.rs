@@ -763,8 +763,9 @@ impl OpticsPanel {
     /// input sets it (left 0, right 1, in steps of 0.05).
     fn toggle_bit(&mut self, b: usize, world: Pos2) -> bool {
         let Some(inst) = self.layout.instances.get_mut(b) else { return false };
-        if let BlockRef::Builtin(Builtin::Value { value }) = &mut inst.block {
-            let (w, _) = model::box_size(Builtin::Value { value: 0.0 }.port_counts());
+        if let BlockRef::Builtin(b @ Builtin::Value { .. }) = &mut inst.block {
+            let (w, _) = model::box_size(b.port_counts());
+            let Builtin::Value { value, .. } = b else { return false };
             let along = (world.x / GRID - inst.cell.0 as f32) / w as f32;
             *value = ((along.clamp(0.0, 1.0) * 20.0).round() / 20.0) as f64;
             return true;
@@ -1027,13 +1028,23 @@ fn draw_box(
             draw_leds(painter, r, zoom, (0..*bits).rev().map(|k| (value >> k) & 1 == 1), theme);
             value_label(value.to_string());
         }
-        BlockRef::Builtin(Builtin::Value { value }) => {
+        BlockRef::Builtin(Builtin::Value { name, value }) => {
             // A level, filled from the left.
             let inner = r.shrink(3.0 * zoom);
             let filled = Rect::from_min_max(inner.min, Pos2::new(inner.left() + inner.width() * value.clamp(0.0, 1.0) as f32, inner.bottom()));
             painter.rect_filled(filled, rounding * 0.6, crate::panels::optics::render::SIGNAL_HIGH.gamma_multiply(0.7));
             painter.rect_stroke(inner, rounding * 0.6, Stroke::new(1.0, theme.weak_text), egui::StrokeKind::Inside);
-            value_label(format!("{value:.2}"));
+            // What it's called, its value, and (when it drives a box with one
+            // light output, such as a modulator) the light that lets through.
+            let light = outcome
+                .and_then(|o| {
+                    let to = layout.signals.iter().find(|s| s.from.item == model::Item::Box(inst.id))?.to;
+                    let model::Item::Box(driven) = to.item else { return None };
+                    o.port_power.get(&(driven, 0)).filter(|_| !o.port_power.contains_key(&(driven, 1)))
+                })
+                .map(|p| format!("  → {}", crate::panels::units::format_power(*p, style.unit)));
+            let label = if name.is_empty() { String::new() } else { format!("{name}  ") };
+            value_label(format!("{label}{value:.2}{}", light.unwrap_or_default()));
         }
         BlockRef::Builtin(Builtin::Laser { amplitude, wavelength_nm, .. }) => {
             painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, theme.text);
