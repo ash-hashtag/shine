@@ -49,7 +49,8 @@ fn a_small_processor_multiplies_by_a_random_unitary() {
     // 4×4, a unitary with no special structure.
     let a = Matrix::from_fn(4, 4, |r, c| C64::new(((r * 7 + c * 3) as f64).sin(), ((r * 5 + c * 11) as f64).cos()));
     let u = a.svd().unwrap().U().to_owned();
-    let x = [true, false, true, true];
+    // Analog inputs, including ones in between.
+    let x = [0.9, 0.0, 0.35, 1.0];
     let mut p = Project::new();
     reference::processor(&mut p, &u, &x).unwrap();
     assert_powers(&detected(&p), &reference::expected_powers(&u, &x));
@@ -59,7 +60,7 @@ fn a_small_processor_multiplies_by_a_random_unitary() {
 fn the_reference_design_is_an_optical_fourier_transform() {
     let p = reference::reference_project();
     let got = detected(&p);
-    let want = reference::expected_powers(&reference::dft(SIZE), &reference::input_bits(SIZE));
+    let want = reference::expected_powers(&reference::dft(SIZE), &reference::input_values(SIZE));
     assert_powers(&got, &want);
     // A square wave with period 4: bins 0, N/4 and 3N/4 light up (its even
     // harmonic, N/2, cancels), the rest stay dark.
@@ -70,23 +71,34 @@ fn the_reference_design_is_an_optical_fourier_transform() {
 }
 
 #[test]
-fn clicking_an_input_bit_changes_the_spectrum() {
-    // One bit on: an impulse, whose transform is flat: every bin the same.
+fn setting_the_inputs_and_the_laser_changes_the_readings() {
     let mut p = reference::reference_project();
     let id = top(&p);
     let layout = &mut p.doc_mut(id).unwrap().panel_mut().layout;
+    // One input on: an impulse, whose transform is flat, every bin the same.
+    let mut first = true;
     for inst in &mut layout.instances {
-        if let BlockRef::Builtin(Builtin::NumberInput { value, .. }) = &mut inst.block {
-            *value = 0;
+        if let BlockRef::Builtin(Builtin::Value { value }) = &mut inst.block {
+            *value = if first { 1.0 } else { 0.0 };
+            first = false;
         }
     }
-    let first = layout.instances.iter_mut().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { .. }))).unwrap();
-    first.block = BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 1 });
-    let mut impulse = vec![false; SIZE];
-    impulse[0] = true;
-    let got = detected(&p);
-    assert_powers(&got, &reference::expected_powers(&reference::dft(SIZE), &impulse));
-    assert!(got.iter().all(|w| (w - got[0]).abs() < 1e-12 && *w > 0.0), "flat: {got:?}");
+    let mut impulse = vec![0.0; SIZE];
+    impulse[0] = 1.0;
+    let flat = detected(&p);
+    assert_powers(&flat, &reference::expected_powers(&reference::dft(SIZE), &impulse));
+    assert!(flat.iter().all(|w| (w - flat[0]).abs() < 1e-12 && *w > 0.0), "flat: {flat:?}");
+    // Twice the laser power, twice every reading.
+    let layout = &mut p.doc_mut(id).unwrap().panel_mut().layout;
+    for inst in &mut layout.instances {
+        if let BlockRef::Builtin(Builtin::Laser { amplitude, .. }) = &mut inst.block {
+            *amplitude *= 2f64.sqrt();
+        }
+    }
+    let doubled = detected(&p);
+    for (a, b) in doubled.iter().zip(&flat) {
+        assert!((a - 2.0 * b).abs() < 1e-12);
+    }
 }
 
 #[test]

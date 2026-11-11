@@ -128,16 +128,16 @@ fn editor(project: &Project, bytes: &[u8]) {
     let centre = Pos2::new(800.0, 500.0);
     let zoom: Vec<f64> = (0..20).map(|k| frame(&ctx, &mut ws, &mut t, vec![Event::PointerMoved(centre), Event::Zoom(if k % 2 == 0 { 1.1 } else { 1.0 / 1.1 })])).collect();
     tracing::info!("  editor, processor: open {open_ws:>6.1} ms   first frame {first:>8.1} ms   idle {}   zooming {}", stats(&idle), stats(&zoom));
-    // Edit: click an input bit. The frame shouldn't wait for the
+    // Edit: set an input. The frame shouldn't wait for the
     // simulation; the result arrives when it's ready.
     let mut edits = Vec::new();
     let mut results = Vec::new();
     for k in 0..6 {
         let id = ws.active.unwrap();
         let p = ws.project.doc_mut(id).unwrap().panel_mut();
-        let bit = p.layout.instances.iter_mut().filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { .. }))).nth(k).unwrap();
-        if let BlockRef::Builtin(Builtin::NumberInput { value, .. }) = &mut bit.block {
-            *value ^= 1;
+        let input = p.layout.instances.iter_mut().filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::Value { .. }))).nth(k).unwrap();
+        if let BlockRef::Builtin(Builtin::Value { value }) = &mut input.block {
+            *value = 0.5;
         }
         let start = Instant::now();
         edits.push(frame(&ctx, &mut ws, &mut t, Vec::new()));
@@ -155,7 +155,7 @@ fn editor(project: &Project, bytes: &[u8]) {
         }
         results.push(ms(start.elapsed()));
     }
-    tracing::info!("  clicking an input bit: frames {}   result shown after {}", stats(&edits), stats(&results));
+    tracing::info!("  setting an input: frames {}   result shown after {}", stats(&edits), stats(&results));
     let mesh_id = ws.project.documents.iter().find(|d| d.name.contains("mesh")).unwrap().id;
     ws.open_tab(mesh_id);
     let first = frame(&ctx, &mut ws, &mut t, Vec::new());

@@ -37,6 +37,7 @@ model can't focus, so it only passes light through.
 | Block | What it does | Terminals |
 |---|---|---|
 | **Number input** | A number you set (1–16 bits), sent out as bits, most significant first. Click a lamp to toggle that bit. | out: b(n-1)…b0 |
+| **Value input** | A value you set, usually 0 to 1, sent out as one signal: drives a heater or modulator, or sets an attenuator. Click along it to set it. | out: v |
 | **Display** | Shows the bits on its inputs, as lamps and as a decimal number. | in: b(n-1)…b0 |
 | **Register** | Memory. On each clock tick it stores its *d* inputs when *write* is high or unconnected, and holds them on its *q* outputs. | in: d…, write; out: q… |
 | **Function cell** | Computes outputs from expressions over its inputs. Can read received light and emit light. See [Electronics](electronics.md#function-cells). | in: in1…; out: out1…; light in: p1…; light out: light1… |

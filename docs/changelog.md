@@ -32,7 +32,7 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   simulated Y-branch comes in as a 1×2 splitter.
 - A reference design: a 16×16 programmable photonic matrix processor (120 MZIs, 1 410
   parts) in the rectangular (Clements) arrangement, programmed as an optical Fourier
-  transform, with a clickable bit per input and detectors that show their readings; in
+  transform, with an input to set per channel and detectors that show their readings; in
   File → Examples… and as `reference/photonic-matrix-processor.shine`. Tests
   check it against its matrices, and `cargo run --release --example reference_design`
   measures it ([Reference design](reference-design.md)).
@@ -42,7 +42,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   160 ms a frame to 7 ms (off-screen waveguides are skipped, and boxes are found by
   bisection rather than one by one).
 - A Laser block's wavelength can be swept.
-- Detector blocks show the power they read beside them, and glow with it.
+- Detector blocks show the power they read beside them, and glow with it; Laser blocks show
+  their power and wavelength.
+- A **Value input** block: one value you set (usually 0 to 1) for analog control of
+  heaters, modulators and attenuators; click along it to set it.
 - Designs that take longer than about 12 ms to simulate do so in the background (desktop):
   editing never waits, the last result stays on screen until the new one arrives, and the
   status bar says when it's simulating.

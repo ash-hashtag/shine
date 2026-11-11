@@ -265,8 +265,11 @@ impl OpticsPanel {
                 if d.component.is_some() {
                     text += "\n\nDouble-click or Tab to open its definition";
                 }
-                if matches!(inst.block, BlockRef::Builtin(Builtin::NumberInput { .. })) {
-                    text += "\n\nClick a bit to toggle it";
+                match &inst.block {
+                    BlockRef::Builtin(Builtin::NumberInput { .. }) => text += "\n\nClick a bit to toggle it",
+                    BlockRef::Builtin(Builtin::Value { .. }) => text += "\n\nClick along it to set it: left 0, right 1",
+                    BlockRef::Builtin(Builtin::Laser { .. }) => text += "\n\nSelect it to set its power, wavelength and phase in the inspector",
+                    _ => {}
                 }
                 Some(text)
             }
@@ -756,9 +759,16 @@ impl OpticsPanel {
         }
     }
 
-    /// Clicking a number input's bit toggles it.
+    /// Clicking a number input's bit toggles it; clicking along a value
+    /// input sets it (left 0, right 1, in steps of 0.05).
     fn toggle_bit(&mut self, b: usize, world: Pos2) -> bool {
         let Some(inst) = self.layout.instances.get_mut(b) else { return false };
+        if let BlockRef::Builtin(Builtin::Value { value }) = &mut inst.block {
+            let (w, _) = model::box_size(Builtin::Value { value: 0.0 }.port_counts());
+            let along = (world.x / GRID - inst.cell.0 as f32) / w as f32;
+            *value = ((along.clamp(0.0, 1.0) * 20.0).round() / 20.0) as f64;
+            return true;
+        }
         let BlockRef::Builtin(Builtin::NumberInput { bits, value }) = &mut inst.block else { return false };
         let column = ((world.x / GRID).floor() as i32 - inst.cell.0) as u32;
         if column >= *bits {
@@ -1016,6 +1026,21 @@ fn draw_box(
         BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
             draw_leds(painter, r, zoom, (0..*bits).rev().map(|k| (value >> k) & 1 == 1), theme);
             value_label(value.to_string());
+        }
+        BlockRef::Builtin(Builtin::Value { value }) => {
+            // A level, filled from the left.
+            let inner = r.shrink(3.0 * zoom);
+            let filled = Rect::from_min_max(inner.min, Pos2::new(inner.left() + inner.width() * value.clamp(0.0, 1.0) as f32, inner.bottom()));
+            painter.rect_filled(filled, rounding * 0.6, crate::panels::optics::render::SIGNAL_HIGH.gamma_multiply(0.7));
+            painter.rect_stroke(inner, rounding * 0.6, Stroke::new(1.0, theme.weak_text), egui::StrokeKind::Inside);
+            value_label(format!("{value:.2}"));
+        }
+        BlockRef::Builtin(Builtin::Laser { amplitude, wavelength_nm, .. }) => {
+            painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, theme.text);
+            // Its settings, below it.
+            let font = FontId::monospace((11.0 * zoom).clamp(7.0, 26.0));
+            let power = crate::panels::units::format_power(amplitude * amplitude, style.unit);
+            painter.text(r.center_bottom() + Vec2::new(0.0, 4.0 * zoom), Align2::CENTER_TOP, format!("{power}\n{wavelength_nm:.1} nm"), font, theme.text);
         }
         BlockRef::Builtin(Builtin::Display { bits }) => {
             let n = outcome.map(|o| input_number(layout, o, inst.id, *bits as usize));

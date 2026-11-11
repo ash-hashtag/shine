@@ -1,6 +1,6 @@
 ---
 title: Electronics and the clock
-description: Number inputs, displays, registers, the clock, threshold detectors and function cells, with the full expression reference.
+description: Number and value inputs, displays, registers, the clock, threshold detectors and function cells, with the full expression reference.
 order: 6
 ---
 
@@ -10,10 +10,14 @@ Shine's electronics are deliberately small: enough to drive optics and read it b
 not a general logic simulator. Light does the optical work; detectors, registers and
 function cells provide decisions and memory.
 
-## Number inputs and displays
+## Inputs and displays
 
 A **Number input** sends a number as bits, most significant first (leftmost terminal).
-Click its lamps to toggle bits, or set the value in the inspector. A **Display** shows
+Click its lamps to toggle bits, or set the value in the inspector. A **Value input**
+sends one value, usually between 0 and 1, for analog control: driving a heater (it adds
+value × π to a phase shifter) or a modulator, or setting an attenuator (it passes that
+share of the light). It shows its value as a filled bar; click along it to set it (left
+end 0, right end 1, in steps of 0.05), or set it exactly in the inspector. A **Display** shows
 the bits on its inputs as lamps and as a decimal number; the inspector lists every
 display's value under *Displays*.
 

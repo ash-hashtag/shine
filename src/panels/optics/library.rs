@@ -1406,6 +1406,9 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
             Builtin::Dft { n } => {
                 row(ui, "Modes", &mut |ui, l| ui_kit::slider(ui, l, n, 2..=16, ""));
             }
+            Builtin::Value { value } => {
+                row(ui, "Value", &mut |ui, l| ui_kit::slider(ui, l, value, 0.0..=1.0, ""));
+            }
             Builtin::NumberInput { bits, value } => {
                 row(ui, "Bits", &mut |ui, l| ui_kit::slider(ui, l, bits, 1..=16, ""));
                 let max = (1u64 << *bits) - 1;

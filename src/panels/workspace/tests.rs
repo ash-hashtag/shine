@@ -556,9 +556,9 @@ fn slow_designs_simulate_in_the_background() {
         .layout
         .instances
         .iter()
-        .position(|i| matches!(i.block, BlockRef::Builtin(Builtin::NumberInput { value: 1, .. })))
+        .position(|i| matches!(i.block, BlockRef::Builtin(Builtin::Value { value }) if value == 1.0))
         .unwrap();
-    panel(&mut ws, id).layout.instances[bit].block = BlockRef::Builtin(Builtin::NumberInput { bits: 1, value: 0 });
+    panel(&mut ws, id).layout.instances[bit].block = BlockRef::Builtin(Builtin::Value { value: 0.0 });
     ws.refresh_simulation();
     if !cfg!(target_arch = "wasm32") {
         assert!(ws.simulating_in_background());

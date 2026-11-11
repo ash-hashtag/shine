@@ -129,6 +129,10 @@ pub enum Builtin {
     /// A black box defined by data: S-parameters measured or simulated
     /// elsewhere, interpolated over wavelength. Shared, not copied.
     Model(std::sync::Arc<crate::panels::models::ModelSpec>),
+    /// External input: a value set by the user (usually 0 to 1), out on one
+    /// signal, e.g. to drive a heater or a modulator. (Last, so files that
+    /// predate it read unchanged.)
+    Value { value: f64 },
 }
 
 fn msb_first(prefix: &str, bits: u32) -> Vec<String> {
@@ -199,6 +203,7 @@ impl Builtin {
     pub fn electronic_palette() -> Vec<Builtin> {
         vec![
             Self::NumberInput { bits: 8, value: 0 },
+            Self::Value { value: 0.5 },
             Self::Display { bits: 8 },
             Self::Register { bits: 8 },
             Self::FunctionCell {
@@ -248,6 +253,7 @@ impl Builtin {
     pub fn signal_outputs(&self) -> Vec<String> {
         match self {
             Self::NumberInput { bits, .. } => msb_first("b", *bits),
+            Self::Value { .. } => vec!["v".into()],
             Self::Register { bits } => msb_first("q", *bits),
             Self::FunctionCell { outputs, .. } => numbered("out", outputs.len()),
             Self::Model(m) => m.signal_outputs.clone(),
@@ -362,6 +368,12 @@ impl Builtin {
                 "MZI mesh computing the discrete Fourier transform.",
                 Circuits,
             ),
+            Self::Value { .. } => (
+                "Value input",
+                "VAL",
+                "External input: a value you set, usually 0 to 1, sent out as a signal: on a heater it adds value × π, on an attenuator it passes that share of the light. Click along the box to set it, or set it in the inspector.",
+                Electronics,
+            ),
             Self::NumberInput { .. } => (
                 "Number input",
                 "NUM",
@@ -405,7 +417,7 @@ impl Builtin {
     /// them, without naming them (editors ask for every box, every frame).
     pub fn port_counts(&self) -> crate::panels::optics::model::PortCounts {
         let optical_in = match self {
-            Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => 0,
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => 0,
             Self::FunctionCell { light_inputs, .. } => *light_inputs as usize,
             Self::Model(m) => m.inputs.len(),
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YCombiner | Self::AddDropRing { .. } => 2,
@@ -413,7 +425,7 @@ impl Builtin {
             _ => 1,
         };
         let optical_out = match self {
-            Self::Detector | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => 0,
+            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => 0,
             Self::FunctionCell { light_outputs, .. } => light_outputs.len(),
             Self::Model(m) => m.outputs.len(),
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter | Self::AddDropRing { .. } => 2,
@@ -431,6 +443,7 @@ impl Builtin {
         };
         let signal_out = match self {
             Self::NumberInput { bits, .. } | Self::Register { bits } => *bits as usize,
+            Self::Value { .. } => 1,
             Self::FunctionCell { outputs, .. } => outputs.len(),
             Self::Model(m) => m.signal_outputs.len(),
             _ => 0,
@@ -440,7 +453,7 @@ impl Builtin {
 
     pub fn inputs(&self) -> Vec<String> {
         match self {
-            Self::Laser { .. } | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_inputs, .. } => numbered("p", *light_inputs as usize),
             Self::Model(m) => m.inputs.clone(),
             Self::InputPin { name } => vec![name.clone()],
@@ -454,7 +467,7 @@ impl Builtin {
 
     pub fn outputs(&self) -> Vec<String> {
         match self {
-            Self::Detector | Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
+            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_outputs, .. } => numbered("light", light_outputs.len()),
             Self::Model(m) => m.outputs.clone(),
             Self::OutputPin { name } => vec![name.clone()],
@@ -576,7 +589,7 @@ impl Builtin {
             }
             .build(c)?,
             Self::Dft { n } => Dft { n: *n as usize }.build(c)?,
-            Self::NumberInput { .. } | Self::Display { .. } | Self::Register { .. } => Ports::default(),
+            Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Ports::default(),
             Self::FunctionCell {
                 light_inputs,
                 light_outputs,

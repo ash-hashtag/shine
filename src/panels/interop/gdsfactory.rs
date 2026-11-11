@@ -363,7 +363,7 @@ impl Builder<'_> {
                 self.note("Function cells are electronics and were left out".into());
                 BoxEnds { ins: vec![None; b.inputs().len()], outs: vec![None; b.outputs().len()] }
             }
-            Builtin::NumberInput { .. } | Builtin::Display { .. } | Builtin::Register { .. } => BoxEnds::default(),
+            Builtin::NumberInput { .. } | Builtin::Value { .. } | Builtin::Display { .. } | Builtin::Register { .. } => BoxEnds::default(),
             Builtin::Model(m) => {
                 let by = if m.script().is_some() { "a script" } else { "its S-parameters" };
                 self.note(format!("“{}” is defined by {by}, not a shape: place your kit's cell for it", m.name));

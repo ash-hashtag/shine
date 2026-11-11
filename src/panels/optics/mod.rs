@@ -1088,7 +1088,7 @@ pub fn output_number(outcome: &Outcome, id: model::InstanceId, bits: usize) -> u
 pub fn shows_number(block: &BlockRef) -> bool {
     matches!(
         block,
-        BlockRef::Builtin(Builtin::NumberInput { .. } | Builtin::Display { .. } | Builtin::Register { .. })
+        BlockRef::Builtin(Builtin::NumberInput { .. } | Builtin::Value { .. } | Builtin::Display { .. } | Builtin::Register { .. })
     )
 }
 
