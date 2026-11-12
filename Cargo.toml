@@ -1,6 +1,6 @@
 [package]
 name = "shine"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 default-run = "shine"
 description = "Photonic circuit simulator: design and simulate photonic circuits, from free-space optics to waveguide chips"

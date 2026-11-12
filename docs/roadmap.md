@@ -96,8 +96,11 @@ want them.
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than
       a frame stays smooth, with results arriving when they're ready (desktop)
 
-- [ ] **Python API**: Shine's engine and project files from Python, so designs fit into
-      the scripts and flows engineers already use (gdsfactory, SAX, notebooks)
+- [x] **Python and TypeScript libraries** (`shine-photonics`): build, simulate, analyse
+      and export designs in code, and open them in the app ([Python](python.md),
+      [TypeScript](typescript.md))
+- [ ] **2-D sweeps and part names kept in files** in the libraries
+- [ ] **Free-space parts** in the libraries, with explicit positions
 
 ## Milestone: work with other tools
 

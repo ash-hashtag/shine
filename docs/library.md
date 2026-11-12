@@ -1,18 +1,44 @@
 ---
 title: Rust library
-description: Use Shine's photonics crate without the editor to build, compile and run optical circuits from Rust.
+description: Use Shine from Rust without the editor: the library of designs, components and analyses (shine::api), and the photonics engine underneath.
 order: 13
 ---
 
 # Rust library
 
-The simulator is the `shine::photonics` module and works without the editor. Disable
-default features to leave out the GUI:
+Shine works without the editor at two levels:
 
-```toml
-[dependencies]
-shine = { git = "https://github.com/ash-hashtag/shine", default-features = false }
-```
+- **`shine::api`**, the library: projects, designs, components, parts and ports, with
+  simulation, sweeps, transmission, Monte Carlo, optimisation and exports, and files that
+  open in the app. It is what the [Python](python.md) and [TypeScript](typescript.md)
+  packages are, with the same names. Use the `core` feature, which leaves out the editor:
+
+  ```toml
+  [dependencies]
+  shine = { git = "https://github.com/ash-hashtag/shine", default-features = false, features = ["core"] }
+  ```
+
+  ```rust
+  use shine::api::Project;
+
+  let project = Project::new();
+  let chip = project.new_design("Ring filter");
+  let laser = chip.laser(1550.0, 1.0)?;
+  let detector = chip.detector();
+  laser.to(&chip.ring(0.05, 100.0)?)?.to(&detector)?;
+  let power = chip.simulate()?.power_mw(&detector)?;
+  project.save("ring.shine")?;
+  ```
+
+- **`shine::photonics`**, the engine underneath: components and circuits as matrices,
+  compiled and solved. With no features at all:
+
+  ```toml
+  [dependencies]
+  shine = { git = "https://github.com/ash-hashtag/shine", default-features = false }
+  ```
+
+The rest of this page is about the engine.
 
 ## A Mach–Zehnder interferometer
 

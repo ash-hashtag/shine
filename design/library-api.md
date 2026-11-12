@@ -39,11 +39,11 @@ heater = mzm.phase_shifter(phase=3.14159)
 upper = mzm.waveguide(length_um=100)
 lower = mzm.waveguide(length_um=100)
 join = mzm.y_combiner()
-mzm.chain(light_in, split, heater, upper)
+light_in.to(split).to(heater).to(upper)
 mzm.connect(split.port("out2"), lower.port("in"))
 mzm.connect(upper.port("out"), join.port("in1"))
 mzm.connect(lower.port("out"), join.port("in2"))
-mzm.chain(join, light_out)
+join.to(light_out)
 mzm.expose("bias", heater, "phase")
 
 # A design that uses it.
@@ -51,7 +51,7 @@ chip = project.new_design("Link")
 laser = chip.laser(wavelength_nm=1550, power_mw=1)
 modulator = chip.place(mzm).set("bias", 0.0)
 detector = chip.detector()
-chip.chain(laser, modulator, detector)
+laser.to(modulator).to(detector)
 
 result = chip.simulate()
 print(result.power_mw(detector))          # 1.0: bias 0, the arms add up
@@ -71,7 +71,7 @@ const chip = project.newDesign("Link");
 const laser = chip.laser(1550, 1);                // wavelength_nm, power_mw
 const ring = chip.ring(0.05, 100);                // coupling, length_um
 const detector = chip.detector();
-chip.chain([laser, ring, detector]);
+laser.to(ring).to(detector);
 
 const spectrum = chip.sweep(laser, "wavelength", 1540, 1560, 2001);
 console.log(spectrum.readouts("Detector"));       // FSR, width, Q of the dips
@@ -169,8 +169,6 @@ class Design:
 
     # Wiring: light ports with waveguides, signal ports with wires.
     def connect(self, source: Port, target: Port) -> None
-    def chain(self, *parts: Part) -> None   # each part's first free light output to the next's
-                                            # first free light input (a list in TypeScript)
     def disconnect(self, port: Port) -> None
     def remove(self, part: Part) -> None
 
@@ -194,12 +192,17 @@ class Design:
     def describe(self) -> str                               # its parts, ports and wiring, as text
 ```
 
-Every built-in block method takes only what defines the block; the rest has the app's
-defaults and is set by name, so a call stays short in both languages:
+Every built-in block method takes what defines the block, then its common parameters with
+the app's defaults (`ring(coupling, length_um, n_eff=2.4, n_g=4.2, loss_db_per_cm=10)`;
+optional trailing arguments in TypeScript). Any parameter is also set by name:
 
 ```python
-ring = chip.ring(coupling=0.05, length_um=100).set("n_g", 4.2).set("loss", 3)
+ring = chip.ring(coupling=0.05, length_um=100, loss_db_per_cm=3).set("n_g", 4.0)
 ```
+
+Lists of objects can't cross BoltFFI yet, so there is no `chain([...])`: parts chain with
+`part.to(next)`, and optimisation variables name their part (`Variable(part="Directional
+coupler", param="coupling", min=0, max=1)`).
 
 ### Part
 
@@ -212,6 +215,9 @@ class Part:
     name: str                       # unique in its design: "Ring resonator", "Ring resonator 2"…
     kind: str                       # "Ring resonator", "Directional coupler", or the component's name
 
+    def to(self, next: Part) -> Part                # its first free light output to next's first
+                                                    # free light input; returns next, so
+                                                    # laser.to(ring).to(detector)
     def port(self, name: str) -> Port               # raises listing the ports there are
     def ports(self) -> list[PortInfo]
     def params(self) -> list[Param]                 # name, unit, value, typical range

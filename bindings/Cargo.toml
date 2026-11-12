@@ -1,6 +1,6 @@
 [package]
 name = "shine-photonics"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Shine's photonic circuit design and simulation as a library: the Python and TypeScript packages"
 repository = "https://github.com/ash-hashtag/shine"

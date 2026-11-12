@@ -10,6 +10,19 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
+## 0.1.2 (unreleased)
+
+### Added
+
+- Shine as a library, for Python and TypeScript (`shine-photonics`, made with BoltFFI) and
+  Rust (`shine::api`): build components and designs in code, simulate, sweep, analyse,
+  optimise and export them, and open what you build in the app (`design.show()`, or save
+  the file). Errors say what would have worked; parts, ports and parameters have the app's
+  names ([Python](python.md), [TypeScript](typescript.md)).
+- `shine PROJECT.shine [--doc NAME]` opens a project in the app.
+- The model, simulation, analysis and files build without the editor (the `core`
+  feature).
+
 ## 0.1.1 (2026-11-11)
 
 ### Added

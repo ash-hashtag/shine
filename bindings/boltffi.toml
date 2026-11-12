@@ -2,7 +2,7 @@
 [package]
 name = "shine-photonics"
 crate = "shine_photonics"
-version = "0.1.1"
+version = "0.1.2"
 description = "Design and simulate photonic circuits in code: Shine's library"
 repository = "https://github.com/ash-hashtag/shine"
 

@@ -99,13 +99,18 @@ web app manifest). Run it after changing the SVG.
 ## Continuous integration and releases
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: the tests on
-  Linux, Windows and macOS, clippy, the WebAssembly and website build, and the browser
-  tests.
+  Linux, Windows and macOS, clippy, the library without the editor (`core`), the
+  WebAssembly and website build, the browser tests, and the Python and TypeScript
+  packages built and tested.
 - **Releases** (`.github/workflows/release.yml`) run only when a version tag is pushed.
   They build `shine` and `shine-mcp` for Linux (x86-64, ARM64), Windows (x86-64) and
   macOS (Apple silicon, Intel), and publish them with checksums on a GitHub release. The
   archives keep the same names in every release (`shine-linux-x86_64.tar.gz`,
   `shine-windows-x86_64.zip`…), so the website's download buttons always fetch the latest.
+  The same tag builds the library packages, `shine-photonics`: wheels for Python 3.10 to
+  3.14 on Linux (manylinux, x86-64 and ARM64), Windows and macOS, published to PyPI, and
+  the npm package. Publishing needs the repository secrets `PYPI_API_TOKEN` and
+  `NPM_TOKEN`; without them the packages are built and the release notes a warning.
 
 To release, once a version is final:
 
@@ -122,8 +127,26 @@ Versions grow slowly: patch releases (0.1.1, 0.1.2…) carry whatever has landed
 minor version changes only for a larger step. The roadmap has goals and milestones, not
 versions or dates.
 
-The workflow stops if the tag doesn't match the version in `Cargo.toml` or the changelog
-has no section for it, and uses that section as the release notes.
+The workflow stops if the tag doesn't match the version in `Cargo.toml`,
+`bindings/Cargo.toml` and `bindings/boltffi.toml` (bump all three together), or the
+changelog has no section for it, and uses that section as the release notes.
+
+## The library packages
+
+`bindings/` makes the Python and TypeScript packages from `shine::api` with
+[BoltFFI](https://boltffi.dev). Build and test them with:
+
+```sh
+cargo install boltffi_cli --version 0.32.1 --locked
+bindings/pack.sh                    # dist/python/wheelhouse/*.whl and dist/wasm/pkg
+pip install bindings/dist/python/wheelhouse/*.whl
+python -m unittest discover -s bindings/tests
+cd bindings && node --test test/
+```
+
+Doc comments in `bindings/src/lib.rs` become the packages' docstrings and JSDoc.
+`pack.sh` also gives errors their message (BoltFFI names the exception after its type).
+The design behind the API is in `design/library-api.md`.
 
 Keep `docs/changelog.md` up to date as changes land (under the next version's heading),
 and tick items off in `docs/roadmap.md`.

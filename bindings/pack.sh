@@ -5,6 +5,8 @@
 # wasm32-unknown-unknown Rust target, Python with setuptools and wheel, and
 # pnpm (for the TypeScript compiler and the BoltFFI runtime).
 # Writes dist/python/wheelhouse/*.whl and dist/wasm/pkg (the npm package).
+# PYTHONS (space separated interpreters) builds a wheel for each; by default
+# the python3 on PATH.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -23,7 +25,7 @@ done
 # own message, which is what people read.
 fix_errors() {
   local file=$1 old=$2 new=$3
-  python3 - "$file" "$old" "$new" <<'EOF'
+  "$fixer" - "$file" "$old" "$new" <<'EOF'
 import sys
 path, old, new = sys.argv[1:]
 text = open(path).read()
@@ -33,22 +35,30 @@ open(path, "w").write(text.replace(old, new))
 EOF
 }
 
+pythons=()
+for py in ${PYTHONS:-}; do
+  pythons+=(--python "$py")
+done
+# Python for the fix below: the first of PYTHONS, else python3.
+fixer=${PYTHONS:-python3}
+fixer=${fixer%% *}
+
 if [[ $what == python || $what == all ]]; then
-  boltffi pack python "${release[@]}" --deny-skipped
+  boltffi pack python ${release[@]+"${release[@]}"} ${pythons[@]+"${pythons[@]}"} --deny-skipped
   fix_errors dist/python/shine_photonics/__init__.py \
     "        self.error = error
         super().__init__(error)" \
     "        self.error = error
         super().__init__(error.message)"
-  boltffi pack python "${release[@]}" --regenerate false
+  boltffi pack python ${release[@]+"${release[@]}"} ${pythons[@]+"${pythons[@]}"} --regenerate false
 fi
 
 if [[ $what == wasm || $what == all ]]; then
   pnpm install --frozen-lockfile --silent
   export PATH="$PWD/node_modules/.bin:$PATH"
-  boltffi pack wasm "${release[@]}" --deny-skipped
+  boltffi pack wasm ${release[@]+"${release[@]}"} --deny-skipped
   for f in dist/wasm/pkg/shine_photonics.ts dist/wasm/pkg/shine_photonics_node.ts; do
     fix_errors "$f" 'super("ShineError");' 'super(value.message);'
   done
-  boltffi pack wasm "${release[@]}" --regenerate false
+  boltffi pack wasm ${release[@]+"${release[@]}"} --regenerate false
 fi

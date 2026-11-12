@@ -31,7 +31,9 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [Other tools and tapeout](interop.md) | S-parameters for circuit simulators, and a gdsfactory layout for a mask |
 | [Projects and files](files.md) | The `.shine` format, the browser and desktop builds, logging |
 | [AI assistants (MCP)](ai.md) | Using Shine from Claude and other MCP clients; notes for LLMs |
-| [Rust library](library.md) | Using the `photonics` crate without the editor |
+| [Python](python.md) | Designing and simulating in code with the `shine-photonics` package, and opening the result in the app |
+| [TypeScript](typescript.md) | The same in TypeScript and JavaScript, in Node and the browser |
+| [Rust library](library.md) | Using Shine from Rust: the library (`shine::api`) and the `photonics` engine |
 | [Development](development.md) | Building, testing, keeping these docs current, releases |
 | [Roadmap](roadmap.md) | What's being built for 0.1.0 and what comes after |
 | [Changelog](changelog.md) | What changed in each version |
