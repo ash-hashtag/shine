@@ -96,6 +96,54 @@ pip install sax photonforge
 python reference/digits/compare.py out reference/digits/test-digits.json --photonforge
 ```
 
+## MNIST at full size
+
+The same chip scales to MNIST's 28×28 digits: 784 pixels, 784 modulators, and a layer 1
+whose V† mesh has 784 modes, 306 936 MZIs. Opened up, the chip has **3 124 074 parts**.
+It's Shine's stress test, and the reason Shine handles designs of millions of parts.
+
+```sh
+pip install numpy jax
+python reference/mnist/train.py CACHE        # downloads MNIST into CACHE, trains, writes the weights there
+cargo run --release --example mnist -- CACHE [--images N] [--save mnist.shine] [--editor]
+```
+
+The network (784 → 64 → 10, trained for the chip's electronics as above) reads **97.40%**
+of MNIST's 10 000 test digits. Simulated whole (light, detectors and electronics), the chip
+reads each digit as the network does, its scores within 3·10⁻¹⁰ of the network's; through
+its layers' matrices, all 10 000 test digits come out as the network's, 97.40%.
+
+On a 12-thread desktop:
+
+| | |
+|---|---|
+| Building the chip (decomposing the meshes, placing every part) | 1.7 s |
+| Saving it / opening it | 0.04 s / 0.06 s (15.6 MB) |
+| Simulating the whole chip, the first digit | 3.4 s |
+| … each digit after | 0.08 s |
+| Layer 1's 64 × 784 matrix | 0.56 s |
+| The editor, on the chip / inside the 784-mode mesh | 2.6 ms / 22 ms a frame |
+| Memory at the most | 0.93 GB |
+
+What makes that possible, rather than minutes and tens of gigabytes:
+
+- **Passive components are solved once.** A component of only passive parts is, to the
+  light, its matrix. Shine solves it into that matrix, all the way down: each MZI cell
+  becomes a 2×2 matrix, on all threads at once, then the mesh of them one 784×784 matrix.
+  The matrices are kept between simulations until the component changes, so a new digit
+  costs only what's around the meshes.
+- **Solving keeps only the fields still needed.** A mesh's fields are each read once, by
+  the next MZI, so solving its matrix holds a few kilobytes per input instead of tens of
+  megabytes.
+- **The editor costs what's on screen.** Drawing and pointing go through a spatial index,
+  and nothing per frame reads the whole project.
+
+MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0, so neither the digits nor the
+weights and chip made from them are kept in the repository: the script downloads them into
+the folder you give it. What's still to do for designs this size (projects as indexed
+databases, loading only what's used, smaller designs in memory) is on the
+[Roadmap](roadmap.md#milestone-design-at-scale).
+
 ## How realistic it is
 
 - **The architecture is real.** Programmable MZI meshes with optoelectronic neurons
@@ -104,8 +152,9 @@ python reference/digits/compare.py out reference/digits/test-digits.json --photo
 - **The components are ideal**: lossless 50:50 couplers, perfect heaters, a fixed
   waveguide loss, no noise, no fabrication error. On a real chip, meshes need calibrating,
   detectors add noise and the electronics have limited precision.
-- **It is small.** 16 inputs means each digit is a 4×4 thumbnail; real accelerators use
-  larger meshes and many layers, and keep the weights in the mesh while streaming inputs
+- **It is small.** 16 inputs means each digit is a 4×4 thumbnail (the [MNIST
+  version](#mnist-at-full-size) takes 28×28); real accelerators use larger meshes and
+  many layers, and keep the weights in the mesh while streaming inputs
   at gigahertz rates through the modulators.
 - **The data**: the network is trained and tested on the UCI handwritten digits (Alpaydin
   & Kaynak, 1998, CC BY 4.0), the 8×8 digits that ship with scikit-learn. They are close

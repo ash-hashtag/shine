@@ -24,6 +24,9 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   open; a star marks the window title and each tab changed since the last save.
 - Ctrl+= and Ctrl+− zoom the canvas, as + and − do, and Ctrl+0 fits the design to the
   window; they no longer resize the whole interface, whose size is set in Preferences.
+- MNIST at full size: the digit recognizer at 28×28 pixels, a chip of 3.1 million parts
+  (`reference/mnist/train.py`, `examples/mnist.rs`), reading 97.40% of MNIST's test
+  digits as the trained network does ([Optical neural network](neural-network.md#mnist-at-full-size)).
 
 ### Changed
 
@@ -31,6 +34,15 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   released under the MIT licence.
 - The model, simulation, analysis and files build without the editor (the `core`
   feature).
+- Designs of millions of parts. Passive components are simulated as their matrices,
+  solved on all threads and kept between simulations until they change; solving a matrix
+  keeps only the fields still to be read; the electronics skip components without any;
+  building big meshes is linear. The editor draws and points through a spatial index,
+  keeps fingerprints and the component catalog until something changes, simulates big
+  designs in the background from the start, and takes undo snapshots only of documents
+  being edited, bounded by size. The app and MCP server use mimalloc. On the MNIST chip:
+  building 503 s → 1.7 s, a simulation 26 s and 2.1 GB → 0.08 s, layer matrices from out
+  of memory to 0.56 s, the editor 100–200 ms → 2.6–22 ms a frame.
 
 ## 0.1.1 (2026-11-11)
 

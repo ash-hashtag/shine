@@ -95,6 +95,35 @@ want them.
       third of the instances in a large design)
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than
       a frame stays smooth, with results arriving when they're ready (desktop)
+- [x] **A chip of millions of parts**: MNIST at full size, 28×28 pixels into a 784-mode
+      mesh (3.1 million parts), as the stress test (`examples/mnist.rs`): built in 1.7 s,
+      simulated whole in 3.4 s and again in 0.08 s, edited at 2–24 ms a frame, in under
+      1 GB ([Optical neural network](neural-network.md#mnist-at-full-size))
+- [x] **Passive components solved once**: a component of only passive parts is simulated
+      as its matrix, all the way down (an MZI cell, then the mesh of them), solved on all
+      threads, kept between simulations until it changes
+- [x] **The editor costs what's on screen**: drawing and pointing go through a spatial
+      index; per-frame work no longer reads the whole project
+- [ ] **Projects as databases**: a project file that is an indexed database (SQLite: one
+      file per project, documents, parts and connections as tables), so saving a small
+      change to a huge design writes only that change, and opening reads only what's
+      needed. A compact format of Shine's own later, if SQLite falls short
+- [ ] **Load what's used**: documents read from the file when opened or simulated, the
+      rest left on disk for the operating system's cache, so a project can be far bigger
+      than memory
+- [ ] **Change tracking in the editor**: edits counted where they're made, and undo as the
+      differences rather than whole copies. Today a 310 000-box mesh keeps two undo steps
+      and its editor compares the whole layout each idle frame (about 9 ms)
+- [ ] **Compact designs in memory**: a box in less than half of today's 128 bytes plus its
+      parameters (rare large blocks boxed, 32-bit ids, shared parameter names), and
+      documents shared copy-on-write between the editor, its undo and background
+      simulations instead of copied; a 784-mode mesh takes about 100 MB per copy today
+- [ ] **Logic solved like light**: a component whose electronics are a pure function of
+      its inputs evaluated as one compiled function, recursively, then simplified, so a
+      thousand gates that add two 8-bit numbers run as an adder. Combinational logic
+      first; registers and feedback as state machines after
+- [ ] **Drawing at any zoom**: far out, dense areas drawn as summaries rather than box by
+      box
 
 - [x] **Python and TypeScript libraries** (`shine-photonics`): build, simulate, analyse
       and export designs in code, and open them in the app ([Python](python.md),
