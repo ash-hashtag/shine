@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 
 /// Storage key of the session.
 pub const KEY: &str = "shine.session";
+
+/// The session's project, kept apart from the rest of the session (tabs,
+/// views), which changes far more often: the project is written only when
+/// it changes. A session whose `project` is empty takes it from here.
+pub const PROJECT_KEY: &str = "shine.session.project";
 /// Prefix marking the encoding, so a future one can be told apart.
 const PREFIX: &str = "shine-session-2:";
 /// Sessions saved before each document's fingerprint was kept.

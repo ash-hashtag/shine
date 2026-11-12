@@ -35,6 +35,10 @@ mod app {
     #[derive(Default)]
     pub struct ShineApp {
         pub workspace: Workspace,
+        /// The fingerprint of the project last written to storage, and the
+        /// rest of the session as last written: saving skips what's the same.
+        saved_project: Option<u64>,
+        saved_session: Option<String>,
     }
 
     impl ShineApp {
@@ -42,13 +46,20 @@ mod app {
         pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
             let mut app = Self::default();
             if let Some(storage) = cc.storage {
-                app.load(
-                    eframe::get_value(storage, crate::panels::prefs::STORAGE_KEY),
-                    storage.get_string(crate::panels::session::KEY),
-                );
+                app.load_from(storage);
             }
             app.load_library(cc.storage);
             app
+        }
+
+        /// The preferences and the session in `storage`.
+        pub fn load_from(&mut self, storage: &dyn eframe::Storage) {
+            use crate::panels::session;
+            self.load(
+                eframe::get_value(storage, crate::panels::prefs::STORAGE_KEY),
+                storage.get_string(session::KEY),
+                storage.get_string(session::PROJECT_KEY),
+            );
         }
 
         /// The asset library: a file next to the settings on desktop, the
@@ -69,15 +80,26 @@ mod app {
             }
         }
 
-        /// Preferences and the last session, as kept in the app's storage.
-        pub fn load(&mut self, prefs: Option<crate::panels::prefs::Preferences>, session: Option<String>) {
+        /// Preferences and the last session, as kept in the app's storage:
+        /// the session, and its project kept apart (older sessions hold it).
+        pub fn load(&mut self, prefs: Option<crate::panels::prefs::Preferences>, session: Option<String>, project: Option<String>) {
             use crate::panels::session;
             if let Some(prefs) = prefs {
                 self.workspace.set_preferences(prefs);
             }
             if let Some(text) = session {
-                match session::Session::decode(&text).and_then(|s| self.workspace.restore(s)) {
-                    Ok(()) => tracing::info!("Restored the last session"),
+                let restored = session::Session::decode(&text).and_then(|mut s| {
+                    if s.project.is_empty() {
+                        s.project = session::base64_decode(project.as_deref().ok_or("its project is missing")?)?;
+                    }
+                    self.workspace.restore(s)
+                });
+                match restored {
+                    Ok(()) => {
+                        // What's in storage now: no need to write it again.
+                        self.saved_project = project.is_some().then(|| self.workspace.project.fingerprint());
+                        tracing::info!("Restored the last session");
+                    }
                     Err(e) => {
                         tracing::warn!("Couldn't restore the last session: {e}");
                         self.workspace.notify(format!("Couldn't restore the last session: {e}"));
@@ -88,9 +110,22 @@ mod app {
     }
 
     impl eframe::App for ShineApp {
+        /// Every few seconds and on closing. The project is encoded and
+        /// written only when it changed (a design of millions of parts is
+        /// tens of MB); the rest of the session, a few bytes, when it did.
         fn save(&mut self, storage: &mut dyn eframe::Storage) {
+            use crate::panels::session;
             eframe::set_value(storage, crate::panels::prefs::STORAGE_KEY, &self.workspace.prefs);
-            storage.set_string(crate::panels::session::KEY, self.workspace.session().encode());
+            let fingerprint = self.workspace.project.fingerprint();
+            if self.saved_project != Some(fingerprint) {
+                storage.set_string(session::PROJECT_KEY, session::base64_encode(&self.workspace.project.to_bytes()));
+                self.saved_project = Some(fingerprint);
+            }
+            let text = self.workspace.session_without_project().encode();
+            if self.saved_session.as_deref() != Some(text.as_str()) {
+                storage.set_string(session::KEY, text.clone());
+                self.saved_session = Some(text);
+            }
             // Kept in a file of its own on desktop; here only when it changed.
             if self.workspace.library.path.is_none()
                 && let Some(bytes) = self.workspace.library.take_changes()
@@ -142,7 +177,7 @@ mod app {
             // A crash: the last periodic save had no clean exit.
             let text = ws.session().encode();
             let mut after = ShineApp::default();
-            after.load(None, Some(text));
+            after.load(None, Some(text), None);
             let ws2 = &after.workspace;
             assert_eq!(ws2.project.fingerprint(), before.workspace.project.fingerprint(), "same project");
             assert_eq!((ws2.tabs.clone(), ws2.active), (before.workspace.tabs.clone(), before.workspace.active));
@@ -155,14 +190,64 @@ mod app {
             // A normal close says nothing.
             before.workspace.closing = true;
             let mut calm = ShineApp::default();
-            calm.load(None, Some(before.workspace.session().encode()));
+            calm.load(None, Some(before.workspace.session().encode()), None);
             assert!(calm.workspace.status.is_none());
 
             // A damaged session starts fresh and says why.
             let mut broken = ShineApp::default();
-            broken.load(Some(Default::default()), Some("shine-session-1:AAAA".into()));
+            broken.load(Some(Default::default()), Some("shine-session-1:AAAA".into()), None);
             assert_eq!(broken.workspace.project.documents.len(), 1);
             assert!(broken.workspace.status.as_ref().unwrap().0.contains("Couldn't restore"));
+        }
+
+        /// eframe's storage, in memory, counting writes.
+        #[derive(Default)]
+        struct Memory {
+            kv: std::collections::HashMap<String, String>,
+            writes: std::collections::HashMap<String, usize>,
+        }
+
+        impl eframe::Storage for Memory {
+            fn get_string(&self, key: &str) -> Option<String> {
+                self.kv.get(key).cloned()
+            }
+            fn set_string(&mut self, key: &str, value: String) {
+                *self.writes.entry(key.to_owned()).or_default() += 1;
+                self.kv.insert(key.to_owned(), value);
+            }
+            fn remove_string(&mut self, key: &str) {
+                self.kv.remove(key);
+            }
+            fn flush(&mut self) {}
+        }
+
+        #[test]
+        fn saving_writes_the_project_only_when_it_changes() {
+            use crate::panels::session::{KEY, PROJECT_KEY};
+            use eframe::App;
+            let mut app = ShineApp::default();
+            assert!(app.workspace.open_example("4-channel-wdm-optical-link"));
+            let mut storage = Memory::default();
+            app.save(&mut storage);
+            app.save(&mut storage);
+            assert_eq!((storage.writes[PROJECT_KEY], storage.writes[KEY]), (1, 1), "nothing changed: nothing written again");
+            // Panning changes the session, not the project.
+            let id = app.workspace.active.unwrap();
+            app.workspace.project.doc_mut(id).unwrap().panel_mut_untracked().view.pan.x += 40.0;
+            app.save(&mut storage);
+            assert_eq!((storage.writes[PROJECT_KEY], storage.writes[KEY]), (1, 2));
+            // An edit writes the project.
+            app.workspace.project.doc_mut(id).unwrap().layout_mut().components.clear();
+            app.save(&mut storage);
+            assert_eq!(storage.writes[PROJECT_KEY], 2);
+
+            // It comes back, and isn't written again until it changes.
+            let mut after = ShineApp::default();
+            after.load_from(&storage);
+            assert_eq!(after.workspace.project.fingerprint(), app.workspace.project.fingerprint());
+            assert_eq!(after.workspace.project.doc(id).unwrap().panel().view.pan.x, app.workspace.project.doc(id).unwrap().panel().view.pan.x);
+            after.save(&mut storage);
+            assert_eq!(storage.writes[PROJECT_KEY], 2, "restored as stored");
         }
 
         #[test]
