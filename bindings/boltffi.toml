@@ -1,0 +1,35 @@
+# BoltFFI: the Python and TypeScript (WebAssembly) packages of Shine's library.
+[package]
+name = "shine-photonics"
+crate = "shine_photonics"
+version = "0.1.1"
+description = "Design and simulate photonic circuits in code: Shine's library"
+repository = "https://github.com/ash-hashtag/shine"
+
+[targets.apple]
+enabled = false
+
+[targets.android]
+enabled = false
+
+[targets.python]
+enabled = true
+output = "dist/python"
+module_name = "shine_photonics"
+
+[targets.wasm]
+enabled = true
+output = "dist/wasm"
+
+# CI installs wasm-opt (binaryen) for published packages; locally it's optional.
+[targets.wasm.optimize]
+on_missing = "warn"
+
+[targets.wasm.typescript]
+module_name = "shine_photonics"
+runtime_version = "0.32.1"
+
+[targets.wasm.npm]
+package_name = "shine-photonics"
+targets = ["nodejs", "web", "bundler"]
+repository = "https://github.com/ash-hashtag/shine"

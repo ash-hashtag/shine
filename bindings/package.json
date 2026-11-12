@@ -1,0 +1,14 @@
+{
+  "name": "shine-photonics-build",
+  "private": true,
+  "description": "What building the TypeScript package needs: the BoltFFI runtime it imports, and the compiler that checks it. The package itself is generated into dist/wasm/pkg.",
+  "scripts": {
+    "pack": "PATH=node_modules/.bin:$PATH boltffi pack wasm",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "@boltffi/runtime": "0.32.1",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

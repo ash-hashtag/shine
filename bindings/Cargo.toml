@@ -1,0 +1,16 @@
+[package]
+name = "shine-photonics"
+version = "0.1.1"
+edition = "2024"
+description = "Shine's photonic circuit design and simulation as a library: the Python and TypeScript packages"
+repository = "https://github.com/ash-hashtag/shine"
+homepage = "https://shine.lupyd.com"
+publish = false
+
+[lib]
+name = "shine_photonics"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+shine = { path = "..", default-features = false, features = ["core"] }
+boltffi = "0.32"

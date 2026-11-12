@@ -1,2 +1,6 @@
 /target
 __pycache__/
+
+# The library packages, built by bindings/pack.sh
+/bindings/dist/
+/bindings/node_modules/

@@ -8,6 +8,13 @@ license = "MIT"
 repository = "https://github.com/ash-hashtag/shine"
 homepage = "https://shine.lupyd.com"
 
+[workspace]
+# The library's Python and TypeScript packages. They build Shine with only
+# `core`, so they're left out of plain `cargo` commands here (which build the
+# app); build them with `-p shine-photonics` or the boltffi tool in bindings/.
+members = ["bindings"]
+default-members = ["."]
+
 [features]
 default = ["gui"]
 # Designs, simulation, analysis, files and exports, with no window: what the

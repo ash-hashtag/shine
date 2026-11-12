@@ -154,6 +154,15 @@ impl Part {
             })
     }
 
+    /// Connect this part's first free light output to `next`'s first free
+    /// light input, and return `next`, so a row of parts reads as light
+    /// flows: `laser.to(&ring)?.to(&detector)?`.
+    pub fn to(&self, next: &Part) -> Result<Part> {
+        let design = super::Design { inner: self.inner.clone(), id: self.doc };
+        design.chain(&[self.clone(), next.clone()])?;
+        Ok(next.clone())
+    }
+
     /// Its parameters: name, unit, value and typical range. A component's
     /// are the ones it exposes.
     pub fn params(&self) -> Vec<Param> {

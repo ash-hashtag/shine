@@ -581,6 +581,79 @@ dependencies = [
 ]
 
 [[package]]
+name = "boltffi"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4bbf1f91fbca6c95160c074a3613ce1838a7aa94edda887f438184542afae2a"
+dependencies = [
+ "boltffi_core",
+ "boltffi_macros",
+]
+
+[[package]]
+name = "boltffi_ast"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "856c8eefa3e83271bdda9f076f19d15057ef470e960710db1ed4b5e4796731f5"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "boltffi_binding"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e7c25d101d8272073169720bbf6ee96c001737beac806de47e4f056c974e497"
+dependencies = [
+ "boltffi_ast",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "boltffi_core"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19cda46b9b745164198f41fa29df747350604d5efeb90e69ae84123cf658016e"
+dependencies = [
+ "boltffi_macros",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "boltffi_macros"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ae70eb02d91aa8b41111c8995502ec251595accee6d3c24b8abf815b9367664"
+dependencies = [
+ "boltffi_ast",
+ "boltffi_binding",
+ "boltffi_scan",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "boltffi_scan"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47a231bd41a320751e8520b1b4acc52355e5790fa2faaf599a499368dc7e31d6"
+dependencies = [
+ "boltffi_ast",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "walkdir",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4540,6 +4613,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
+]
+
+[[package]]
+name = "shine-photonics"
+version = "0.1.1"
+dependencies = [
+ "boltffi",
+ "shine",
 ]
 
 [[package]]
