@@ -47,7 +47,7 @@ pub(super) fn arm() -> Builtin {
 }
 
 pub(super) fn link(l: &mut Layout, from: (InstanceId, usize), to: (InstanceId, usize)) {
-    l.connect_optical(PortRef { instance: from.0, port: from.1 }, PortRef { instance: to.0, port: to.1 });
+    l.add_waveguide(PortRef { instance: from.0, port: from.1 }, PortRef { instance: to.0, port: to.1 });
 }
 
 pub(super) fn add(l: &mut Layout, b: Builtin, cell: (i32, i32)) -> InstanceId {
@@ -114,10 +114,9 @@ pub fn mesh_named(project: &mut Project, mesh: &UnitaryMesh, name: &str, initial
         for (s, _) in mesh.mzis.iter().zip(&columns).filter(|(_, col)| **col == c) {
             let m = s.mode;
             let b = l.add_instance(BlockRef::Component(cell), (column_x(c), m as i32));
-            if let Some(inst) = l.instances.iter_mut().find(|i| i.id == b) {
-                inst.set_param("θ", Some(s.theta));
-                inst.set_param("φ", Some(s.phi));
-            }
+            let inst = l.instances.last_mut().expect("the MZI just added");
+            inst.set_param("θ", Some(s.theta));
+            inst.set_param("φ", Some(s.phi));
             for k in 0..2 {
                 link(&mut l, front[m + k], (b, k));
                 front[m + k] = (b, k);

@@ -409,6 +409,19 @@ impl Layout {
         });
     }
 
+    /// Add a waveguide between two ports nothing is connected to yet, as a
+    /// generator building a new layout knows. Unlike
+    /// [`Self::connect_optical`] it doesn't look for a waveguide to replace,
+    /// which on a layout of hundreds of thousands of waveguides is the
+    /// difference between milliseconds and minutes.
+    pub fn add_waveguide(&mut self, from: PortRef, to: PortRef) {
+        debug_assert!(
+            self.wires.len() > 10_000 || !self.wires.iter().any(|w| w.from == from || w.to == to),
+            "add_waveguide onto a port already connected"
+        );
+        self.wires.push(Wire { from, to, length_um: None });
+    }
+
     /// Connect a laser to a box's light input with a waveguide. A laser feeds
     /// one input and an input takes one waveguide, so others are replaced.
     pub fn connect_feed(&mut self, laser: usize, to: PortRef) {
