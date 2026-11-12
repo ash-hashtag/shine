@@ -61,6 +61,10 @@ name = "digits"
 required-features = ["core", "logging"]
 
 [[example]]
+name = "mnist"
+required-features = ["core", "logging"]
+
+[[example]]
 name = "scale_bench"
 required-features = ["core", "logging"]
 
