@@ -49,10 +49,9 @@ def matrix(s, inputs, outputs):
 
 def infer(m1, m2):
     """The chip's electronics around two layer matrices: scores for every digit."""
-    a = chip["input_field"]
-    p1 = np.abs((a * X) @ m1.T) ** 2
+    p1 = np.abs((chip["input_field"] * X) @ m1.T) ** 2
     h = np.clip(chip["neuron_gain"] * p1, 0, 1)
-    return np.abs((a * h) @ m2.T) ** 2
+    return np.abs((chip["input_field2"] * h) @ m2.T) ** 2
 
 
 def report(tool, timing, scores):

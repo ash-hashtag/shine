@@ -226,50 +226,92 @@ pub struct Chip {
     /// The field entering a layer's input per unit of its modulator's value
     /// (laser, splitters and the modulator's arm).
     pub input_field: f64,
+    /// The same for layer 2's inputs (its own splitter tree).
+    pub input_field2: f64,
     /// The neurons' gain: drive = clamp(gain × detected power, 0, 1).
     pub neuron_gain: f64,
 }
 
 /// The digit-reading chip for `w`, showing `pixels` (16 values, row by row).
 pub fn chip(project: &mut Project, w: &Weights, pixels: &[f64]) -> Result<Chip, String> {
+    chip_named(project, "Digit recognizer (optical neural network)", w, pixels)
+}
+
+impl Weights {
+    /// Weights as `reference/mnist/train.py` and `reference/digits/train.py` write them.
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let w: Self = serde_json::from_str(text).map_err(|e| format!("can't read the weights: {e}"))?;
+        let inputs = w.w1.first().map_or(0, Vec::len);
+        if inputs == 0 || w.w1.iter().any(|r| r.len() != inputs) || w.w2.iter().any(|r| r.len() != w.w1.len()) {
+            return Err("the weights' shapes don't fit together (W1 hidden × inputs, W2 classes × hidden)".into());
+        }
+        Ok(w)
+    }
+
+    /// Inputs, hidden neurons and classes.
+    pub fn sizes(&self) -> (usize, usize, usize) {
+        (self.w1.first().map_or(0, Vec::len), self.w1.len(), self.w2.len())
+    }
+}
+
+/// A splitter tree for `n` outputs: the levels, and the field each output
+/// gets of 1 (a tree's outputs are a power of two; any beyond `n` go unused).
+fn tree_for(n: usize) -> (u32, f64) {
+    let levels = n.max(1).next_power_of_two().trailing_zeros();
+    (levels, 1.0 / ((1usize << levels) as f64).sqrt())
+}
+
+/// The chip for `w` of any size (its inputs a square image, row by row),
+/// named `name`, showing `pixels`.
+pub fn chip_named(project: &mut Project, name: &str, w: &Weights, pixels: &[f64]) -> Result<Chip, String> {
+    let (inputs, hidden, classes) = w.sizes();
     let modulator = linear_modulator(project);
-    let (layer1, scale1, columns1) = layer(project, "Layer 1 (16→16)", &matrix(&w.w1))?;
-    let (layer2, scale2, columns2) = layer(project, "Layer 2 (16→10)", &matrix(&w.w2))?;
-    // Field reaching each modulator: the laser's 1 mW halved, then split 16 ways.
-    let feed = 1.0 / 2f64.sqrt() / (INPUTS as f64).sqrt();
+    let (layer1, scale1, columns1) = layer(project, &format!("Layer 1 ({inputs}→{hidden})"), &matrix(&w.w1))?;
+    let (layer2, scale2, columns2) = layer(project, &format!("Layer 2 ({hidden}→{classes})"), &matrix(&w.w2))?;
+    let (levels1, split1) = tree_for(inputs);
+    let (levels2, split2) = tree_for(hidden);
+    // Field reaching each modulator: the laser's 1 mW halved, then split by each tree.
+    let feed = 1.0 / 2f64.sqrt() * split1;
+    let feed2 = 1.0 / 2f64.sqrt() * split2;
     let t = arm_amplitude();
     // Layer 1's detected power is |W1 x|² × this; the neurons undo it and divide by H.
     let gain1 = (feed * t * t.powi(columns1 as i32) / scale1).powi(2);
     let neuron_gain = 1.0 / (gain1 * w.hidden_scale);
-    let score_scale = (feed * t * t.powi(columns2 as i32) / scale2).powi(2);
+    let score_scale = (feed2 * t * t.powi(columns2 as i32) / scale2).powi(2);
 
     let mut l = Layout::default();
-    // The image: 16 value inputs in a 4×4 grid, top left.
+    // The image: a value input per pixel in a square grid, top left.
+    let side = (inputs as f64).sqrt().ceil() as usize;
     let mut pixel_boxes = Vec::new();
-    for k in 0..INPUTS {
-        let (r, c) = ((k / 4) as i32, (k % 4) as i32);
+    for k in 0..inputs {
+        let (r, c) = ((k / side) as i32, (k % side) as i32);
         let value = pixels.get(k).copied().unwrap_or(0.0);
         pixel_boxes.push(add(&mut l, Builtin::Value { name: String::new(), value }, (8 * c, 2 * r)));
     }
-    let laser = add(&mut l, Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: WAVELENGTH_NM }, (10, 20));
-    let halves = add(&mut l, Builtin::YSplitter, (15, 20));
+    // Columns left to right: the image, the laser and trees, modulators,
+    // layer 1, neurons, layer 2's modulators, layer 2, the readout.
+    let x = 8 * side as i32 + 24;
+    let laser = add(&mut l, Builtin::Laser { amplitude: 1.0, phase: 0.0, wavelength_nm: WAVELENGTH_NM }, (x - 22, 2 * side as i32 + 4));
+    let halves = add(&mut l, Builtin::YSplitter, (x - 17, 2 * side as i32 + 4));
     link(&mut l, (laser, 0), (halves, 0));
-    let tree1 = add(&mut l, Builtin::SplitterTree { levels: 4 }, (24, 12));
-    let tree2 = add(&mut l, Builtin::SplitterTree { levels: 4 }, (50, 8));
+    let tree1 = add(&mut l, Builtin::SplitterTree { levels: levels1 }, (x - 8, 12));
+    let tree2 = add(&mut l, Builtin::SplitterTree { levels: levels2 }, (x + 18, 8));
     link(&mut l, (halves, 0), (tree1, 0));
     link(&mut l, (halves, 1), (tree2, 0));
-    let l1 = l.add_instance(BlockRef::Component(layer1), (38, 8));
-    let l2 = l.add_instance(BlockRef::Component(layer2), (62, 8));
+    let l1 = l.add_instance(BlockRef::Component(layer1), (x + 6, 8));
+    let l2 = l.add_instance(BlockRef::Component(layer2), (x + 30, 8));
     let signal = |l: &mut Layout, from: (InstanceId, usize), to: (InstanceId, usize)| {
         l.connect_signal(Terminal { item: Item::Box(from.0), port: from.1 }, Terminal { item: Item::Box(to.0), port: to.1 })
     };
     for (k, &pixel) in pixel_boxes.iter().enumerate() {
-        let row = 2 * k as i32;
         // Layer 1's modulators, driven by the pixels.
-        let m1 = l.add_instance(BlockRef::Component(modulator), (32, row));
+        let m1 = l.add_instance(BlockRef::Component(modulator), (x, 2 * k as i32));
         signal(&mut l, (pixel, 0), (m1, 0));
         link(&mut l, (tree1, k), (m1, 0));
         link(&mut l, (m1, 0), (l1, k));
+    }
+    for k in 0..hidden {
+        let row = 2 * k as i32;
         // A neuron: a photodetector and its electronics.
         let neuron = add(
             &mut l,
@@ -281,38 +323,39 @@ pub fn chip(project: &mut Project, w: &Weights, pixels: &[f64]) -> Result<Chip, 
                 light_outputs: Vec::new(),
                 wavelength_nm: WAVELENGTH_NM,
             },
-            (44, row),
+            (x + 12, row),
         );
         link(&mut l, (l1, k), (neuron, 0));
         // Layer 2's modulators, driven by the neurons, on the laser's other half.
-        let m2 = l.add_instance(BlockRef::Component(modulator), (56, row));
+        let m2 = l.add_instance(BlockRef::Component(modulator), (x + 24, row));
         signal(&mut l, (neuron, 0), (m2, 0));
         link(&mut l, (tree2, k), (m2, 0));
         link(&mut l, (m2, 0), (l2, k));
     }
     // The readout: the largest of the 10 scores, as a number.
-    let args: Vec<String> = (1..=CLASSES).map(|k| format!("p{k}")).collect();
+    let args: Vec<String> = (1..=classes).map(|k| format!("p{k}")).collect();
+    let bits = (classes.max(2) - 1).ilog2() + 1;
     let readout = add(
         &mut l,
         Builtin::FunctionCell {
             name: "argmax".into(),
             inputs: 0,
-            light_inputs: CLASSES as u32,
-            outputs: (0..4).rev().map(|b| format!("bit(argmax({}), {b})", args.join(", "))).collect(),
+            light_inputs: classes as u32,
+            outputs: (0..bits).rev().map(|b| format!("bit(argmax({}), {b})", args.join(", "))).collect(),
             light_outputs: Vec::new(),
             wavelength_nm: WAVELENGTH_NM,
         },
-        (68, 11),
+        (x + 36, 11),
     );
-    for k in 0..CLASSES {
+    for k in 0..classes {
         link(&mut l, (l2, k), (readout, k));
     }
-    let display = add(&mut l, Builtin::Display { bits: 4 }, (68, 25));
-    for b in 0..4 {
+    let display = add(&mut l, Builtin::Display { bits }, (x + 36, 13 + classes as i32));
+    for b in 0..bits as usize {
         signal(&mut l, (readout, b), (display, b));
     }
-    let top = project.add_layout("Digit recognizer (optical neural network)", l, 10.0);
-    Ok(Chip { top, layer2: l2, pixels: pixel_boxes, score_scale, input_field: feed * t, neuron_gain })
+    let top = project.add_layout(name, l, 10.0);
+    Ok(Chip { top, layer2: l2, pixels: pixel_boxes, score_scale, input_field: feed * t, input_field2: feed2 * t, neuron_gain })
 }
 
 /// The demo: the chip with the first test digit.

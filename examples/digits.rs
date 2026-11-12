@@ -72,6 +72,7 @@ fn main() {
         // What the electronics around the layers do, for running the network elsewhere.
         let electronics = serde_json::json!({
             "input_field": chip.input_field,
+            "input_field2": chip.input_field2,
             "neuron_gain": chip.neuron_gain,
             "score_scale": chip.score_scale,
         });
