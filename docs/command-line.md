@@ -116,6 +116,23 @@ It prints what it wrote, with a note for anything that didn't carry over (free-s
 in a layout, for example). A Touchstone file's name must say its port count: `.s4p` for
 four ports.
 
+## Matrices as components
+
+`shine layer` turns a matrix into a component that multiplies light by it, built from
+meshes of MZIs, and adds it to a project (made if it doesn't exist):
+
+```sh
+shine layer weights.txt --out chip.shine --name "Layer 1"
+printf '0 1\n1 0\n' | shine layer - --out chip.shine --unitary --name Swap
+```
+
+The matrix is text: a row per line, entries separated by spaces, commas or tabs, complex
+ones written `0.5-0.2i`, `#` starting a comment. A weight layer computes W x / σmax: two
+meshes (W = U Σ V†) with an attenuator per mode between them, divided by W's largest
+singular value σmax since light can't be amplified; it says σmax and how many MZIs it took.
+`--unitary` builds a unitary matrix as one mesh. The same is in the editor (**Component →
+New layer from a matrix…**) and the [libraries](python.md#matrices-as-light).
+
 ## In scripts and CI
 
 The exit status is 0 on success, 1 when the design doesn't simulate (for example an

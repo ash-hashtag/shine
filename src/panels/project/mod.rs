@@ -899,6 +899,20 @@ impl Project {
         self.doc(id).map(Document::fingerprint)
     }
 
+    /// Write the project to `path` in Shine's file format, atomically: to a
+    /// file beside it, then renamed over it, so a failure leaves the old
+    /// file whole.
+    pub fn write_atomically(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let mut temporary = path.as_os_str().to_owned();
+        temporary.push(".saving");
+        let temporary = PathBuf::from(temporary);
+        let written = std::fs::write(&temporary, self.to_bytes()).and_then(|()| std::fs::rename(&temporary, path));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        written
+    }
+
     /// Encode the project in Shine's binary file format.
     pub fn to_bytes(&self) -> Vec<u8> {
         file_format::encode(&ProjectFile {

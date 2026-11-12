@@ -385,14 +385,7 @@ impl Workspace {
     /// Save to `path`. The file is written next to it under a temporary name
     /// and then renamed over it, so a failed save never leaves a damaged file.
     pub fn save_project_to(&mut self, path: &Path) -> Result<(), String> {
-        let mut temporary = path.as_os_str().to_owned();
-        temporary.push(".saving");
-        let temporary = std::path::PathBuf::from(temporary);
-        let written = std::fs::write(&temporary, self.project.to_bytes()).and_then(|()| std::fs::rename(&temporary, path));
-        if let Err(e) = written {
-            let _ = std::fs::remove_file(&temporary);
-            return Err(e.to_string());
-        }
+        self.project.write_atomically(path).map_err(|e| e.to_string())?;
         self.project.path = Some(path.to_owned());
         self.mark_saved();
         Ok(())
