@@ -21,7 +21,7 @@ use emath::{Pos2, Vec2};
 use super::expr;
 use crate::panels::beam_sim::{Beam, DIRECTIONS, direction, direction_index, scattering};
 use crate::panels::optics::model::{
-    BlockRef, Builtin, GRID, InstanceId, Item, Layout, OpticComponentKind, PortCounts, Terminal, box_geometry,
+    BlockRef, Builtin, GRID, Instance, InstanceId, Item, Layout, OpticComponentKind, PortCounts, Terminal, box_geometry,
 };
 use crate::panels::project::DocId;
 use std::sync::Arc;
@@ -29,7 +29,7 @@ use std::sync::Arc;
 use crate::photonics::{C64, Circuit, Custom, Detector, InPort, Laser, Matrix, NodeId, OutPort, Ports, Table, Tabulated, Waveguide};
 
 /// Documents that boxes in a layout can refer to.
-pub trait Documents {
+pub trait Documents: Sync {
     /// A layout used as a component, and its cell size in µm.
     fn layout(&self, id: DocId) -> Option<(&Layout, f64)>;
     fn name(&self, id: DocId) -> String;
@@ -196,12 +196,7 @@ pub fn interface(layout: &Layout) -> Interface {
 /// Port counts of a block, looking documents up through `docs`.
 pub fn block_counts(block: &BlockRef, docs: &dyn Documents) -> PortCounts {
     match block {
-        BlockRef::Builtin(b) => PortCounts {
-            optical_in: b.inputs().len(),
-            optical_out: b.outputs().len(),
-            signal_in: b.signal_inputs().len(),
-            signal_out: b.signal_outputs().len(),
-        },
+        BlockRef::Builtin(b) => b.port_counts(),
         BlockRef::Component(id) => docs.layout(*id).map(|(l, _)| interface(l).counts()).unwrap_or_default(),
     }
 }
@@ -509,6 +504,10 @@ struct Reducer {
 /// A component and its box's parameter values (as bits, to compare exactly).
 type TableKey = (DocId, Vec<(String, u64)>);
 
+fn table_key(doc: DocId, params: &[(String, f64)]) -> TableKey {
+    (doc, params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect())
+}
+
 impl Reducer {
     fn new(wavelengths: Vec<f64>) -> Self {
         Self { wavelengths, ..Self::default() }
@@ -629,24 +628,11 @@ impl Optics<'_> {
         if r.wavelengths.is_empty() || !passive(docs, doc, &mut r.passive, &mut Vec::new()) {
             return Ok(None);
         }
-        let key = (doc, params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect::<Vec<_>>());
+        let key = table_key(doc, params);
         let table = match r.tables.get(&key) {
             Some(t) => t.clone(),
             None => {
-                let wavelengths = r.wavelengths.clone();
-                let (child, cell) = docs.layout(doc).ok_or("A component used here was deleted")?;
-                let configured = configure(child, params);
-                let child = configured.as_ref().unwrap_or(child);
-                let mut sub = Circuit::new();
-                let sensors = self.sensors.len();
-                self.stack.push(doc);
-                let built = self.build(&mut sub, child, path, cell);
-                self.stack.pop();
-                self.sensors.truncate(sensors);
-                let ports = built.map_err(|e| self.in_component(doc, e))?.ports;
-                let matrices = crate::photonics::par::try_map(&wavelengths, |&wl| sub.transfer_matrix(wl, &ports.inputs, &ports.outputs))
-                    .map_err(|e| self.in_component(doc, e.to_string()))?;
-                let t = Arc::new(Table { wavelengths_nm: wavelengths, matrices });
+                let t = self.solve(doc, params, path)?;
                 if let Some(r) = self.reduce.as_deref_mut() {
                     r.tables.insert(key, t.clone());
                 }
@@ -656,6 +642,89 @@ impl Optics<'_> {
         let (inputs, outputs) = (table.matrices[0].ncols(), table.matrices[0].nrows());
         let n = c.add(Tabulated { name: docs.name(doc), table });
         Ok(Some(Ports { inputs: (0..inputs).map(|k| n.input(k)).collect(), outputs: (0..outputs).map(|k| n.output(k)).collect() }))
+    }
+
+    /// Passive component `doc`, placed with `params`, solved for its matrix
+    /// at the reducer's wavelengths.
+    fn solve(&mut self, doc: DocId, params: &[(String, f64)], path: &[InstanceId]) -> Result<Arc<Table>, String> {
+        let docs = self.docs;
+        let wavelengths = self.reduce.as_deref().map(|r| r.wavelengths.clone()).unwrap_or_default();
+        let (child, cell) = docs.layout(doc).ok_or("A component used here was deleted")?;
+        let configured = configure(child, params);
+        let child = configured.as_ref().unwrap_or(child);
+        let started = web_time::Instant::now();
+        let mut sub = Circuit::new();
+        let sensors = self.sensors.len();
+        self.stack.push(doc);
+        let built = self.build(&mut sub, child, path, cell);
+        self.stack.pop();
+        self.sensors.truncate(sensors);
+        let ports = built.map_err(|e| self.in_component(doc, e))?.ports;
+        let assembled = started.elapsed();
+        let matrices = crate::photonics::par::try_map(&wavelengths, |&wl| sub.transfer_matrix(wl, &ports.inputs, &ports.outputs))
+            .map_err(|e| self.in_component(doc, e.to_string()))?;
+        if started.elapsed().as_millis() >= 50 {
+            tracing::debug!(
+                "“{}” solved into its matrix: {} parts in {:.0} ms, solved in {:.0} ms",
+                docs.name(doc),
+                sub.len(),
+                assembled.as_secs_f64() * 1e3,
+                (started.elapsed() - assembled).as_secs_f64() * 1e3
+            );
+        }
+        Ok(Arc::new(Table { wavelengths_nm: wavelengths, matrices }))
+    }
+
+    /// Solve the passive components among `layout`'s boxes that aren't yet,
+    /// all at once on separate threads: a mesh's 300 000 MZI cells, say.
+    /// Their insides have no lasers or sensors, so each is built apart.
+    fn solve_boxes(&mut self, layout: &Layout, path: &[InstanceId]) -> Result<(), String> {
+        let docs = self.docs;
+        let Some(r) = self.reduce.as_deref_mut() else { return Ok(()) };
+        if r.wavelengths.is_empty() {
+            return Ok(());
+        }
+        let mut todo: Vec<(TableKey, &Instance)> = Vec::new();
+        let mut queued = std::collections::HashSet::new();
+        for inst in &layout.instances {
+            let BlockRef::Component(doc) = inst.block else { continue };
+            if self.stack.contains(&doc) || !passive(docs, doc, &mut r.passive, &mut Vec::new()) {
+                continue;
+            }
+            let key = table_key(doc, &inst.params);
+            if !r.tables.contains_key(&key) && queued.insert(key.clone()) {
+                todo.push((key, inst));
+            }
+        }
+        // One is solved where it's placed, as without threads.
+        if todo.len() < 2 {
+            return Ok(());
+        }
+        let started = web_time::Instant::now();
+        let (wavelengths, memo) = (r.wavelengths.clone(), r.passive.clone());
+        let (signals, light, max_len, stack) = (self.signals, self.light, self.max_len, &self.stack);
+        let tables = crate::photonics::par::try_map(&todo, |(key, inst)| {
+            let mut own = Reducer { wavelengths: wavelengths.clone(), passive: memo.clone(), tables: HashMap::new() };
+            let mut optics = Optics {
+                docs,
+                signals,
+                light,
+                max_len,
+                stack: stack.clone(),
+                sensors: Vec::new(),
+                next_source: FIRST_INDEPENDENT_SOURCE,
+                colors: HashMap::new(),
+                reduce: Some(&mut own),
+            };
+            let mut inner = path.to_vec();
+            inner.push(inst.id);
+            optics.solve(key.0, &inst.params, &inner)
+        })?;
+        if let Some(r) = self.reduce.as_deref_mut() {
+            r.tables.extend(todo.into_iter().map(|(key, _)| key).zip(tables));
+        }
+        tracing::debug!("{} components solved together in {:.0} ms", queued.len(), started.elapsed().as_secs_f64() * 1e3);
+        Ok(())
     }
 
     /// An error from inside component `doc`, saying where.
@@ -753,7 +822,8 @@ impl Optics<'_> {
             accepts.push(accept);
         }
 
-        // Boxes.
+        // Boxes, the passive components among them solved first, together.
+        self.solve_boxes(layout, path)?;
         let mut instance_ports = HashMap::new();
         let mut geometry = HashMap::new();
         for inst in &layout.instances {
@@ -874,7 +944,25 @@ impl Optics<'_> {
         let (pins_in, pins_out) = (boundary(&iface.optical_in), boundary(&iface.optical_out));
 
         // Free-space beams: from emitting parts and from unwired box outputs.
-        let mut targets: Vec<(Pos2, Target)> = layout
+        let mut sources: Vec<(Pos2, OutPort, usize, Option<usize>)> = Vec::new();
+        for (i, part) in layout.components.iter().enumerate() {
+            if let Some(node) = nodes[i] {
+                for &(port, k) in &emits[i] {
+                    sources.push((part.pos, node.output(port), k, Some(i)));
+                }
+            }
+        }
+        for inst in layout.instances.iter().filter(|i| !pins_out.contains(&i.id)) {
+            for (k, &out) in instance_ports[&inst.id].outputs.iter().enumerate() {
+                if !wired_outputs.contains(&(inst.id, k)) {
+                    sources.push((geometry[&inst.id].optical_out[k], out, 0, None));
+                }
+            }
+        }
+        // What they can hit: only worth listing if anything shines.
+        let mut targets: Vec<(Pos2, Target)> = Vec::new();
+        if !sources.is_empty() {
+        targets = layout
             .components
             .iter()
             .enumerate()
@@ -890,21 +978,6 @@ impl Optics<'_> {
                 targets.push((crate::panels::optics::model::cell_center(ci, cj), Target::Box { id: inst.id, entry }));
             }
         }
-
-        let mut sources: Vec<(Pos2, OutPort, usize, Option<usize>)> = Vec::new();
-        for (i, part) in layout.components.iter().enumerate() {
-            if let Some(node) = nodes[i] {
-                for &(port, k) in &emits[i] {
-                    sources.push((part.pos, node.output(port), k, Some(i)));
-                }
-            }
-        }
-        for inst in layout.instances.iter().filter(|i| !pins_out.contains(&i.id)) {
-            for (k, &out) in instance_ports[&inst.id].outputs.iter().enumerate() {
-                if !wired_outputs.contains(&(inst.id, k)) {
-                    sources.push((geometry[&inst.id].optical_out[k], out, 0, None));
-                }
-            }
         }
 
         let mut segments = Vec::new();
