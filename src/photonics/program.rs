@@ -35,6 +35,12 @@ use super::{C64, Matrix};
 /// Lanes per parallel work item.
 const CHUNK_LANES: usize = 256;
 
+/// Memory for the fields of all lanes in flight at once while computing a
+/// transfer matrix: a circuit of millions of slots and hundreds of inputs
+/// is run a few lanes at a time, keeping only the outputs, instead of
+/// holding every field of every input (which can be hundreds of GB).
+const TRANSFER_BYTES: usize = 256 << 20;
+
 /// Maps ports to slots.
 #[derive(Debug)]
 pub(crate) struct Layout {
@@ -482,10 +488,53 @@ impl Program {
         outputs: &[OutPort],
     ) -> Result<Matrix, CircuitError> {
         let n = inputs.len();
-        let sol = self.execute(inputs, Mat::<C64>::identity(n, n).as_ref(), Sources::Off)?;
-        Ok(Mat::from_fn(outputs.len(), n, |i, j| {
-            sol.output_field_at(outputs[i], j)
-        }))
+        let slots = inputs
+            .iter()
+            .map(|&p| self.layout.drive_slot(p))
+            .collect::<Result<Vec<_>, _>>()?;
+        let out_slots: Vec<usize> = outputs.iter().map(|&p| self.layout.output_slot(p)).collect();
+        // Lanes per chunk so the chunks running at once fit TRANSFER_BYTES.
+        let per_lane = 16 * self.layout.num_slots.max(1) * super::par::threads();
+        let width = (TRANSFER_BYTES / per_lane).clamp(1, CHUNK_LANES);
+        let starts: Vec<usize> = (0..n).step_by(width).collect();
+        let identity = Mat::<C64>::identity(n, n);
+        // Each chunk's columns of the matrix; its fields are dropped at once.
+        let columns = super::par::map(&starts, |&start| {
+            let width = width.min(n - start);
+            let state = self.run_chunk(&slots, identity.as_ref(), start, width, Sources::Off);
+            Mat::<C64>::from_fn(out_slots.len(), width, |i, l| state.get(out_slots[i], l))
+        });
+        let mut m = Mat::<C64>::zeros(outputs.len(), n);
+        for (&start, part) in starts.iter().zip(&columns) {
+            m.as_mut().submatrix_mut(0, start, outputs.len(), part.ncols()).copy_from(part);
+        }
+        Ok(m)
+    }
+
+    /// Run lanes `start..start + width` of `fields`, injected on `slots`.
+    fn run_chunk(&self, slots: &[usize], fields: MatRef<'_, C64>, start: usize, width: usize, sources: Sources<'_>) -> State {
+        let mut state = State::zeros(self.layout.num_slots, width);
+        if fields.ncols() > 0 {
+            for (i, &slot) in slots.iter().enumerate() {
+                let (re, im) = state.slot_mut(slot);
+                for l in 0..width {
+                    let v = fields[(i, start + l)];
+                    re[l] += v.re;
+                    im[l] += v.im;
+                }
+            }
+        }
+        let sources = match sources {
+            Sources::PerLane(ids) => Sources::PerLane(&ids[start..start + width]),
+            other => other,
+        };
+        Arch::new().dispatch(Execute {
+            program: self,
+            state: &mut state,
+            sources,
+            first_lane: start,
+        });
+        state
     }
 
     fn execute(
@@ -503,29 +552,7 @@ impl Program {
 
         let starts: Vec<usize> = (0..lanes).step_by(CHUNK_LANES).collect();
         let chunks = super::par::map(&starts, |&start| {
-            let width = CHUNK_LANES.min(lanes - start);
-            let mut state = State::zeros(self.layout.num_slots, width);
-            if fields.ncols() > 0 {
-                for (i, &slot) in slots.iter().enumerate() {
-                    let (re, im) = state.slot_mut(slot);
-                    for l in 0..width {
-                        let v = fields[(i, start + l)];
-                        re[l] += v.re;
-                        im[l] += v.im;
-                    }
-                }
-            }
-            let sources = match sources {
-                Sources::PerLane(ids) => Sources::PerLane(&ids[start..start + width]),
-                other => other,
-            };
-            Arch::new().dispatch(Execute {
-                program: self,
-                state: &mut state,
-                sources,
-                first_lane: start,
-            });
-            state
+            self.run_chunk(&slots, fields, start, CHUNK_LANES.min(lanes - start), sources)
         });
 
         Ok(Solution {

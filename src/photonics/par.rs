@@ -4,6 +4,18 @@
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 
+/// How many threads [`map`] runs on.
+pub fn threads() -> usize {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        rayon::current_num_threads()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        1
+    }
+}
+
 /// `items.map(f)` in parallel when possible, preserving order.
 pub fn map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync + Send) -> Vec<R> {
     #[cfg(not(target_arch = "wasm32"))]
