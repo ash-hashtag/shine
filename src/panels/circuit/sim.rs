@@ -288,6 +288,32 @@ struct Electronics<'a> {
     light: HashMap<Key, f64>,
     stack: Vec<DocId>,
     errors: Vec<String>,
+    /// Components with no electronics inside, which evaluating can skip.
+    inert: &'a mut HashMap<DocId, bool>,
+}
+
+/// Whether component `doc` has no electronics, all the way down: no signal
+/// wires, no function cells, no scripts. Its signals are all zero, so the
+/// electronics needn't walk through it (a mesh of 300 000 MZIs, say).
+fn inert(docs: &dyn Documents, doc: DocId, memo: &mut HashMap<DocId, bool>, stack: &mut Vec<DocId>) -> bool {
+    if let Some(&i) = memo.get(&doc) {
+        return i;
+    }
+    if stack.contains(&doc) {
+        return false;
+    }
+    let Some((l, _)) = docs.layout(doc) else { return false };
+    stack.push(doc);
+    let i = l.signals.is_empty()
+        && l.instances.iter().all(|i| match &i.block {
+            BlockRef::Component(d) => inert(docs, *d, memo, stack),
+            BlockRef::Builtin(Builtin::FunctionCell { .. }) => false,
+            BlockRef::Builtin(Builtin::Model(m)) => m.script().is_none(),
+            BlockRef::Builtin(_) => true,
+        });
+    stack.pop();
+    memo.insert(doc, i);
+    i
 }
 
 impl Electronics<'_> {
@@ -366,6 +392,7 @@ impl Electronics<'_> {
                         }
                     }
                     BlockRef::Builtin(_) => Vec::new(),
+                    BlockRef::Component(doc) if inert(self.docs, *doc, self.inert, &mut self.stack.clone()) => Vec::new(),
                     BlockRef::Component(doc) => {
                         if self.stack.contains(doc) {
                             self.error(format!("“{}” contains itself", self.docs.name(*doc)));
@@ -1067,6 +1094,7 @@ fn settle(
         r.covers(&lasers);
         r
     });
+    let mut inert_docs = HashMap::new();
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
     // The last round's light, turned into an outcome once it settles: the
@@ -1081,6 +1109,7 @@ fn settle(
             light: HashMap::new(),
             stack: root.into_iter().collect(),
             errors: Vec::new(),
+            inert: &mut inert_docs,
         };
         let started = web_time::Instant::now();
         electronics.eval(layout, &[], &machine.inputs);
