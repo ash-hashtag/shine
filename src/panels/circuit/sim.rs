@@ -24,7 +24,9 @@ use crate::panels::optics::model::{
     BlockRef, Builtin, GRID, InstanceId, Item, Layout, OpticComponentKind, PortCounts, Terminal, box_geometry,
 };
 use crate::panels::project::DocId;
-use crate::photonics::{C64, Circuit, Custom, Detector, InPort, Laser, Matrix, NodeId, OutPort, Ports, Waveguide};
+use std::sync::Arc;
+
+use crate::photonics::{C64, Circuit, Custom, Detector, InPort, Laser, Matrix, NodeId, OutPort, Ports, Table, Tabulated, Waveguide};
 
 /// Documents that boxes in a layout can refer to.
 pub trait Documents {
@@ -260,6 +262,9 @@ pub struct Options {
     pub max_len: f32,
     /// Give up settling after this many optics–electronics rounds.
     pub max_iterations: usize,
+    /// Solve each passive component once, into its matrix (see
+    /// [`Reducer`]). Off only to keep every part, as netlists need.
+    pub reduce: bool,
 }
 
 impl Default for Options {
@@ -267,6 +272,7 @@ impl Default for Options {
         Self {
             max_len: GRID * 500.0,
             max_iterations: 64,
+            reduce: true,
         }
     }
 }
@@ -449,6 +455,115 @@ struct Optics<'a> {
     next_source: u32,
     /// Display colour chosen for a source's light, by photonics source id.
     colors: HashMap<u32, [u8; 3]>,
+    /// Passive components solved into their matrices, when reducing.
+    reduce: Option<&'a mut Reducer>,
+}
+
+/// Passive components solved once, into their matrices.
+///
+/// A component of only passive parts (couplers, phase shifters, meshes…,
+/// no lasers, no electronics, no signals) is, to the light, its scattering
+/// matrix: so it's built into a circuit of its own, solved for that matrix
+/// at each wavelength the simulation needs, and placed as one part. This
+/// goes all the way down (an MZI cell becomes a 2×2 matrix, then the mesh
+/// of them one N×N matrix), and the matrices are kept between the rounds of
+/// settling, so a mesh of 300 000 MZIs costs its solve once and then as
+/// much as a single part.
+#[derive(Default)]
+struct Reducer {
+    /// The wavelengths the matrices are solved at: every laser's.
+    wavelengths: Vec<f64>,
+    /// Whether each component is passive, all the way down.
+    passive: HashMap<DocId, bool>,
+    /// Matrices by component and the parameter values of its box.
+    tables: HashMap<TableKey, Arc<Table>>,
+}
+
+/// A component and its box's parameter values (as bits, to compare exactly).
+type TableKey = (DocId, Vec<(String, u64)>);
+
+impl Reducer {
+    fn new(wavelengths: Vec<f64>) -> Self {
+        Self { wavelengths, ..Self::default() }
+    }
+
+    /// Whether `wavelengths` are all solved for; if not, they're added and
+    /// the matrices forgotten, to be solved again.
+    fn covers(&mut self, wavelengths: &[f64]) -> bool {
+        let missing: Vec<f64> =
+            wavelengths.iter().copied().filter(|w| !self.wavelengths.iter().any(|v| (v - w).abs() < 1e-9)).collect();
+        if missing.is_empty() || self.tables.is_empty() {
+            self.wavelengths.extend(missing);
+            return true;
+        }
+        self.wavelengths.extend(missing);
+        self.tables.clear();
+        false
+    }
+}
+
+/// Whether component `doc` is passive all the way down: light in, light
+/// out, nothing that emits, senses for the electronics, or is driven.
+fn passive(docs: &dyn Documents, doc: DocId, memo: &mut HashMap<DocId, bool>, stack: &mut Vec<DocId>) -> bool {
+    if let Some(&p) = memo.get(&doc) {
+        return p;
+    }
+    if stack.contains(&doc) {
+        return false;
+    }
+    let Some((l, _)) = docs.layout(doc) else { return false };
+    stack.push(doc);
+    let p = l.components.is_empty()
+        && l.signals.is_empty()
+        && l.feeds.is_empty()
+        && l.instances.iter().all(|i| match &i.block {
+            BlockRef::Component(d) => passive(docs, *d, memo, stack),
+            BlockRef::Builtin(Builtin::Model(m)) => m.script().is_none() && m.signal_inputs.is_empty() && m.signal_outputs.is_empty(),
+            // A detector inside only absorbs: its reading is shown on the
+            // component's own canvas, not used by the electronics.
+            BlockRef::Builtin(b) => matches!(
+                b,
+                Builtin::InputPin { .. }
+                    | Builtin::OutputPin { .. }
+                    | Builtin::Coupler { .. }
+                    | Builtin::PhaseShifter { .. }
+                    | Builtin::Attenuator { .. }
+                    | Builtin::DelayLine { .. }
+                    | Builtin::Mzi { .. }
+                    | Builtin::YSplitter
+                    | Builtin::YCombiner
+                    | Builtin::Crossing
+                    | Builtin::Ring { .. }
+                    | Builtin::AddDropRing { .. }
+                    | Builtin::SplitterTree { .. }
+                    | Builtin::Dft { .. }
+                    | Builtin::Detector
+            ),
+        });
+    stack.pop();
+    memo.insert(doc, p);
+    p
+}
+
+/// Every laser's wavelength in `layout` and the components it uses.
+fn laser_wavelengths(layout: &Layout, docs: &dyn Documents, seen: &mut Vec<DocId>, out: &mut Vec<f64>) {
+    for part in &layout.components {
+        if let OpticComponentKind::Laser { wavelength, .. } = part.kind {
+            out.push(wavelength as f64);
+        }
+    }
+    for inst in &layout.instances {
+        match &inst.block {
+            BlockRef::Builtin(Builtin::Laser { wavelength_nm, .. }) => out.push(*wavelength_nm),
+            BlockRef::Component(d) if !seen.contains(d) => {
+                seen.push(*d);
+                if let Some((l, _)) = docs.layout(*d) {
+                    laser_wavelengths(l, docs, seen, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Photonics source ids: shared sources A–H are 1–8; each independent laser
@@ -479,6 +594,52 @@ enum Target {
 }
 
 impl Optics<'_> {
+    /// Component `doc`, placed with `params`, as one part: its matrix, when
+    /// it is passive and reducing is on (see [`Reducer`]).
+    fn reduced(&mut self, c: &mut Circuit, doc: DocId, params: &[(String, f64)], path: &[InstanceId]) -> Result<Option<Ports>, String> {
+        let docs = self.docs;
+        let Some(r) = self.reduce.as_deref_mut() else { return Ok(None) };
+        if r.wavelengths.is_empty() || !passive(docs, doc, &mut r.passive, &mut Vec::new()) {
+            return Ok(None);
+        }
+        let key = (doc, params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect::<Vec<_>>());
+        let table = match r.tables.get(&key) {
+            Some(t) => t.clone(),
+            None => {
+                let wavelengths = r.wavelengths.clone();
+                let (child, cell) = docs.layout(doc).ok_or("A component used here was deleted")?;
+                let configured = configure(child, params);
+                let child = configured.as_ref().unwrap_or(child);
+                let mut sub = Circuit::new();
+                let sensors = self.sensors.len();
+                self.stack.push(doc);
+                let built = self.build(&mut sub, child, path, cell);
+                self.stack.pop();
+                self.sensors.truncate(sensors);
+                let ports = built.map_err(|e| self.in_component(doc, e))?.ports;
+                let matrices = crate::photonics::par::try_map(&wavelengths, |&wl| sub.transfer_matrix(wl, &ports.inputs, &ports.outputs))
+                    .map_err(|e| self.in_component(doc, e.to_string()))?;
+                let t = Arc::new(Table { wavelengths_nm: wavelengths, matrices });
+                if let Some(r) = self.reduce.as_deref_mut() {
+                    r.tables.insert(key, t.clone());
+                }
+                t
+            }
+        };
+        let (inputs, outputs) = (table.matrices[0].ncols(), table.matrices[0].nrows());
+        let n = c.add(Tabulated { name: docs.name(doc), table });
+        Ok(Some(Ports { inputs: (0..inputs).map(|k| n.input(k)).collect(), outputs: (0..outputs).map(|k| n.output(k)).collect() }))
+    }
+
+    /// An error from inside component `doc`, saying where.
+    fn in_component(&self, doc: DocId, e: String) -> String {
+        if e.starts_with('“') || e.starts_with("A component") || e.starts_with("In “") {
+            e
+        } else {
+            format!("In “{}”: {e}", self.docs.name(doc))
+        }
+    }
+
     /// Drive level of a primitive's signal input, if wired.
     fn drive(&self, layout: &Layout, path: &[InstanceId], part: usize) -> Option<f64> {
         self.drive_of(layout, path, Item::Part(part))
@@ -612,23 +773,20 @@ impl Optics<'_> {
                     if self.stack.contains(doc) {
                         return Err(format!("“{}” contains itself", self.docs.name(*doc)));
                     }
+                    let mut inner = path.to_vec();
+                    inner.push(inst.id);
+                    if let Some(ports) = self.reduced(c, *doc, &inst.params, &inner)? {
+                        ports
+                    } else {
                     let (child, child_cell) = self.docs.layout(*doc).ok_or("A component used here was deleted")?;
                     // This box's values for the component's exported parameters.
                     let configured = configure(child, &inst.params);
                     let child = configured.as_ref().unwrap_or(child);
-                    let mut inner = path.to_vec();
-                    inner.push(inst.id);
                     self.stack.push(*doc);
                     let built = self.build(c, child, &inner, child_cell);
                     self.stack.pop();
-                    built.map_err(|e| {
-                        if e.starts_with('“') || e.starts_with("A component") {
-                            e
-                        } else {
-                            format!("In “{}”: {e}", self.docs.name(*doc))
-                        }
-                    })?
-                    .ports
+                    built.map_err(|e| self.in_component(*doc, e))?.ports
+                    }
                 }
             };
             let counts = PortCounts {
@@ -821,7 +979,7 @@ pub fn simulate(
     root: Option<DocId>,
     options: &Options,
 ) -> Outcome {
-    let settled = match settle(layout, cell_um, docs, machine, root, options) {
+    let settled = match settle(layout, cell_um, docs, machine, root, options, &[]) {
         Ok(s) => s,
         Err(e) => return Outcome::failed(e),
     };
@@ -848,7 +1006,7 @@ pub fn transmission(
     root: Option<DocId>,
     wavelengths_nm: &[f64],
 ) -> Result<Transmission, String> {
-    let settled = settle(layout, cell_um, docs, machine, root, &Options::default())?;
+    let settled = settle(layout, cell_um, docs, machine, root, &Options::default(), wavelengths_nm)?;
     if !settled.stable {
         return Err("The circuit did not settle; a feedback loop may be oscillating".into());
     }
@@ -872,7 +1030,9 @@ pub fn circuit(
     machine: &Machine,
     root: Option<DocId>,
 ) -> Result<(Circuit, crate::photonics::Ports), String> {
-    let settled = settle(layout, cell_um, docs, machine, root, &Options::default())?;
+    // Every part kept: netlists are written from it.
+    let options = Options { reduce: false, ..Options::default() };
+    let settled = settle(layout, cell_um, docs, machine, root, &options, &[])?;
     if !settled.stable {
         return Err("The circuit did not settle; a feedback loop may be oscillating".into());
     }
@@ -898,7 +1058,15 @@ fn settle(
     machine: &Machine,
     root: Option<DocId>,
     options: &Options,
+    wavelengths: &[f64],
 ) -> Result<Settled, String> {
+    let mut reducer = options.reduce.then(|| {
+        let mut lasers = wavelengths.to_vec();
+        laser_wavelengths(layout, docs, &mut Vec::new(), &mut lasers);
+        let mut r = Reducer::new(Vec::new());
+        r.covers(&lasers);
+        r
+    });
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
     // The last round's light, turned into an outcome once it settles: the
@@ -914,24 +1082,42 @@ fn settle(
             stack: root.into_iter().collect(),
             errors: Vec::new(),
         };
+        let started = web_time::Instant::now();
         electronics.eval(layout, &[], &machine.inputs);
+        let evaluated = started.elapsed();
         if let Some(e) = electronics.errors.first() {
             return Err(e.clone());
         }
 
-        let mut optics = Optics {
-            docs,
-            signals: &electronics.signals,
-            light: &electronics.light,
-            max_len: options.max_len,
-            stack: root.into_iter().collect(),
-            sensors: Vec::new(),
-            next_source: FIRST_INDEPENDENT_SOURCE,
-            colors: HashMap::new(),
+        // The circuit; again, should a source emit at a wavelength the
+        // passive components weren't solved for.
+        let (mut optics, circuit, built) = loop {
+            let mut optics = Optics {
+                docs,
+                signals: &electronics.signals,
+                light: &electronics.light,
+                max_len: options.max_len,
+                stack: root.into_iter().collect(),
+                sensors: Vec::new(),
+                next_source: FIRST_INDEPENDENT_SOURCE,
+                colors: HashMap::new(),
+                reduce: reducer.as_mut(),
+            };
+            let mut circuit = Circuit::new();
+            let built = optics.build(&mut circuit, layout, &[], cell_um)?;
+            let emitted: Vec<f64> = wavelengths.iter().copied().chain(circuit.emission_wavelengths()).collect();
+            if optics.reduce.as_deref_mut().is_none_or(|r| r.covers(&emitted)) {
+                break (optics, circuit, built);
+            }
         };
-        let mut circuit = Circuit::new();
-        let built = optics.build(&mut circuit, layout, &[], cell_um)?;
+        let assembled = started.elapsed();
         let solutions = circuit.simulate_sources().map_err(|e| e.to_string())?;
+        tracing::debug!(
+            "round {iteration}: electronics {:.0} ms, circuit {:.0} ms, light {:.0} ms",
+            evaluated.as_secs_f64() * 1e3,
+            (assembled - evaluated).as_secs_f64() * 1e3,
+            (started.elapsed() - assembled).as_secs_f64() * 1e3
+        );
         let total = |f: &dyn Fn(&crate::photonics::Solution) -> f64| solutions.iter().map(f).fold(0.0, |a, b| a + b);
         let new_powers: HashMap<Key, f64> = optics
             .sensors

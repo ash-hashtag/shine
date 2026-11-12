@@ -71,6 +71,25 @@ fn the_reference_design_is_an_optical_fourier_transform() {
 }
 
 #[test]
+fn solving_the_mesh_into_its_matrix_changes_nothing() {
+    // The mesh and its MZI cells are passive, so they're simulated as their
+    // matrices; with every part kept instead, the light is the same.
+    let p = reference::reference_project();
+    let id = top(&p);
+    let doc = p.doc(id).unwrap();
+    let run = |reduce| sim::simulate(doc.layout(), doc.panel().cell_um, &p, &Machine::default(), Some(id), &Options { reduce, ..Options::default() });
+    let (reduced, whole) = (run(true), run(false));
+    assert!(reduced.error.is_none() && whole.error.is_none());
+    assert_eq!(reduced.port_power.len(), whole.port_power.len());
+    for (port, w) in &whole.port_power {
+        assert!((reduced.port_power[port] - w).abs() < 1e-12, "{port:?}: {} mW, every part kept {w} mW", reduced.port_power[port]);
+    }
+    for (a, b) in reduced.wire_fields.iter().flatten().zip(whole.wire_fields.iter().flatten()) {
+        assert!((a - b).norm() < 1e-9);
+    }
+}
+
+#[test]
 fn setting_the_inputs_and_the_laser_changes_the_readings() {
     let mut p = reference::reference_project();
     let id = top(&p);
