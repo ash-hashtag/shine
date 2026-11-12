@@ -29,12 +29,16 @@ use shine::panels::optics::digits::{self, Weights};
 use shine::panels::optics::model::{BlockRef, Builtin};
 use shine::panels::project::{DocId, Project};
 
-/// Peak memory of this process so far, in MB (Linux).
-fn peak_mb() -> f64 {
+/// Memory of this process, in MB (Linux): `VmHWM` the peak so far, `VmRSS` now.
+fn memory_mb(which: &str) -> f64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
-        .and_then(|s| s.lines().find(|l| l.starts_with("VmHWM:")).and_then(|l| l.split_whitespace().nth(1)?.parse::<f64>().ok()))
+        .and_then(|s| s.lines().find(|l| l.starts_with(which)).and_then(|l| l.split_whitespace().nth(1)?.parse::<f64>().ok()))
         .map_or(f64::NAN, |kb| kb / 1024.0)
+}
+
+fn peak_mb() -> f64 {
+    memory_mb("VmHWM:")
 }
 
 fn step<T>(what: &str, f: impl FnOnce() -> T) -> T {
@@ -208,6 +212,7 @@ fn main() {
 fn editor(bytes: &[u8]) {
     use egui::{Pos2, Rect, Vec2};
     let mut ws = shine::panels::workspace::Workspace::default();
+    let before = memory_mb("VmRSS:");
     step("Open in the editor", || ws.open_bytes("mnist.shine", bytes).unwrap());
     let ctx = egui::Context::default();
     let mut t = 0.0;
@@ -220,12 +225,20 @@ fn editor(bytes: &[u8]) {
     };
     let first = frame(&mut ws, Vec::new());
     let idle: Vec<f64> = profiled("Editor frames on the chip", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
-    tracing::info!("Editor on the chip: first frame {first:.0} ms, then {:.1} ms a frame", idle.iter().sum::<f64>() / 10.0);
+    tracing::info!(
+        "Editor on the chip: first frame {first:.0} ms, then {:.1} ms a frame; the editor holds {:.0} MB",
+        idle.iter().sum::<f64>() / 10.0,
+        memory_mb("VmRSS:") - before
+    );
     let biggest = ws.project.documents.iter().max_by_key(|d| d.layout().instances.len()).unwrap().id;
     ws.open_tab(biggest);
     let first = profiled("Editor first frame in the mesh", || frame(&mut ws, Vec::new()));
     let idle: Vec<f64> = profiled("Editor frames in the mesh", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
-    tracing::info!("Editor inside the biggest mesh: first frame {first:.0} ms, then {:.1} ms a frame, peak memory {:.0} MB", idle.iter().sum::<f64>() / 10.0, peak_mb());
+    tracing::info!(
+        "Editor inside the biggest mesh: first frame {first:.0} ms, then {:.1} ms a frame; the editor holds {:.0} MB",
+        idle.iter().sum::<f64>() / 10.0,
+        memory_mb("VmRSS:") - before
+    );
 }
 
 #[cfg(not(feature = "gui"))]
