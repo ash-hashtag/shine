@@ -60,7 +60,7 @@ fn the_linear_modulator_passes_its_value_as_the_field() {
 #[test]
 fn a_layer_is_its_weight_matrix_over_its_largest_singular_value() {
     let w = Matrix::from_fn(3, 4, |i, j| C64::new(((i * 4 + j) as f64).sin(), 0.0));
-    let s = digits::svd(&w).unwrap();
+    let s = shine::panels::optics::layers::svd(&w).unwrap();
     assert_eq!(s.v_adjoint.size, 4);
     assert_eq!(s.u.size, 3, "an output mesh only as big as the outputs");
     let sigma = Matrix::from_fn(3, 4, |i, j| C64::new(if i == j { s.attenuation[i] } else { 0.0 }, 0.0));

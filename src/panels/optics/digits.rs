@@ -32,9 +32,10 @@ use std::f64::consts::PI;
 use serde::Deserialize;
 
 use super::model::{BlockRef, Builtin, InstanceId, Item, Layout, OpticComponentKind, PlacedComponent, Terminal, cell_center};
-use super::reference::{ARM_UM, LOSS_DB_PER_CM, WAVELENGTH_NM, add, arm, link, mesh_named};
+use super::layers;
+use super::reference::{ARM_UM, LOSS_DB_PER_CM, WAVELENGTH_NM, add, arm, link};
 use crate::panels::project::{DocId, Project};
-use crate::photonics::{C64, Matrix, UnitaryMesh};
+use crate::photonics::{C64, Matrix};
 
 pub const INPUTS: usize = 16;
 pub const HIDDEN: usize = 16;
@@ -85,37 +86,6 @@ pub fn scores(w: &Weights, pixels: &[f64]) -> Vec<f64> {
 
 pub fn argmax(v: &[f64]) -> usize {
     v.iter().enumerate().fold((0, f64::NEG_INFINITY), |b, (i, &x)| if x > b.1 { (i, x) } else { b }).0
-}
-
-/// One layer `m` (rows × cols) as meshes: V† (cols × cols), the per-mode
-/// amplitudes (σ/σmax, one per row), and U (rows × rows), each mesh in the
-/// rectangular arrangement; and σmax.
-pub struct Svd {
-    pub v_adjoint: UnitaryMesh,
-    pub attenuation: Vec<f64>,
-    pub u: UnitaryMesh,
-    pub scale: f64,
-}
-
-pub fn svd(m: &Matrix) -> Result<Svd, String> {
-    let (rows, cols) = (m.nrows(), m.ncols());
-    if rows > cols {
-        return Err("a layer can't have more outputs than inputs".into());
-    }
-    // Pad to square: the extra rows are zero, so their singular values are
-    // zero and U is block diagonal; its rows × rows block is the mesh.
-    let padded = Matrix::from_fn(cols, cols, |i, j| if i < rows { m[(i, j)] } else { C64::ZERO });
-    let s = padded.svd().map_err(|_| "the SVD didn't converge".to_owned())?;
-    let sigma: Vec<f64> = (0..rows).map(|i| s.S().column_vector()[i].re).collect();
-    let scale = sigma.iter().copied().fold(0.0, f64::max);
-    let u = Matrix::from_fn(rows, rows, |i, j| s.U()[(i, j)]);
-    let v_adjoint = s.V().adjoint().to_owned();
-    Ok(Svd {
-        v_adjoint: UnitaryMesh::decompose_rectangular(&v_adjoint).map_err(|e| e.to_string())?,
-        attenuation: sigma.iter().map(|s| s / scale).collect(),
-        u: UnitaryMesh::decompose_rectangular(&u).map_err(|e| e.to_string())?,
-        scale,
-    })
 }
 
 pub const MODULATOR: &str = "Linear modulator";
@@ -175,47 +145,8 @@ pub fn linear_modulator(project: &mut Project) -> DocId {
     )
 }
 
-/// A layer `m` as a component: V† mesh, an attenuator per output, U mesh;
-/// inputs past the outputs end in absorbers.
-fn layer(project: &mut Project, name: &str, m: &Matrix) -> Result<(DocId, f64, usize), String> {
-    let s = svd(m)?;
-    let (rows, cols) = (m.nrows(), m.ncols());
-    let v = mesh_named(project, &s.v_adjoint, &format!("{name}: V† ({cols}×{cols} mesh)"), "V†");
-    let u = mesh_named(project, &s.u, &format!("{name}: U ({rows}×{rows} mesh)"), "U");
-    let mut l = Layout::default();
-    let v_box = l.add_instance(BlockRef::Component(v), (3, 0));
-    let u_box = l.add_instance(BlockRef::Component(u), (12, 0));
-    for k in 0..cols {
-        let pin = add(&mut l, Builtin::InputPin { name: format!("in{}", k + 1) }, (0, k as i32));
-        link(&mut l, (pin, 0), (v_box, k));
-        if k < rows {
-            let loss_db = -20.0 * s.attenuation[k].max(1e-12).log10();
-            let a = add(&mut l, Builtin::Attenuator { loss_db }, (8, k as i32));
-            link(&mut l, (v_box, k), (a, 0));
-            link(&mut l, (a, 0), (u_box, k));
-            let out = add(&mut l, Builtin::OutputPin { name: format!("out{}", k + 1) }, (17, k as i32));
-            link(&mut l, (u_box, k), (out, 0));
-        } else {
-            // A mode the layer doesn't use: absorbed.
-            let dump = add(&mut l, Builtin::Detector, (8, k as i32));
-            link(&mut l, (v_box, k), (dump, 0));
-        }
-    }
-    let id = project.add_component(
-        name,
-        "W",
-        &format!(
-            "A {rows}×{cols} weight matrix in light: a {cols}×{cols} MZI mesh (V†), an attenuator per output (the singular values, the largest passing everything) and a {rows}×{rows} mesh (U). It computes W x / {:.4}, W's largest singular value.",
-            s.scale
-        ),
-        l,
-        10.0,
-    );
-    Ok((id, s.scale, s.v_adjoint.depth() + s.u.depth()))
-}
-
 /// Field amplitude through one arm (or one mesh column).
-fn arm_amplitude() -> f64 {
+pub fn arm_amplitude() -> f64 {
     10f64.powf(-LOSS_DB_PER_CM * ARM_UM * 1e-4 / 20.0)
 }
 
@@ -272,8 +203,10 @@ fn tree_for(n: usize) -> (u32, f64) {
 pub fn chip_named(project: &mut Project, name: &str, w: &Weights, pixels: &[f64]) -> Result<Chip, String> {
     let (inputs, hidden, classes) = w.sizes();
     let modulator = linear_modulator(project);
-    let (layer1, scale1, columns1) = layer(project, &format!("Layer 1 ({inputs}→{hidden})"), &matrix(&w.w1))?;
-    let (layer2, scale2, columns2) = layer(project, &format!("Layer 2 ({hidden}→{classes})"), &matrix(&w.w2))?;
+    let first = layers::weight_layer(project, &format!("Layer 1 ({inputs}→{hidden})"), &matrix(&w.w1))?;
+    let second = layers::weight_layer(project, &format!("Layer 2 ({hidden}→{classes})"), &matrix(&w.w2))?;
+    let (layer1, scale1, columns1) = (first.id, first.scale, first.columns);
+    let (layer2, scale2, columns2) = (second.id, second.scale, second.columns);
     let (levels1, split1) = tree_for(inputs);
     let (levels2, split2) = tree_for(hidden);
     // Field reaching each modulator: the laser's 1 mW halved, then split by each tree.

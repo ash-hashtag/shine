@@ -22,6 +22,7 @@ pub mod examples;
 pub mod input;
 #[cfg(feature = "gui")]
 pub mod library;
+pub mod layers;
 pub mod model;
 pub mod reference;
 #[cfg(feature = "gui")]
