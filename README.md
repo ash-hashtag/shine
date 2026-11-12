@@ -41,6 +41,6 @@ under the same licence. See [LICENSE](LICENSE). Versions up to 0.1.1 were releas
 the MIT licence.
 
 The handwritten digits in `reference/digits` are from the UCI Machine Learning Repository
-(Alpaydin & Kaynak, 1998), under CC BY 4.0. The MNIST chip,
-`reference/mnist/mnist-neural-chip.shine`, was trained on the MNIST database (LeCun,
-Cortes & Burges) and is shared under CC BY-SA 3.0.
+(Alpaydin & Kaynak, 1998), under CC BY 4.0. The chip
+`reference/mnist/fashion-mnist-chip.shine` was trained on Fashion-MNIST (Xiao, Rasul &
+Vollgraf, Zalando Research, 2017), under the MIT licence.

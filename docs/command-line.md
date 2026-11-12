@@ -40,8 +40,8 @@ echo "7 8" | shine simulate adder.shine --input -
 Several samples' numbers one after another simulate each in turn, printing a CSV row per
 sample: its number, then every reading. A number input takes its number rounded into the
 range of its bits. `--only TEXT` keeps just the readings whose names contain TEXT, again
-for more. [Reading your own digits](neural-network.md#mnist-at-full-size) with the MNIST
-chip works this way, through `examples/mnist.py`.
+for more. [Classifying your own pictures](neural-network.md#at-full-size) with the
+Fashion-MNIST chip works this way, through `examples/mnist.py`.
 
 ## Sweeps
 

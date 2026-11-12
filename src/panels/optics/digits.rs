@@ -48,6 +48,12 @@ pub struct Weights {
     /// H: the hidden powers are divided by it (and clamped to 1).
     pub hidden_scale: f64,
     pub test_accuracy: f64,
+    /// What it was trained on, e.g. "Fashion-MNIST" (empty if not said).
+    #[serde(default)]
+    pub dataset: String,
+    /// The classes' names, in order (empty if not said).
+    #[serde(default)]
+    pub classes: Vec<String>,
 }
 
 /// Test digits: 4×4 thumbnails (row by row) and what each is.

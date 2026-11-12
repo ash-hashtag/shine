@@ -1,28 +1,31 @@
-# MNIST digit recognizer: an optical neural network of 3.1 million parts
+# A 28×28 optical neural network of 3.1 million parts
 
 The full-size version of Shine's optical neural network
-([docs/neural-network.md](../../docs/neural-network.md#mnist-at-full-size)): 28×28 pixels
-into a 784-mode MZI mesh, then 64 optoelectronic neurons and a second layer to ten digits.
+([docs/neural-network.md](../../docs/neural-network.md#at-full-size)): 28×28 pixels into a
+784-mode MZI mesh, then 64 optoelectronic neurons and a second layer to ten classes.
 
 | File | What it is |
 |---|---|
-| `mnist-neural-chip.shine` | The chip, ready to simulate: `shine simulate mnist-neural-chip.shine --input -` with 784 pixel values, or `python examples/mnist.py --image digit.png` |
-| `train.py` | Trains the network on what the chip computes (JAX), downloading MNIST into a cache folder |
+| `fashion-mnist-chip.shine` | The chip trained on Fashion-MNIST, ready to simulate: `shine simulate fashion-mnist-chip.shine --input -` with 784 pixel values, or `python examples/mnist.py --image shoe.png` |
+| `train.py` | Trains the network on what the chip computes (JAX), on Fashion-MNIST or MNIST, downloading the data into a cache folder |
 
-The chip reads 97.40% of MNIST's 10 000 test digits, as the trained network does.
+The chip reads 87.96% of Fashion-MNIST's 10 000 test pictures, as the trained network
+does. Its classes, in the order of its display: 0 T-shirt/top, 1 trouser, 2 pullover,
+3 dress, 4 coat, 5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot.
 
-To make it again (the training data isn't kept here):
+To make it again (the data isn't kept here):
 
 ```sh
 pip install numpy jax
-python reference/mnist/train.py CACHE
-cargo run --release --example mnist -- CACHE --write-chip reference/mnist/mnist-neural-chip.shine
+python reference/mnist/train.py CACHE --dataset fashion
+cargo run --release --example mnist -- CACHE --write-chip reference/mnist/fashion-mnist-chip.shine
 ```
+
+`--dataset mnist` trains it on MNIST's handwritten digits instead (97.40%).
 
 ## Licence
 
-The chip's weights were trained on the MNIST database of handwritten digits (Y. LeCun,
-C. Cortes and C. J. C. Burges), which is under the Creative Commons Attribution-ShareAlike
-3.0 licence (CC BY-SA 3.0). So `mnist-neural-chip.shine` is shared under CC BY-SA 3.0 too,
-https://creativecommons.org/licenses/by-sa/3.0/, rather than Shine's GPL; `train.py` is
-part of Shine, under the GPL. MNIST itself isn't in the repository.
+Fashion-MNIST is by Han Xiao, Kashif Rasul and Roland Vollgraf (Zalando Research, 2017,
+https://github.com/zalandoresearch/fashion-mnist), under the MIT licence; the chip's
+weights were trained on it. MNIST (Y. LeCun, C. Cortes and C. J. C. Burges) is under
+CC BY-SA 3.0, so neither its digits nor a chip trained on them are kept here.

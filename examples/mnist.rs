@@ -1,11 +1,12 @@
-//! MNIST at full size, as an optical chip: 28×28 pixels into a 784-mode
-//! MZI mesh. Shine's stress test: how long each step takes and how much
-//! memory it needs, at a size no example has been before.
+//! A 28×28-pixel classifier as an optical chip, trained on Fashion-MNIST
+//! (the default) or MNIST: 784 pixels into a 784-mode MZI mesh. Shine's
+//! stress test: how long each step takes and how much memory it needs, at a
+//! size no example has been before.
 //!
-//! First train the network (MNIST is downloaded into CACHE, not kept here):
+//! First train the network (the data is downloaded into CACHE, not kept here):
 //!
 //!     pip install numpy jax
-//!     python reference/mnist/train.py CACHE
+//!     python reference/mnist/train.py CACHE [--dataset fashion|mnist]
 //!
 //! then
 //!
@@ -106,6 +107,14 @@ fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
     out
 }
 
+/// The chip's name, from what the network was trained on.
+fn chip_name(w: &Weights) -> String {
+    match w.dataset.as_str() {
+        "" | "MNIST" => "MNIST digit recognizer".into(),
+        d => format!("{d} classifier"),
+    }
+}
+
 fn parts(p: &Project, id: DocId) -> usize {
     p.doc(id).unwrap().layout().instances.iter().map(|i| match i.block {
         BlockRef::Component(d) => parts(p, d),
@@ -129,7 +138,7 @@ fn main() {
     if let Some(file) = value("--write-chip") {
         let mut p = Project::new();
         let blank = vec![0.0; w.sizes().0];
-        step("Build the chip", || digits::chip_named(&mut p, "MNIST digit recognizer", &w, &blank).expect("the chip"));
+        step("Build the chip", || digits::chip_named(&mut p, &chip_name(&w), &w, &blank).expect("the chip"));
         std::fs::write(&file, p.to_bytes()).unwrap_or_else(|e| panic!("can't write {file}: {e}"));
         tracing::info!("Wrote {file}: shine simulate {file} --input DIGIT.txt, or python examples/mnist.py --image DIGIT.png");
         return;
@@ -138,11 +147,11 @@ fn main() {
     let labels = std::fs::read(format!("{cache}/test-labels.u8")).expect("test labels");
     let (inputs, hidden, classes) = w.sizes();
     let test: Vec<Vec<f64>> = raw.chunks_exact(4 * inputs).map(|c| c.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap()) as f64).collect()).collect();
-    tracing::info!("Network {inputs} → {hidden} → {classes}, trained to {:.2}% on {} test digits", 100.0 * w.test_accuracy, test.len());
+    tracing::info!("Network {inputs} → {hidden} → {classes}, trained to {:.2}% on {} test images", 100.0 * w.test_accuracy, test.len());
 
     let mut p = Project::new();
     let chip = step("Build the chip (decompose the meshes, place every part)", || {
-        digits::chip_named(&mut p, "MNIST digit recognizer", &w, &test[0]).expect("the chip")
+        digits::chip_named(&mut p, &chip_name(&w), &w, &test[0]).expect("the chip")
     });
     let mzis = |d: &str| p.find(d).map_or(0, |id| p.doc(id).unwrap().layout().instances.len());
     tracing::info!(
@@ -170,7 +179,7 @@ fn main() {
             }
         }
         let doc = p.doc(chip.top).unwrap();
-        let o = step(&format!("Simulate the whole chip, digit {}", k + 1), || {
+        let o = step(&format!("Simulate the whole chip, image {}", k + 1), || {
             sim::simulate(doc.layout(), 10.0, &p, &Machine::default(), Some(chip.top), &Options::default())
         });
         if let Some(e) = &o.error {
@@ -183,10 +192,10 @@ fn main() {
         let err = got.iter().zip(&want).map(|(a, b)| (a - b).abs() / top).fold(0.0, f64::max);
         let read = digits::argmax(&got);
         agree += usize::from(read == digits::argmax(&want));
-        tracing::info!("  it's a {}; the chip reads {read} ({} rounds, scores within {err:.1e})", labels[k], o.iterations);
+        tracing::info!("  it's class {}; the chip reads {read} ({} rounds, scores within {err:.1e})", labels[k], o.iterations);
     }
     if images > 0 {
-        tracing::info!("  the chip and the network agree on {agree}/{} digits", images.min(test.len()));
+        tracing::info!("  the chip and the network agree on {agree}/{} images", images.min(test.len()));
     }
 
     // Both layers' matrices once, then every test digit through them.
@@ -199,7 +208,7 @@ fn main() {
     };
     let m1 = layer_matrix(&format!("Layer 1 ({inputs}→{hidden})"));
     let m2 = layer_matrix(&format!("Layer 2 ({hidden}→{classes})"));
-    let (correct, same) = step("All test digits through the layers' matrices", || {
+    let (correct, same) = step("All test images through the layers' matrices", || {
         let mut correct = 0;
         let mut same = 0;
         for (pixels, &label) in test.iter().zip(&labels) {
@@ -217,7 +226,7 @@ fn main() {
         (correct, same)
     });
     tracing::info!(
-        "  {correct}/{} right ({:.2}%; the trained network {:.2}%); the same digit as the network on {same}",
+        "  {correct}/{} right ({:.2}%; the trained network {:.2}%); the same answer as the network on {same}",
         test.len(),
         100.0 * correct as f64 / test.len() as f64,
         100.0 * w.test_accuracy

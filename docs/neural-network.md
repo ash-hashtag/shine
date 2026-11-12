@@ -96,69 +96,76 @@ pip install sax photonforge
 python reference/digits/compare.py out reference/digits/test-digits.json --photonforge
 ```
 
-## MNIST at full size
+## At full size
 
-The same chip scales to MNIST's 28×28 digits: 784 pixels, 784 modulators, and a layer 1
-whose V† mesh has 784 modes, 306 936 MZIs. Opened up, the chip has **3 124 074 parts**.
-It's Shine's stress test, and the reason Shine handles designs of millions of parts.
+The same chip scales to 28×28 pictures: 784 pixels, 784 modulators, and a layer 1 whose
+V† mesh has 784 modes, 306 936 MZIs. Opened up, the chip has **3 124 074 parts**. It's
+Shine's stress test, and the reason Shine handles designs of millions of parts.
+
+The one in the repository, `reference/mnist/fashion-mnist-chip.shine`, is trained on
+**Fashion-MNIST**: 70 000 pictures of ten kinds of clothing (T-shirt/top, trouser,
+pullover, dress, coat, sandal, shirt, sneaker, bag, ankle boot), in MNIST's format. Its
+network (784 → 64 → 10, trained for the chip's electronics as above) reads **87.96%** of
+the 10 000 test pictures. The same tools train it on MNIST's handwritten digits instead
+(97.40%).
 
 ```sh
 pip install numpy jax
-python reference/mnist/train.py CACHE        # downloads MNIST into CACHE, trains, writes the weights there
-cargo run --release --example mnist -- CACHE [--images N] [--save mnist.shine] [--editor]
+python reference/mnist/train.py CACHE [--dataset fashion|mnist]   # downloads the data into CACHE, trains, writes the weights there
+cargo run --release --example mnist -- CACHE [--images N] [--save chip.shine] [--editor]
+cargo run --release --example mnist -- CACHE --write-chip reference/mnist/fashion-mnist-chip.shine
 ```
 
-### Reading your own digits
+Simulated whole (light, detectors and electronics), the chip reads each picture as the
+network does, its scores within 10⁻¹⁰ of the network's; through its layers' matrices,
+all 10 000 test pictures come out as the network's.
 
-The chip is in the repository, `reference/mnist/mnist-neural-chip.shine`. Give
-`examples/mnist.py` pictures of digits (PNG, JPEG and the like, dark ink on light paper or
-the other way round, any size; it needs Pillow):
+### Classifying your own pictures
+
+Give `examples/mnist.py` pictures (PNG, JPEG and the like, any size, a dark thing on a
+light background or the other way round; it needs Pillow):
 
 ```sh
 pip install pillow
-python examples/mnist.py --image my-digit.png [more.png ...]
+python examples/mnist.py --image shoe.png [more.png ...]
 ```
 
-The script prepares each picture as MNIST's digits were (the ink cropped, fitted in 20×20
-pixels, its centre of mass in the middle of 28×28) and runs the `shine` program on the
-chip with the 784 pixel values on its standard input (`shine simulate … --input -`, see
+The script prepares each picture as the dataset's were (Fashion-MNIST's items cropped,
+fitted to 28×28 and centred; with `--dataset mnist`, MNIST's digits fitted in 20×20 and
+centred by their centre of mass) and runs the `shine` program on the chip with the 784
+pixel values on its standard input (`shine simulate … --input -`, see
 [Command line](command-line.md#inputs)); it finds `shine` on the PATH, or in `SHINE` or
-`--shine`. It shows the 28×28 the chip sees, the light at each digit's detector and the
-digit the chip's display shows. Several pictures go through one run, the meshes solved
+`--shine`. It shows the 28×28 the chip sees, the light at each class's detector and the
+class the chip's display shows. Several pictures go through one run, the meshes solved
 once: about 3.5 s for the first and a tenth of a second for each after. To run `shine`
 yourself, `--print-inputs` prints just the numbers:
 
 ```sh
-python examples/mnist.py --image my-digit.png --print-inputs | shine simulate reference/mnist/mnist-neural-chip.shine --input -
+python examples/mnist.py --image shoe.png --print-inputs | shine simulate reference/mnist/fashion-mnist-chip.shine --input -
 ```
 
-The chip opens in the app as any project does (`shine reference/mnist/mnist-neural-chip.shine`).
-To build it again from newly trained weights, `cargo run --release --example mnist --
-CACHE --write-chip reference/mnist/mnist-neural-chip.shine`.
+The chip opens in the app as any project does (`shine reference/mnist/fashion-mnist-chip.shine`).
 
-The network (784 → 64 → 10, trained for the chip's electronics as above) reads **97.40%**
-of MNIST's 10 000 test digits. Simulated whole (light, detectors and electronics), the chip
-reads each digit as the network does, its scores within 3·10⁻¹⁰ of the network's; through
-its layers' matrices, all 10 000 test digits come out as the network's, 97.40%.
+### How fast
 
 On a 12-thread desktop:
 
 | | |
 |---|---|
 | Building the chip (decomposing the meshes, placing every part) | 1.7 s |
-| Saving it / opening it | 0.04 s / 0.06 s (15.6 MB) |
-| Simulating the whole chip, the first digit | 3.4 s |
-| … each digit after | 0.08 s |
-| Layer 1's 64 × 784 matrix | 0.56 s |
-| The editor, on the chip / inside the 784-mode mesh | 2.6 ms / 22 ms a frame |
-| Memory at the most | 0.93 GB |
+| Saving it / opening it | 0.04 s / 0.04 s (15.6 MB) |
+| Simulating the whole chip, the first picture | 3.4 s |
+| … each picture after | 0.07 s |
+| Layer 1's 64 × 784 matrix | 0.5 s |
+| The editor, on the chip / inside the 784-mode mesh | 2.3 ms / 20 ms a frame |
+| Memory at the most | 0.82 GB |
 
 What makes that possible, rather than minutes and tens of gigabytes:
 
 - **Passive components are solved once.** A component of only passive parts is, to the
   light, its matrix. Shine solves it into that matrix, all the way down: each MZI cell
   becomes a 2×2 matrix, on all threads at once, then the mesh of them one 784×784 matrix.
-  The matrices are kept between simulations until the component changes, so a new digit
+  The matrices are kept between simulations until the component changes, so a new picture
   costs only what's around the meshes.
 - **Solving keeps only the fields still needed.** A mesh's fields are each read once, by
   the next MZI, so solving its matrix holds a few kilobytes per input instead of tens of
@@ -166,10 +173,10 @@ What makes that possible, rather than minutes and tens of gigabytes:
 - **The editor costs what's on screen.** Drawing and pointing go through a spatial index,
   and nothing per frame reads the whole project.
 
-MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0, so the digits aren't kept in the
-repository (the training script downloads them into the folder you give it), and the
-chip, whose weights were trained on them, is shared under CC BY-SA 3.0 as well
-([reference/mnist](https://github.com/ash-hashtag/shine/tree/main/reference/mnist)). What's still to do for designs this size (projects as indexed
+Fashion-MNIST (Han Xiao, Kashif Rasul and Roland Vollgraf, Zalando Research, 2017) is
+under the MIT licence; the chip made from it ships with Shine. MNIST (LeCun, Cortes and
+Burges) is under CC BY-SA 3.0, so neither its digits nor a chip trained on them are kept
+in the repository. What's still to do for designs this size (projects as indexed
 databases, loading only what's used, smaller designs in memory) is on the
 [Roadmap](roadmap.md#milestone-design-at-scale).
 
@@ -181,8 +188,8 @@ databases, loading only what's used, smaller designs in memory) is on the
 - **The components are ideal**: lossless 50:50 couplers, perfect heaters, a fixed
   waveguide loss, no noise, no fabrication error. On a real chip, meshes need calibrating,
   detectors add noise and the electronics have limited precision.
-- **It is small.** 16 inputs means each digit is a 4×4 thumbnail (the [MNIST
-  version](#mnist-at-full-size) takes 28×28); real accelerators use larger meshes and
+- **It is small.** 16 inputs means each digit is a 4×4 thumbnail (the [full-size
+  version](#at-full-size) takes 28×28); real accelerators use larger meshes and
   many layers, and keep the weights in the mesh while streaming inputs
   at gigahertz rates through the modulators.
 - **The data**: the network is trained and tested on the UCI handwritten digits (Alpaydin

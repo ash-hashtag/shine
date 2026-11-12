@@ -1,6 +1,7 @@
-"""Train an optical neural network for MNIST, at full size: 28×28 pixels.
+"""Train an optical neural network on 28×28 pictures: Fashion-MNIST (the
+default) or MNIST.
 
-Shine's MNIST chip (`cargo run --release --example mnist`) computes, with
+Shine's chip for it (`cargo run --release --example mnist`) computes, with
 light, detectors and electronics:
 
     x     = the 28×28 image, 784 values in [0, 1] (light amplitudes)
@@ -11,12 +12,14 @@ light, detectors and electronics:
 This trains W1 (HIDDEN × 784) and W2 (10 × HIDDEN) on exactly that, so the
 weights suit the hardware.
 
-MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0, so it isn't kept in
-the repository: this downloads it into the cache folder given, and writes the
-weights and the test set there too.
+The data isn't kept in the repository: this downloads it into the cache
+folder given, and writes the weights and the test set there too.
+Fashion-MNIST (Han Xiao, Kashif Rasul and Roland Vollgraf, Zalando Research,
+2017) is under the MIT licence, so the chip trained on it ships with Shine;
+MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0.
 
     pip install numpy jax
-    python reference/mnist/train.py CACHE_DIR [--hidden 64] [--epochs 12]
+    python reference/mnist/train.py CACHE_DIR [--dataset fashion|mnist] [--hidden 64] [--epochs 12]
 
 Writes CACHE_DIR/weights.json, CACHE_DIR/test-images.f32 (10000 × 784,
 little-endian float32, row by row) and CACHE_DIR/test-labels.u8.
@@ -26,14 +29,18 @@ import argparse, gzip, json, os, time, urllib.request
 import numpy as np
 import jax, jax.numpy as jnp
 
-MIRROR = "https://ossci-datasets.s3.amazonaws.com/mnist/"
+DATASETS = {
+    "fashion": ("Fashion-MNIST", "http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/",
+                ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]),
+    "mnist": ("MNIST", "https://ossci-datasets.s3.amazonaws.com/mnist/", [str(d) for d in range(10)]),
+}
 FILES = ["train-images-idx3-ubyte", "train-labels-idx1-ubyte", "t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte"]
 
 
-def load(cache, name):
+def load(cache, mirror, name):
     path = os.path.join(cache, name + ".gz")
     if not os.path.exists(path):
-        urllib.request.urlretrieve(MIRROR + name + ".gz", path)
+        urllib.request.urlretrieve(mirror + name + ".gz", path)
     data = gzip.open(path).read()
     if "images" in name:
         n, rows, cols = np.frombuffer(data, ">i4", 3, 4)
@@ -55,12 +62,16 @@ def loss(p, x, y, scale):
 def main():
     a = argparse.ArgumentParser()
     a.add_argument("cache")
+    a.add_argument("--dataset", choices=sorted(DATASETS), default="fashion")
     a.add_argument("--hidden", type=int, default=64)
     a.add_argument("--epochs", type=int, default=12)
     a.add_argument("--batch", type=int, default=256)
     args = a.parse_args()
-    os.makedirs(args.cache, exist_ok=True)
-    xtr, ytr, xte, yte = (load(args.cache, f) for f in FILES)
+    title, mirror, classes = DATASETS[args.dataset]
+    # Each dataset in a folder of its own: their files have the same names.
+    data = os.path.join(args.cache, args.dataset)
+    os.makedirs(data, exist_ok=True)
+    xtr, ytr, xte, yte = (load(data, mirror, f) for f in FILES)
 
     key = jax.random.PRNGKey(0)
     k1, k2 = jax.random.split(key)
@@ -92,7 +103,7 @@ def main():
     scale = float(max(jnp.max((jnp.asarray(xtr[k : k + 10000]) @ p["w1"].T) ** 2) for k in range(0, len(xtr), 10000)))
     accuracy = lambda x, y: float(np.mean(np.argmax(np.asarray(forward(p, jnp.asarray(x), scale)), axis=1) == y))
     train_acc, test_acc = accuracy(xtr, ytr), accuracy(xte, yte)
-    print(f"optical network 784 → {args.hidden} → 10: train {train_acc:.4f}, test {test_acc:.4f}")
+    print(f"optical network 784 → {args.hidden} → 10 on {title}: train {train_acc:.4f}, test {test_acc:.4f}")
     json.dump(
         {
             "w1": np.asarray(p["w1"], dtype=float).tolist(),
@@ -100,6 +111,8 @@ def main():
             "hidden_scale": scale,
             "train_accuracy": train_acc,
             "test_accuracy": test_acc,
+            "dataset": title,
+            "classes": classes,
         },
         open(os.path.join(args.cache, "weights.json"), "w"),
     )

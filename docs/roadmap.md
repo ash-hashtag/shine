@@ -95,10 +95,11 @@ want them.
       third of the instances in a large design)
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than
       a frame stays smooth, with results arriving when they're ready (desktop)
-- [x] **A chip of millions of parts**: MNIST at full size, 28×28 pixels into a 784-mode
+- [x] **A chip of millions of parts**: an optical neural network for 28×28 pictures
+      (Fashion-MNIST, or MNIST), 784 pixels into a 784-mode
       mesh (3.1 million parts), as the stress test (`examples/mnist.rs`): built in 1.7 s,
       simulated whole in 3.4 s and again in 0.08 s, edited at 2–24 ms a frame, in under
-      1 GB ([Optical neural network](neural-network.md#mnist-at-full-size))
+      1 GB ([Optical neural network](neural-network.md#at-full-size))
 - [x] **Passive components solved once**: a component of only passive parts is simulated
       as its matrix, all the way down (an MZI cell, then the mesh of them), solved on all
       threads, kept between simulations until it changes

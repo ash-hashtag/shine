@@ -24,9 +24,13 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   open; a star marks the window title and each tab changed since the last save.
 - Ctrl+= and Ctrl+− zoom the canvas, as + and − do, and Ctrl+0 fits the design to the
   window; they no longer resize the whole interface, whose size is set in Preferences.
-- MNIST at full size: the digit recognizer at 28×28 pixels, a chip of 3.1 million parts
-  (`reference/mnist/train.py`, `examples/mnist.rs`), reading 97.40% of MNIST's test
-  digits as the trained network does ([Optical neural network](neural-network.md#mnist-at-full-size)).
+- The optical neural network at full size: 28×28 pictures, a chip of 3.1 million parts,
+  trained on Fashion-MNIST (MIT licence) and reading 87.96% of its test pictures as the
+  trained network does, in `reference/mnist/fashion-mnist-chip.shine`; or on MNIST
+  (97.40%). `examples/mnist.py --image PICTURE` classifies your own pictures through the
+  `shine` program ([Optical neural network](neural-network.md#at-full-size)).
+- `shine simulate --input FILE|-` sets a design's inputs from a stream of numbers, several
+  samples at a time; `--inputs` lists them and `--only TEXT` picks readings.
 
 ### Changed
 
