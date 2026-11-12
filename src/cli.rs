@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use crate::panels::circuit::readings;
 use crate::panels::circuit::sim::{self, Machine, Options};
 use crate::panels::circuit::sweep::{self, SweepKind, SweepSpec};
-use crate::panels::optics::model::{Item, Layout, OpticComponentKind, cell_of};
+use crate::panels::optics::model::{BlockRef, Builtin, InstanceId, Item, Layout, OpticComponentKind, cell_of};
 use crate::panels::project::{DocId, Project};
 use crate::panels::units;
 
@@ -39,6 +39,15 @@ Options:
   --readouts                      with a sweep: each output's peak, minimum, insertion
                                   loss, extinction and resonances (FSR, width, Q) as CSV,
                                   instead of the curves
+  --input FILE                    set the design's inputs (value and number inputs, in
+                                  the order --inputs lists) from numbers in FILE, or
+                                  from standard input with '-': separated by spaces,
+                                  commas or lines, '#' starting a comment. Several
+                                  samples' numbers one after another simulate each,
+                                  a CSV row per sample
+  --inputs                        list the design's inputs, in order, and stop
+  --only TEXT                     only the readings whose names contain TEXT (again
+                                  for more), e.g. --box-outputs --only 'Layer 2'
   --clock N                       tick the clock N times first (registers)
   --csv                           readings as CSV (sweeps are always CSV)
   --out FILE                      write to FILE instead of standard output
@@ -81,6 +90,9 @@ pub struct Args {
     pub box_outputs: bool,
     pub readouts: bool,
     pub clock: u64,
+    pub input: Option<String>,
+    pub list_inputs: bool,
+    pub only: Vec<String>,
     pub csv: bool,
     pub out: Option<String>,
     pub help: bool,
@@ -156,6 +168,9 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
             "--box-outputs" => a.box_outputs = true,
             "--readouts" => a.readouts = true,
             "--clock" => a.clock = value("--clock")?.parse().map_err(|_| "--clock needs a number of ticks")?,
+            "--input" => a.input = Some(value("--input")?),
+            "--inputs" => a.list_inputs = true,
+            "--only" => a.only.push(value("--only")?),
             "--csv" => a.csv = true,
             "--out" => a.out = Some(value("--out")?),
             // Logging options belong to the binary.
@@ -231,14 +246,110 @@ pub fn find_item(layout: &Layout, project: &Project, spec: &str) -> Result<Item,
     }
 }
 
+/// The design's inputs, in the order `--input` sets them: its value inputs
+/// and number inputs, as the layout holds them.
+pub fn design_inputs(layout: &Layout) -> Vec<InstanceId> {
+    layout
+        .instances
+        .iter()
+        .filter(|i| matches!(i.block, BlockRef::Builtin(Builtin::Value { .. } | Builtin::NumberInput { .. })))
+        .map(|i| i.id)
+        .collect()
+}
+
+/// Numbers separated by spaces, commas, semicolons or lines; `#` to the end
+/// of a line is a comment.
+pub fn read_numbers(text: &str) -> Result<Vec<f64>, String> {
+    text.lines()
+        .map(|l| l.split('#').next().unwrap_or(""))
+        .flat_map(|l| l.split(|c: char| c.is_whitespace() || c == ',' || c == ';'))
+        .filter(|t| !t.is_empty())
+        .enumerate()
+        .map(|(k, t)| t.parse::<f64>().ok().filter(|v| v.is_finite()).ok_or(format!("input {}: “{t}” isn't a number", k + 1)))
+        .collect()
+}
+
+/// Set input `id` to `v`: a value input to `v`, a number input to `v`
+/// rounded into its bits' range.
+fn set_input(layout: &mut Layout, id: InstanceId, v: f64) {
+    if let Some(inst) = layout.instances.iter_mut().find(|i| i.id == id) {
+        match &mut inst.block {
+            BlockRef::Builtin(Builtin::Value { value, .. }) => *value = v,
+            BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
+                let max = if *bits >= 64 { u64::MAX as f64 } else { ((1u64 << *bits) - 1) as f64 };
+                *value = v.round().clamp(0.0, max) as u64;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether a reading is wanted: light leaving boxes only with
+/// `--box-outputs`, and with `--only`, names containing one of its texts.
+fn wanted(args: &Args, r: &readings::Reading) -> bool {
+    (!r.from_box || args.box_outputs) && (args.only.is_empty() || args.only.iter().any(|t| r.name.contains(t.as_str())))
+}
+
+/// `--inputs`: each input with its place in the stream, name and cell.
+fn list_inputs(layout: &Layout) -> String {
+    let inputs = design_inputs(layout);
+    let mut out = format!("{} inputs, in the order --input sets them:\n", inputs.len());
+    for (k, id) in inputs.iter().enumerate() {
+        let inst = layout.instance(*id).expect("listed");
+        let (kind, name, now) = match &inst.block {
+            BlockRef::Builtin(Builtin::Value { name, value }) => ("value", name.as_str(), value.to_string()),
+            BlockRef::Builtin(Builtin::NumberInput { bits, value }) => ("number", "", format!("{value} ({bits} bits)")),
+            _ => continue,
+        };
+        let name = if name.is_empty() { String::new() } else { format!(" “{name}”") };
+        let _ = writeln!(out, "  {:>4}  {kind}{name} at {},{}  now {now}", k + 1, inst.cell.0, inst.cell.1);
+    }
+    out
+}
+
 /// Run `shine simulate` with `args` (after `simulate`); returns the text to print.
 pub fn simulate(args: &Args) -> Result<String, Failure> {
     if args.help {
         return Ok(format!("{USAGE}\n"));
     }
     let bytes = std::fs::read(&args.project).map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
-    let project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
+    let mut project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
     let id = choose_doc(&project, args.doc.as_deref()).map_err(Failure::Usage)?;
+    if args.list_inputs {
+        return Ok(list_inputs(project.doc(id).expect("chosen").layout()));
+    }
+    // The inputs' values, a sample after another.
+    if let Some(source) = &args.input {
+        let text = if source == "-" {
+            std::io::read_to_string(std::io::stdin()).map_err(|e| Failure::Usage(format!("can't read standard input: {e}")))?
+        } else {
+            std::fs::read_to_string(source).map_err(|e| Failure::Usage(format!("can't read {source}: {e}")))?
+        };
+        let numbers = read_numbers(&text).map_err(Failure::Usage)?;
+        let n = design_inputs(project.doc(id).expect("chosen").layout()).len();
+        if n == 0 {
+            return Err(Failure::Usage("this design has no value or number inputs to set".into()));
+        }
+        if numbers.is_empty() || numbers.len() % n != 0 {
+            return Err(Failure::Usage(format!(
+                "the design has {n} inputs, so --input needs {n} numbers per sample; it got {}",
+                numbers.len()
+            )));
+        }
+        let samples: Vec<Vec<f64>> = numbers.chunks(n).map(<[f64]>::to_vec).collect();
+        if samples.len() > 1 && (args.monte_carlo.is_some() || args.wavelength.is_some() || args.sweep.is_some() || args.clock > 0) {
+            return Err(Failure::Usage("several samples simulate one after another: leave out sweeps, --monte-carlo and --clock".into()));
+        }
+        if samples.len() > 1 {
+            return simulate_samples(&mut project, id, args, &samples);
+        }
+        let inputs = design_inputs(project.doc(id).expect("chosen").layout());
+        let layout = project.doc_mut(id).expect("chosen").layout_mut();
+        for (&input, &v) in inputs.iter().zip(&samples[0]) {
+            set_input(layout, input, v);
+        }
+    }
+    let project = project;
     let doc = project.doc(id).expect("chosen");
     let layout = doc.layout();
     let cell_um = doc.panel().cell_um;
@@ -336,7 +447,7 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
         return Err(Failure::Simulation(e.clone()));
     }
     let rows: Vec<readings::Reading> =
-        readings::readings(layout, &o, &names).into_iter().filter(|r| !r.from_box || args.box_outputs).collect();
+        readings::readings(layout, &o, &names).into_iter().filter(|r| wanted(args, r)).collect();
     let mut out = String::new();
     if args.csv {
         out = readings::to_csv(&rows);
@@ -349,6 +460,43 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
         if rows.is_empty() {
             out += "  (no detectors, output ports, displays or registers)\n";
         }
+    }
+    Ok(out)
+}
+
+/// Several samples of the inputs, one simulation each: a CSV row per sample,
+/// the sample's number then every reading.
+fn simulate_samples(project: &mut Project, id: DocId, args: &Args, samples: &[Vec<f64>]) -> Result<String, Failure> {
+    let inputs = design_inputs(project.doc(id).expect("chosen").layout());
+    let mut out = String::new();
+    for (k, sample) in samples.iter().enumerate() {
+        let layout = project.doc_mut(id).expect("chosen").layout_mut();
+        for (&input, &v) in inputs.iter().zip(sample) {
+            set_input(layout, input, v);
+        }
+        let doc = project.doc(id).expect("chosen");
+        let (layout, cell_um) = (doc.layout(), doc.panel().cell_um);
+        let o = sim::simulate(layout, cell_um, &*project, &Machine::default(), Some(id), &Options::default());
+        if let Some(e) = &o.error {
+            return Err(Failure::Simulation(format!("sample {}: {e}", k + 1)));
+        }
+        let catalog = project.catalog();
+        let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
+        let rows: Vec<readings::Reading> =
+            readings::readings(layout, &o, &names).into_iter().filter(|r| wanted(args, r)).collect();
+        if k == 0 {
+            let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+            let header: Vec<String> = std::iter::once("sample".to_owned())
+                .chain(rows.iter().map(|r| quote(&if r.unit.is_empty() { r.name.clone() } else { format!("{} ({})", r.name, r.unit) })))
+                .collect();
+            out += &header.join(",");
+            out.push('\n');
+        }
+        let _ = write!(out, "{}", k + 1);
+        for r in &rows {
+            let _ = write!(out, ",{}", r.value);
+        }
+        out.push('\n');
     }
     Ok(out)
 }

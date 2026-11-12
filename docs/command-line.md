@@ -25,6 +25,24 @@ It prints every reading of the first document that isn't a component: detectors 
 output ports (in mW and dBm), displays and registers. `--doc NAME` picks another
 document, and `--csv` prints the readings as CSV (name, value, unit).
 
+## Inputs
+
+`--input FILE` sets the design's inputs (its value inputs and number inputs) from a
+stream of numbers, so a script can feed a design its data; `-` reads them from standard
+input. Numbers are separated by spaces, commas or lines, and `#` starts a comment.
+`--inputs` lists the inputs in the order the numbers set them:
+
+```sh
+shine simulate adder.shine --inputs
+echo "7 8" | shine simulate adder.shine --input -
+```
+
+Several samples' numbers one after another simulate each in turn, printing a CSV row per
+sample: its number, then every reading. A number input takes its number rounded into the
+range of its bits. `--only TEXT` keeps just the readings whose names contain TEXT, again
+for more. [Reading your own digits](neural-network.md#mnist-at-full-size) with the MNIST
+chip works this way, through `examples/mnist.py`.
+
 ## Sweeps
 
 A sweep prints CSV, the same as **Save CSV…** in the editor's [sweep window](sweeps.md):
@@ -64,6 +82,9 @@ ITEM can be:
 | `--vary-neff X`, `--vary-coupling X`, `--vary-phase X`, `--vary-loss X` | the variation's σ (defaults 0.002, 0.03, 0.05 rad, 0.1) |
 | `--box-outputs` | include the light leaving boxes |
 | `--readouts` | with a sweep: each output's peak, minimum, insertion loss, extinction, and resonances (FSR, width, Q) as CSV, instead of the curves |
+| `--input FILE` | set the inputs from numbers in FILE (`-`: standard input); several samples, a CSV row each |
+| `--inputs` | list the inputs in the order `--input` sets them |
+| `--only TEXT` | only the readings whose names contain TEXT (again for more) |
 | `--clock N` | tick the clock N times first, so registers hold values |
 | `--csv` | readings as CSV |
 | `--out FILE` | write to a file instead of the terminal |

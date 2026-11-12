@@ -210,3 +210,31 @@ fn monte_carlo_from_the_command_line() {
     assert!(parse(&[path, "--monte-carlo".into(), "5".into(), "--wavelength".into(), "1500:1600".into()]).is_err());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn inputs_come_from_a_stream_of_numbers() {
+    let (dir, path) = saved("adder", examples::eight_bit_adder);
+    // The adder's inputs: its two 8-bit numbers, in order.
+    let listed = simulate(&parse(&args(&[&path, "--inputs"])).unwrap()).unwrap();
+    assert!(listed.starts_with("2 inputs") && listed.contains("number at 0,0  now 100 (8 bits)"), "{listed}");
+    // One sample: 7 + 8, with a comment and commas.
+    let one = dir.join("one.txt");
+    std::fs::write(&one, "# a, then b\n7, 8\n").unwrap();
+    let text = simulate(&parse(&args(&[&path, "--input", &one.to_string_lossy()])).unwrap()).unwrap();
+    assert!(text.lines().any(|l| l.contains("Display") && l.trim_end().ends_with(" 15")), "{text}");
+    // Three samples, a CSV row each; numbers out of range are clamped.
+    let three = dir.join("three.txt");
+    std::fs::write(&three, "1 2\n200 100\n-5 300.4\n").unwrap();
+    let csv = simulate(&parse(&args(&[&path, "--input", &three.to_string_lossy(), "--only", "Display"])).unwrap()).unwrap();
+    let rows: Vec<&str> = csv.lines().collect();
+    assert_eq!(rows, ["sample,\"Display 9,8\"", "1,3", "2,300", "3,255"], "{csv}");
+    // A count that doesn't fit the inputs is explained.
+    let odd = dir.join("odd.txt");
+    std::fs::write(&odd, "1 2 3").unwrap();
+    let e = simulate(&parse(&args(&[&path, "--input", &odd.to_string_lossy()])).unwrap()).unwrap_err();
+    assert!(matches!(&e, Failure::Usage(m) if m.contains("2 numbers per sample; it got 3")), "{e:?}");
+    std::fs::write(&odd, "1 x").unwrap();
+    let e = simulate(&parse(&args(&[&path, "--input", &odd.to_string_lossy()])).unwrap()).unwrap_err();
+    assert!(matches!(&e, Failure::Usage(m) if m.contains("input 2: “x” isn't a number")), "{e:?}");
+    std::fs::remove_dir_all(dir).ok();
+}
