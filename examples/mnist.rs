@@ -18,14 +18,10 @@
 //! - `--save FILE` writes the chip, to open in the app;
 //! - `--editor` times editor frames on the chip and inside its biggest mesh.
 //!
-//! Or read a digit of your own, any picture of one (PNG, JPEG…, dark on light
-//! or light on dark), prepared as MNIST's digits were:
 //!
-//!     cargo run --release --example mnist -- CACHE --image my-digit.png [--save FILE]
-//!
-//! It shows the 28×28 the chip sees, simulates the whole chip and reports
-//! the digit it reads and its ten scores; `--save` writes the chip showing
-//! your digit, to open in the app (its display shows the answer).
+//! `--write-chip FILE` only builds the chip (its pixels dark) and saves it,
+//! for `shine simulate FILE --input …` and `examples/mnist.py`, which read
+//! digits of your own with it.
 
 use std::time::Instant;
 
@@ -108,99 +104,6 @@ fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
     out
 }
 
-/// A picture of a digit as MNIST's are: ink 0 to 1 on a 28×28 grid, the
-/// digit fitted in 20×20 and its centre of mass in the middle.
-fn mnist_pixels(path: &str) -> Result<Vec<f64>, String> {
-    let picture = image::open(path).map_err(|e| format!("can't read {path}: {e}"))?.to_luma_alpha32f();
-    let (w, h) = picture.dimensions();
-    // Brightness, transparent parts counting as white paper.
-    let bright: Vec<f32> = picture.pixels().map(|p| p.0[0] * p.0[1] + (1.0 - p.0[1])).collect();
-    // Ink is what differs from the background, judged by the border.
-    let border: Vec<f32> = (0..w).flat_map(|x| [(x, 0), (x, h - 1)]).chain((0..h).flat_map(|y| [(0, y), (w - 1, y)])).map(|(x, y)| bright[(y * w + x) as usize]).collect();
-    let paper = border.iter().sum::<f32>() / border.len() as f32;
-    let ink: Vec<f32> = bright.iter().map(|&b| if paper > 0.5 { 1.0 - b } else { b }).collect();
-    let peak = ink.iter().cloned().fold(0.0, f32::max);
-    if peak <= 0.0 {
-        return Err(format!("{path} is blank"));
-    }
-    // The digit's bounds: where the ink is at least a fifth of its darkest.
-    let inked = |x: u32, y: u32| ink[(y * w + x) as usize] >= 0.2 * peak;
-    let xs: Vec<u32> = (0..w).filter(|&x| (0..h).any(|y| inked(x, y))).collect();
-    let ys: Vec<u32> = (0..h).filter(|&y| (0..w).any(|x| inked(x, y))).collect();
-    let (x0, x1, y0, y1) = (xs[0], *xs.last().unwrap(), ys[0], *ys.last().unwrap());
-    let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
-    let crop = image::ImageBuffer::from_fn(cw, ch, |x, y| image::Luma([(ink[((y0 + y) * w + x0 + x) as usize] / peak * 255.0).round() as u8]));
-    // Longest side 20 pixels, as MNIST.
-    let scale = 20.0 / cw.max(ch) as f32;
-    let (sw, sh) = (((cw as f32 * scale).round() as u32).max(1), ((ch as f32 * scale).round() as u32).max(1));
-    let small = image::imageops::resize(&crop, sw, sh, image::imageops::FilterType::Lanczos3);
-    // Centre of mass to the middle of 28×28.
-    let (mut mass, mut mx, mut my) = (0.0f32, 0.0f32, 0.0f32);
-    for (x, y, p) in small.enumerate_pixels() {
-        let v = p.0[0] as f32;
-        mass += v;
-        mx += v * x as f32;
-        my += v * y as f32;
-    }
-    let (dx, dy) = ((14.0 - mx / mass).round() as i64, (14.0 - my / mass).round() as i64);
-    let mut out = vec![0.0; 28 * 28];
-    for (x, y, p) in small.enumerate_pixels() {
-        let (tx, ty) = (x as i64 + dx, y as i64 + dy);
-        if (0..28).contains(&tx) && (0..28).contains(&ty) {
-            out[(ty * 28 + tx) as usize] = p.0[0] as f64 / 255.0;
-        }
-    }
-    Ok(out)
-}
-
-/// The 28×28 input as text, darker characters for more ink.
-fn preview(pixels: &[f64]) -> String {
-    let shades = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
-    pixels.chunks(28).map(|row| row.iter().map(|&v| { let c = shades[((v * 9.0).round() as usize).min(9)]; format!("{c}{c}") }).collect::<String>()).collect::<Vec<_>>().join("\n")
-}
-
-/// Your own digit through the chip.
-fn read_image(w: &Weights, path: &str, save: Option<String>) {
-    let pixels = match mnist_pixels(path) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!("{e}");
-            std::process::exit(2);
-        }
-    };
-    tracing::info!("What the chip sees, 28×28:\n{}", preview(&pixels));
-    let mut p = Project::new();
-    let chip = step("Build the chip", || digits::chip_named(&mut p, "MNIST digit recognizer", w, &pixels).expect("the chip"));
-    let doc = p.doc(chip.top).unwrap();
-    let o = step("Simulate the whole chip", || sim::simulate(doc.layout(), 10.0, &p, &Machine::default(), Some(chip.top), &Options::default()));
-    if let Some(e) = &o.error {
-        tracing::error!("{e}");
-        std::process::exit(1);
-    }
-    let classes = w.sizes().2;
-    // The light reaching each of the ten detectors, and the network's own scores.
-    let light: Vec<f64> = (0..classes).map(|c| o.port_power.get(&(chip.layer2, c)).copied().unwrap_or(0.0)).collect();
-    let network = digits::scores(w, &pixels);
-    let total: f64 = light.iter().sum();
-    let digit = digits::argmax(&light);
-    let rows: Vec<String> = (0..classes)
-        .map(|c| {
-            let share = if total > 0.0 { light[c] / total } else { 0.0 };
-            let bar = "█".repeat((share * 40.0).round() as usize);
-            format!("{c}: {:>9.3e} mW  {:>5.1}%  {bar}{}", light[c], 100.0 * share, if c == digit { "  ←" } else { "" })
-        })
-        .collect();
-    tracing::info!("The light at each digit's detector:\n{}", rows.join("\n"));
-    tracing::info!(
-        "The chip reads {digit}{}",
-        if digits::argmax(&network) == digit { ", as the trained network does".to_owned() } else { format!("; the trained network reads {}", digits::argmax(&network)) }
-    );
-    if let Some(file) = save {
-        std::fs::write(&file, p.to_bytes()).unwrap();
-        tracing::info!("Saved the chip showing your digit to {file}: open it in Shine (`shine {file}`)");
-    }
-}
-
 fn parts(p: &Project, id: DocId) -> usize {
     p.doc(id).unwrap().layout().instances.iter().map(|i| match i.block {
         BlockRef::Component(d) => parts(p, d),
@@ -212,12 +115,16 @@ fn main() {
     let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
-    let cache = args.first().filter(|a| !a.starts_with("--")).expect("usage: mnist CACHE [--images N] [--save FILE] [--editor] | CACHE --image PICTURE [--save FILE]").clone();
+    let cache = args.first().filter(|a| !a.starts_with("--")).expect("usage: mnist CACHE [--images N] [--save FILE] [--editor] | CACHE --write-chip FILE").clone();
     let images: usize = value("--images").and_then(|v| v.parse().ok()).unwrap_or(5);
 
     let w = Weights::from_json(&std::fs::read_to_string(format!("{cache}/weights.json")).expect("CACHE/weights.json: run reference/mnist/train.py")).unwrap();
-    if let Some(path) = value("--image") {
-        read_image(&w, &path, value("--save"));
+    if let Some(file) = value("--write-chip") {
+        let mut p = Project::new();
+        let blank = vec![0.0; w.sizes().0];
+        step("Build the chip", || digits::chip_named(&mut p, "MNIST digit recognizer", &w, &blank).expect("the chip"));
+        std::fs::write(&file, p.to_bytes()).unwrap_or_else(|e| panic!("can't write {file}: {e}"));
+        tracing::info!("Wrote {file}: shine simulate {file} --input DIGIT.txt, or python examples/mnist.py --image DIGIT.png");
         return;
     }
     let raw = std::fs::read(format!("{cache}/test-images.f32")).expect("test images");

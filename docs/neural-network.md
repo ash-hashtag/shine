@@ -108,18 +108,31 @@ python reference/mnist/train.py CACHE        # downloads MNIST into CACHE, train
 cargo run --release --example mnist -- CACHE [--images N] [--save mnist.shine] [--editor]
 ```
 
-To read a digit of your own, give a picture of it (PNG, JPEG, GIF, BMP or WebP, dark ink
-on light paper or the other way round, any size):
+### Reading your own digits
+
+Save the chip once, then give `examples/mnist.py` pictures of digits (PNG, JPEG and the
+like, dark ink on light paper or the other way round, any size; it needs Pillow):
 
 ```sh
-cargo run --release --example mnist -- CACHE --image my-digit.png [--save my-digit.shine]
+cargo run --release --example mnist -- CACHE --write-chip mnist-neural-chip.shine
+pip install pillow
+python examples/mnist.py --image my-digit.png [more.png ...] [--chip mnist-neural-chip.shine]
 ```
 
-It prepares the picture as MNIST's digits were (the ink cropped, fitted in 20×20 pixels,
-its centre of mass in the middle of 28×28), shows the 28×28 the chip sees, simulates the
-whole chip and reports the digit it reads with the light at each of the ten detectors.
-`--save` writes the chip set to your digit: open it in Shine (`shine my-digit.shine`) and
-its display shows the answer.
+The script prepares each picture as MNIST's digits were (the ink cropped, fitted in 20×20
+pixels, its centre of mass in the middle of 28×28) and runs the `shine` program on the
+chip with the 784 pixel values on its standard input (`shine simulate … --input -`, see
+[Command line](command-line.md#inputs)); it finds `shine` on the PATH, or in `SHINE` or
+`--shine`. It shows the 28×28 the chip sees, the light at each digit's detector and the
+digit the chip's display shows. Several pictures go through one run, the meshes solved
+once: about 3.5 s for the first and a tenth of a second for each after. To run `shine`
+yourself, `--print-inputs` prints just the numbers:
+
+```sh
+python examples/mnist.py --image my-digit.png --print-inputs | shine simulate mnist-neural-chip.shine --input -
+```
+
+The chip opens in the app as any project does (`shine mnist-neural-chip.shine`).
 
 The network (784 → 64 → 10, trained for the chip's electronics as above) reads **97.40%**
 of MNIST's 10 000 test digits. Simulated whole (light, detectors and electronics), the chip
