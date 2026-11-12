@@ -966,15 +966,19 @@ impl OpticsPanel {
 
     /// Records one undo step per settled interaction. Whether the layout
     /// may have changed since the last frame: it did if a step was recorded,
-    /// undone or redone, and may have, unrecorded yet, while an interaction
-    /// is in progress.
+    /// undone or redone, and may have, unrecorded yet, while boxes are
+    /// moved or a control (a slider, a field) is dragged. Panning and
+    /// zooming, or drawing a selection or a wire, change nothing until
+    /// released, so they don't count: on a design of 300 000 boxes that
+    /// would cost its whole fingerprint every frame.
     pub fn end_frame(&mut self, ui: &Ui) -> bool {
         let interacting = self.editor.grab.is_some() || ui.input(|i| i.pointer.any_down());
         if !interacting {
             self.editor.history.commit(&self.layout);
         }
+        let editing = self.editor.grab.is_some() || ui.ctx().dragged_id().is_some_and(|d| Some(d) != self.canvas_id);
         let scaled = self.editor.seen_cell_um.replace(self.cell_um) != Some(self.cell_um);
-        self.editor.history.take_changed() || interacting || scaled
+        self.editor.history.take_changed() || editing || scaled
     }
 
     /// Floating UI drawn above everything (context and add menus).
