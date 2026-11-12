@@ -20,6 +20,10 @@
 
 use std::time::Instant;
 
+/// As the app: faster than the system allocator on every thread.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use shine::panels::circuit::sim::{self, Machine, Options};
 use shine::panels::optics::digits::{self, Weights};
 use shine::panels::optics::model::{BlockRef, Builtin};

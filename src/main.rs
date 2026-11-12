@@ -7,6 +7,11 @@ use shine::logging::{self, LogConfig};
 
 use shine::APP_ID;
 
+/// Faster than the system allocator when simulating on every thread.
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> eframe::Result {
     // Command-line use: no window, nothing but the output.
     let args: Vec<String> = std::env::args().skip(1).collect();

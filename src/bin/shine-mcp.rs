@@ -2,6 +2,11 @@
 
 use shine::logging::{self, LogConfig};
 
+/// Faster than the system allocator when simulating on every thread.
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> std::io::Result<()> {
     let _log_guard = logging::init(&LogConfig {
         ansi: false,

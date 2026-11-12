@@ -22,7 +22,7 @@ default = ["gui"]
 core = ["dep:emath", "dep:rust-rf", "dep:rquickjs", "dep:argmin", "dep:argmin-math"]
 # The editor. Disable default features to use only the `photonics` engine, or
 # use `core` for the library without the editor.
-gui = ["core", "logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image"]
+gui = ["core", "logging", "dep:mimalloc", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image"]
 # Stderr + optional file logging setup for binaries.
 logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
 
@@ -119,6 +119,9 @@ rquickjs = { version = "0.14.0", features = ["parallel"], optional = true }
 # Optimisation: Nelder–Mead from argmin (desktop only: its vectors need OS randomness).
 argmin = { version = "0.11.0", default-features = false, optional = true }
 argmin-math = { version = "0.5.1", default-features = false, features = ["vec"], optional = true }
+# The app's and the MCP server's allocator: simulating big designs allocates
+# from every thread, where it is markedly faster than the system's.
+mimalloc = { version = "0.1.52", optional = true }
 faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "rayon"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -132,6 +135,7 @@ js-sys = "0.3"
 [dev-dependencies]
 # Drives the UI by widget labels in tests (tests/ui.rs).
 egui_kittest = "0.37.0"
+mimalloc = "0.1.52"
 
 # Debug builds: quick to rebuild and quick enough to use. No debug info
 # (backtraces still name functions); set `debug = true` here, or build with
