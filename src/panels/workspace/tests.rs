@@ -448,6 +448,29 @@ fn keyboard_routes_through_the_active_editor() {
 }
 
 #[test]
+fn edits_undone_and_redone_in_the_editor_count_as_changes() {
+    // The editor's frames don't mark the document changed on every access;
+    // they notice changes themselves, undo and redo included.
+    let mut ws = Workspace::default();
+    let mut h = Harness::new();
+    let id = ws.active.unwrap();
+    h.frame(&mut ws, Vec::new());
+    ws.mark_saved();
+    let saved = ws.project.doc_fingerprint(id);
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(ws.project.doc_fingerprint(id), saved, "nothing changed");
+    panel(&mut ws, id).layout.add_instance(BlockRef::Builtin(Builtin::Detector), (2, 2));
+    h.frame(&mut ws, Vec::new());
+    assert!(ws.doc_has_unsaved_changes(id));
+    h.key_with(&mut ws, Key::Z, Modifiers::COMMAND);
+    h.frame(&mut ws, Vec::new());
+    assert!(!ws.doc_has_unsaved_changes(id), "undone");
+    h.key_with(&mut ws, Key::Z, Modifiers::COMMAND | Modifiers::SHIFT);
+    h.frame(&mut ws, Vec::new());
+    assert!(ws.doc_has_unsaved_changes(id), "redone");
+}
+
+#[test]
 fn edit_menu_actions_reach_the_document() {
     let mut ws = Workspace::default();
     let id = demo(&mut ws, ADDER);

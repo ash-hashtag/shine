@@ -61,6 +61,8 @@ pub struct Editor {
     pub boxes: Selection,
     pub history: History<Layout>,
     pub grab: Option<Grab>,
+    /// The cell size at the end of the last frame, to notice it change.
+    pub seen_cell_um: Option<f64>,
 }
 
 fn box_cells(layout: &Layout, counts: Counts, skip: Option<usize>) -> HashSet<(i32, i32)> {
@@ -80,6 +82,7 @@ impl Editor {
             boxes: Selection::default(),
             history: History::new(layout),
             grab: None,
+            seen_cell_um: None,
         }
     }
 

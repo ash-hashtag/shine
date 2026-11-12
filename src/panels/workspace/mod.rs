@@ -267,7 +267,7 @@ impl Workspace {
 
     pub fn new_layout(&mut self) -> DocId {
         let id = self.project.add_layout("Layout", Layout::default(), 10.0);
-        self.project.doc_mut(id).expect("just added").panel_mut().simulation_active = self.prefs.live_simulation;
+        self.project.doc_mut(id).expect("just added").panel_mut_untracked().simulation_active = self.prefs.live_simulation;
         self.open_tab(id);
         id
     }
@@ -404,7 +404,7 @@ impl Workspace {
         }
         for (id, x, y, zoom) in session.views {
             if let Some(doc) = self.project.doc_mut(DocId(id)) {
-                doc.panel_mut().set_view(super::optics::view::View { pan: egui::Vec2::new(x, y), zoom });
+                doc.panel_mut_untracked().set_view(super::optics::view::View { pan: egui::Vec2::new(x, y), zoom });
             }
         }
         self.tabs.clear();
@@ -769,6 +769,7 @@ impl Workspace {
             return;
         };
         let newly_published = d.component && doc.component.is_none();
+        doc.touch();
         doc.name = name.clone();
         if d.component {
             doc.component = Some(ComponentMeta {
@@ -789,6 +790,7 @@ impl Workspace {
             return;
         }
         if let Some(doc) = self.project.doc_mut(id) {
+            doc.touch();
             doc.component = None;
         }
     }
@@ -804,9 +806,12 @@ impl Workspace {
         self.handle_requests();
     }
 
+    /// The open document's editor. Untracked (see
+    /// [`Document::panel_mut_untracked`]): the editor's next frame notices
+    /// any change made through it.
     fn active_panel(&mut self) -> Option<&mut OpticsPanel> {
         let id = self.active?;
-        Some(self.project.doc_mut(id)?.panel_mut())
+        Some(self.project.doc_mut(id)?.panel_mut_untracked())
     }
 
     fn handle_requests(&mut self) {
@@ -1019,7 +1024,7 @@ impl Workspace {
         tracing::debug!("Simulated {} in the background in {ms:.1} ms ({} rounds)", b.doc.0, outcome.iterations);
         self.stats.last_simulation_ms = ms;
         self.stats.last_simulation_at = self.time;
-        if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut()) {
+        if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut_untracked()) {
             p.set_outcome(b.key, outcome);
         }
         true
@@ -1037,7 +1042,7 @@ impl Workspace {
                 Ok(o) => {
                     let b = self.background.take().expect("checked");
                     self.stats.last_simulation_ms = b.started.elapsed().as_secs_f64() * 1e3;
-                    if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut()) {
+                    if let Some(p) = self.project.doc_mut(b.doc).map(|d| d.panel_mut_untracked()) {
                         p.set_outcome(b.key, o);
                     }
                 }
@@ -1147,7 +1152,7 @@ impl Workspace {
     pub fn set_preferences(&mut self, prefs: Preferences) {
         self.prefs = prefs;
         for doc in &mut self.project.documents {
-            doc.panel_mut().simulation_active = self.prefs.live_simulation;
+            doc.panel_mut_untracked().simulation_active = self.prefs.live_simulation;
         }
     }
 
@@ -1225,7 +1230,7 @@ impl Workspace {
                     egui::ScrollArea::vertical().show(ui, |ui| match self.left_tab {
                         LeftTab::Parts => {
                             if let Some(doc) = self.project.doc_mut(id) {
-                                doc.panel_mut().palette_ui(ui);
+                                doc.panel_mut_untracked().palette_ui(ui);
                             }
                             ui.add_space(8.0);
                             ui.separator();
@@ -1246,7 +1251,7 @@ impl Workspace {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         self.document_header(ui, id);
                         if let Some(doc) = self.project.doc_mut(id) {
-                            doc.panel_mut().inspector_ui(ui);
+                            doc.panel_mut_untracked().inspector_ui(ui);
                         }
                     });
                 });
@@ -1254,10 +1259,12 @@ impl Workspace {
 
         let ctx = ui.ctx().clone();
         if let Some(doc) = self.project.doc_mut(id) {
-            let p = doc.panel_mut();
+            let p = doc.panel_mut_untracked();
             p.canvas_ui(ui);
             p.overlays(&ctx);
-            p.end_frame(ui);
+            if p.end_frame(ui) {
+                doc.touch();
+            }
         }
 
         if let Some(doc) = open {
@@ -1685,7 +1692,7 @@ impl Workspace {
 
     /// The active document's live-simulation switch.
     pub fn simulation_flag(&mut self) -> Option<&mut bool> {
-        Some(&mut self.project.doc_mut(self.active?)?.panel_mut().simulation_active)
+        Some(&mut self.project.doc_mut(self.active?)?.panel_mut_untracked().simulation_active)
     }
 
     fn empty_ui(&mut self, ui: &mut Ui) {

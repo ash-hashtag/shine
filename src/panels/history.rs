@@ -10,6 +10,11 @@ pub struct History<T> {
     redo: Vec<T>,
     committed: T,
     limit: usize,
+    /// Whether the document changed (a commit, undo or redo) since
+    /// [`Self::take_changed`] last asked.
+    changed: bool,
+    /// Commits, undos and redos so far.
+    changes: u64,
 }
 
 impl<T: Clone + PartialEq> History<T> {
@@ -23,7 +28,19 @@ impl<T: Clone + PartialEq> History<T> {
             redo: Vec::new(),
             committed: document.clone(),
             limit,
+            changed: false,
+            changes: 0,
         }
+    }
+
+    /// Commits, undos and redos so far: changes when the document did.
+    pub fn changes(&self) -> u64 {
+        self.changes
+    }
+
+    /// Whether the document changed since this was last asked.
+    pub fn take_changed(&mut self) -> bool {
+        std::mem::take(&mut self.changed)
     }
 
     /// Record `current` if it changed since the last commit.
@@ -37,6 +54,8 @@ impl<T: Clone + PartialEq> History<T> {
             self.undo.remove(0);
         }
         self.redo.clear();
+        self.changed = true;
+        self.changes += 1;
         true
     }
 
@@ -47,6 +66,8 @@ impl<T: Clone + PartialEq> History<T> {
         };
         self.redo.push(std::mem::replace(current, previous));
         self.committed = current.clone();
+        self.changed = true;
+        self.changes += 1;
         true
     }
 
@@ -57,6 +78,8 @@ impl<T: Clone + PartialEq> History<T> {
         };
         self.undo.push(std::mem::replace(current, next));
         self.committed = current.clone();
+        self.changed = true;
+        self.changes += 1;
         true
     }
 

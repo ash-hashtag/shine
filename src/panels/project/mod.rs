@@ -109,16 +109,56 @@ pub struct Document {
     /// Set when the document is published as a component.
     pub component: Option<ComponentMeta>,
     pub content: Content,
+    /// Counts changes, so the fingerprint is only computed again after one.
+    /// [`Self::layout_mut`] and [`Self::touch`] count one; the editor
+    /// touches the open document when it changes. Not saved.
+    revision: u64,
+    /// The fingerprint, and the revision it was computed at.
+    fingerprint: std::sync::Mutex<Option<(u64, u64)>>,
 }
 
 impl Document {
+    fn new(id: DocId, name: String, component: Option<ComponentMeta>, content: Content) -> Self {
+        Self { id, name, component, content, revision: 0, fingerprint: std::sync::Mutex::new(None) }
+    }
+
+    /// Count a change to the document's name, component information or
+    /// content made other than through [`Self::layout_mut`].
+    pub fn touch(&mut self) {
+        self.revision += 1;
+    }
+
+    /// Changes whenever the content or component information changes (see
+    /// [`Project::doc_fingerprint`]); computed once per change.
+    pub fn fingerprint(&self) -> u64 {
+        let mut cached = self.fingerprint.lock().unwrap_or_else(|e| e.into_inner());
+        match *cached {
+            Some((revision, f)) if revision == self.revision => f,
+            _ => {
+                let f = hash_serialized(&DocumentRef::of(self));
+                *cached = Some((self.revision, f));
+                f
+            }
+        }
+    }
+
     pub fn panel(&self) -> &DocumentState {
         match &self.content {
             Content::Layout(p) => p,
         }
     }
 
+    /// The document's state, to change: counted as a change (see
+    /// [`Self::touch`]).
     pub fn panel_mut(&mut self) -> &mut DocumentState {
+        self.touch();
+        self.panel_mut_untracked()
+    }
+
+    /// The document's state, to change without counting a change: for the
+    /// editor's frames, which notice changes themselves and
+    /// [touch](Self::touch) the document when there are.
+    pub fn panel_mut_untracked(&mut self) -> &mut DocumentState {
         match &mut self.content {
             Content::Layout(p) => p,
         }
@@ -176,12 +216,7 @@ impl Document {
     }
 
     fn from_file(file: DocumentFile) -> Self {
-        Self {
-            id: file.id,
-            name: file.name,
-            component: file.component,
-            content: Content::Layout(Box::new(DocumentState::with_layout(file.layout, file.cell_um))),
-        }
+        Self::new(file.id, file.name, file.component, Content::Layout(Box::new(DocumentState::with_layout(file.layout, file.cell_um))))
     }
 }
 
@@ -639,6 +674,9 @@ pub struct Project {
     next_id: u64,
     /// Where the project was last saved or opened from.
     pub path: Option<PathBuf>,
+    /// The catalog, and the fingerprint it was made at: the editor asks for
+    /// it every frame, and making it reads every document.
+    catalog: std::sync::Mutex<Option<(u64, Catalog)>>,
 }
 
 impl Default for Project {
@@ -659,11 +697,11 @@ impl Documents for Project {
 
 impl Project {
     pub fn new() -> Self {
-        Self {
-            documents: Vec::new(),
-            next_id: 1,
-            path: None,
-        }
+        Self::with_documents(Vec::new(), 1)
+    }
+
+    fn with_documents(documents: Vec<Document>, next_id: u64) -> Self {
+        Self { documents, next_id, path: None, catalog: std::sync::Mutex::new(None) }
     }
 
     fn allocate(&mut self) -> DocId {
@@ -684,12 +722,7 @@ impl Project {
     pub fn add_layout(&mut self, name: &str, layout: Layout, cell_um: f64) -> DocId {
         let id = self.allocate();
         let name = self.unique_name(name);
-        self.documents.push(Document {
-            id,
-            name,
-            component: None,
-            content: Content::Layout(Box::new(DocumentState::with_layout(layout, cell_um))),
-        });
+        self.documents.push(Document::new(id, name, None, Content::Layout(Box::new(DocumentState::with_layout(layout, cell_um)))));
         id
     }
 
@@ -743,7 +776,22 @@ impl Project {
         seen
     }
 
+    /// What every document is and uses, as boxes in the editor show them.
+    /// Made again only after the project changes.
     pub fn catalog(&self) -> Catalog {
+        let fingerprint = self.fingerprint();
+        let mut cached = self.catalog.lock().unwrap_or_else(|e| e.into_inner());
+        match &*cached {
+            Some((f, catalog)) if *f == fingerprint => catalog.clone(),
+            _ => {
+                let catalog = self.make_catalog();
+                *cached = Some((fingerprint, catalog.clone()));
+                catalog
+            }
+        }
+    }
+
+    fn make_catalog(&self) -> Catalog {
         Catalog {
             entries: self
                 .documents
@@ -775,7 +823,7 @@ impl Project {
                 documents.push(Document::from_file(d.to_file()));
             }
         }
-        Some(Project { documents, next_id: self.next_id, path: None })
+        Some(Project::with_documents(documents, self.next_id))
     }
 
     /// Copy `bundle`'s first document, and those it uses, into this project;
@@ -832,16 +880,19 @@ impl Project {
         }
     }
 
-    /// Changes whenever any document's content or component info changes.
+    /// Changes whenever any document's content or component info changes,
+    /// or documents come or go.
     pub fn fingerprint(&self) -> u64 {
-        let documents: Vec<DocumentRef> = self.documents.iter().map(DocumentRef::of).collect();
+        let documents: Vec<u64> = self.documents.iter().map(Document::fingerprint).collect();
         hash_serialized(&documents)
     }
 
     /// Changes whenever document `id`'s content or component info changes:
-    /// what tells a tab it has unsaved changes.
+    /// what tells a tab it has unsaved changes. Computed again only after
+    /// the document is changed (see [`Document::touch`]), so asking every
+    /// frame costs nothing for a design of any size.
     pub fn doc_fingerprint(&self, id: DocId) -> Option<u64> {
-        self.doc(id).map(|d| hash_serialized(&DocumentRef::of(d)))
+        self.doc(id).map(Document::fingerprint)
     }
 
     /// Encode the project in Shine's binary file format.
@@ -902,11 +953,7 @@ impl Project {
         };
         let documents: Vec<Document> = file.documents.into_iter().map(Document::from_file).collect();
         let next_id = documents.iter().map(|d| d.id.0 + 1).max().unwrap_or(1).max(file.next_id);
-        Ok(Self {
-            documents,
-            next_id,
-            path: None,
-        })
+        Ok(Self::with_documents(documents, next_id))
     }
 
     /// Whether `bytes` are a Shine project file.

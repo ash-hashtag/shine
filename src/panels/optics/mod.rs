@@ -960,11 +960,17 @@ impl OpticsPanel {
         }
     }
 
-    /// Records one undo step per settled interaction.
-    pub fn end_frame(&mut self, ui: &Ui) {
-        if self.editor.grab.is_none() && !ui.input(|i| i.pointer.any_down()) {
+    /// Records one undo step per settled interaction. Whether the layout
+    /// may have changed since the last frame: it did if a step was recorded,
+    /// undone or redone, and may have, unrecorded yet, while an interaction
+    /// is in progress.
+    pub fn end_frame(&mut self, ui: &Ui) -> bool {
+        let interacting = self.editor.grab.is_some() || ui.input(|i| i.pointer.any_down());
+        if !interacting {
             self.editor.history.commit(&self.layout);
         }
+        let scaled = self.editor.seen_cell_um.replace(self.cell_um) != Some(self.cell_um);
+        self.editor.history.take_changed() || interacting || scaled
     }
 
     /// Floating UI drawn above everything (context and add menus).
