@@ -108,6 +108,19 @@ python reference/mnist/train.py CACHE        # downloads MNIST into CACHE, train
 cargo run --release --example mnist -- CACHE [--images N] [--save mnist.shine] [--editor]
 ```
 
+To read a digit of your own, give a picture of it (PNG, JPEG, GIF, BMP or WebP, dark ink
+on light paper or the other way round, any size):
+
+```sh
+cargo run --release --example mnist -- CACHE --image my-digit.png [--save my-digit.shine]
+```
+
+It prepares the picture as MNIST's digits were (the ink cropped, fitted in 20×20 pixels,
+its centre of mass in the middle of 28×28), shows the 28×28 the chip sees, simulates the
+whole chip and reports the digit it reads with the light at each of the ten detectors.
+`--save` writes the chip set to your digit: open it in Shine (`shine my-digit.shine`) and
+its display shows the answer.
+
 The network (784 → 64 → 10, trained for the chip's electronics as above) reads **97.40%**
 of MNIST's 10 000 test digits. Simulated whole (light, detectors and electronics), the chip
 reads each digit as the network does, its scores within 3·10⁻¹⁰ of the network's; through

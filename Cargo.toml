@@ -136,6 +136,8 @@ js-sys = "0.3"
 # Drives the UI by widget labels in tests (tests/ui.rs).
 egui_kittest = "0.37.0"
 mimalloc = "0.1.52"
+# Reading your own digit in examples/mnist.rs.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 pprof = "0.15.0"
 
 # Debug builds: quick to rebuild and quick enough to use. No debug info
