@@ -55,6 +55,15 @@ impl Harness {
     }
 }
 
+/// A workspace whose documents simulate live: designs open paused, and most
+/// tests are about what the simulation shows.
+fn live() -> Workspace {
+    let mut ws = Workspace::default();
+    let prefs = Preferences { simulate_on_open: true, ..ws.prefs.clone() };
+    ws.set_preferences(prefs);
+    ws
+}
+
 fn panel(ws: &mut Workspace, id: DocId) -> &mut OpticsPanel {
     ws.project.doc_mut(id).unwrap().panel_mut()
 }
@@ -100,7 +109,7 @@ fn display_value(ws: &mut Workspace, id: DocId) -> u64 {
 
 #[test]
 fn starts_with_one_layout_and_manages_tabs() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     assert_eq!(ws.tabs.len(), 1);
     let first = ws.active.unwrap();
     let second = ws.new_component();
@@ -136,7 +145,7 @@ fn starts_with_one_layout_and_manages_tabs() {
 
 #[test]
 fn new_components_have_ports_and_are_placeable() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let top = ws.active.unwrap();
     let c = ws.new_component();
     ws.dialog = None;
@@ -151,7 +160,7 @@ fn new_components_have_ports_and_are_placeable() {
 
 #[test]
 fn examples_open_and_simulate() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     for i in 0..layout_examples().len() {
         ws.load_layout_example(i);
@@ -174,7 +183,7 @@ fn examples_open_and_simulate() {
 
 #[test]
 fn the_adder_adds_and_bits_toggle_with_a_click() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = demo(&mut ws, ADDER);
     h.frame(&mut ws, Vec::new());
@@ -202,7 +211,7 @@ fn the_adder_adds_and_bits_toggle_with_a_click() {
 
 #[test]
 fn the_accumulator_counts_with_the_clock() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = demo(&mut ws, ACCUMULATOR);
     h.frame(&mut ws, Vec::new());
@@ -228,7 +237,7 @@ fn the_accumulator_counts_with_the_clock() {
 
 #[test]
 fn reused_component_opens_with_tab_and_edits_propagate() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let top = demo(&mut ws, CASCADE);
     h.frame(&mut ws, Vec::new());
@@ -261,7 +270,7 @@ fn reused_component_opens_with_tab_and_edits_propagate() {
 
 #[test]
 fn example_components_are_placed_from_the_library() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = ws.active.unwrap();
     h.frame(&mut ws, Vec::new());
@@ -306,7 +315,7 @@ fn example_components_are_placed_from_the_library() {
 
 #[test]
 fn saving_a_document_as_a_component() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let id = ws.active.unwrap();
     ws.open_document_dialog(id, true);
     let d = ws.dialog.as_mut().unwrap();
@@ -352,7 +361,7 @@ fn saving_a_document_as_a_component() {
 
 #[test]
 fn unpublishing_and_deleting_respect_users() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let top = demo(&mut ws, CASCADE);
     let component = ws.project.catalog().components().next().unwrap().id;
 
@@ -377,13 +386,13 @@ fn project_files_round_trip_and_layouts_import() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("project.shine");
 
-    let mut ws = Workspace::default();
+    let mut ws = live();
     demo(&mut ws, ADDER);
     ws.save_project_to(&path).unwrap();
     assert_eq!(ws.project.path.as_deref(), Some(path.as_path()));
     assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHNE", "binary, not JSON");
 
-    let mut other = Workspace::default();
+    let mut other = live();
     other.open_path(&path).unwrap();
     assert_eq!(other.project.documents.len(), ws.project.documents.len());
     assert_eq!(other.tabs.len(), 1);
@@ -423,7 +432,7 @@ fn project_files_round_trip_and_layouts_import() {
 
 #[test]
 fn examples_open_by_slug() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     assert!(ws.open_example("8-bit-photonic-adder"));
     assert_eq!(ws.project.doc(ws.active.unwrap()).unwrap().name, ADDER);
     assert!(ws.open_example("mach-zehnder-interferometer"));
@@ -432,7 +441,7 @@ fn examples_open_by_slug() {
 
 #[test]
 fn keyboard_routes_through_the_active_editor() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     h.frame(&mut ws, Vec::new());
     h.key(&mut ws, Key::T);
@@ -451,7 +460,7 @@ fn keyboard_routes_through_the_active_editor() {
 fn edits_undone_and_redone_in_the_editor_count_as_changes() {
     // The editor's frames don't mark the document changed on every access;
     // they notice changes themselves, undo and redo included.
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = ws.active.unwrap();
     h.frame(&mut ws, Vec::new());
@@ -472,7 +481,7 @@ fn edits_undone_and_redone_in_the_editor_count_as_changes() {
 
 #[test]
 fn edit_menu_actions_reach_the_document() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let id = demo(&mut ws, ADDER);
     ws.apply(Action::SelectAll);
     assert_eq!(panel(&mut ws, id).editor.boxes.len(), 11);
@@ -494,7 +503,7 @@ fn edit_menu_actions_reach_the_document() {
 
 #[test]
 fn whole_ui_renders_with_windows_and_dialogs() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let adder = demo(&mut ws, ADDER);
     ws.show_examples = true;
@@ -543,7 +552,7 @@ fn whole_ui_renders_with_windows_and_dialogs() {
 
 #[test]
 fn simulation_is_cached_by_fingerprint_and_registers() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let id = demo(&mut ws, ACCUMULATOR);
     assert!(ws.refresh_simulation());
     assert!(!ws.refresh_simulation(), "unchanged: not recomputed");
@@ -566,7 +575,7 @@ fn simulation_is_cached_by_fingerprint_and_registers() {
 
 #[test]
 fn the_canvas_zoom_is_remembered_and_designs_open_at_it() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     ws.load_demo(0);
     h.frame(&mut ws, Vec::new());
@@ -592,7 +601,7 @@ fn the_canvas_zoom_is_remembered_and_designs_open_at_it() {
 
 #[test]
 fn the_interface_size_follows_the_preference_and_the_keyboard_zooms_the_canvas() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     h.frame(&mut ws, Vec::new());
     ws.prefs.ui_scale = 1.5;
@@ -613,7 +622,7 @@ fn the_interface_size_follows_the_preference_and_the_keyboard_zooms_the_canvas()
 
 #[test]
 fn slow_designs_simulate_in_the_background() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let id = demo(&mut ws, "16×16 photonic matrix processor");
     assert!(ws.refresh_simulation(), "the first run is on the spot");
     let power = |ws: &mut Workspace| panel(ws, id).sim.as_ref().unwrap().outcome.port_power.values().sum::<f64>();
@@ -643,9 +652,18 @@ fn slow_designs_simulate_in_the_background() {
 }
 
 #[test]
-fn simulate_toggle_is_on_by_default_and_flips() {
+fn designs_open_paused_and_the_toggle_flips() {
+    // Paused unless the preferences say otherwise, a new design and an example alike.
     let mut ws = Workspace::default();
-    assert_eq!(ws.simulation_flag().copied(), Some(true), "new layouts simulate");
+    assert_eq!(ws.simulation_flag().copied(), Some(false), "new layouts wait");
+    let id = demo(&mut ws, ADDER);
+    assert!(!panel(&mut ws, id).simulation_active, "examples wait too");
+    assert!(!ws.refresh_simulation(), "nothing simulated");
+    *ws.simulation_flag().unwrap() = true;
+    assert!(ws.refresh_simulation(), "toggled on, it simulates");
+
+    let mut ws = live();
+    assert_eq!(ws.simulation_flag().copied(), Some(true), "with the preference on, new layouts simulate");
     *ws.simulation_flag().unwrap() = false;
     let id = ws.active.unwrap();
     assert!(!panel(&mut ws, id).simulation_active);
@@ -653,7 +671,7 @@ fn simulate_toggle_is_on_by_default_and_flips() {
     assert!(ws.simulation_flag().is_none());
 
     // The toggle sits in the menu bar; clicking it flips the active document.
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     h.frame(&mut ws, Vec::new());
     let button = egui::Pos2::new(1330.0, 11.0);
@@ -669,7 +687,7 @@ fn simulate_toggle_is_on_by_default_and_flips() {
 
 #[test]
 fn url_queries_open_examples_tabs_and_windows() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     ws.apply_url_query("?example=cascaded-interferometers&tab=mach-zehnder-interferometer");
     let active = ws.project.doc(ws.active.unwrap()).unwrap();
     assert_eq!(active.name, "Mach–Zehnder interferometer", "the component's definition tab is active");
@@ -692,7 +710,7 @@ fn url_queries_open_examples_tabs_and_windows() {
 
 #[test]
 fn a_components_pins_toggle_to_try_it_on_its_own() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     demo(&mut ws, ADDER);
     let fa = ws.project.find("Full adder").unwrap();
@@ -732,7 +750,7 @@ fn a_components_pins_toggle_to_try_it_on_its_own() {
 
 #[test]
 fn preferences_reach_the_editor_and_render() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = ws.active.unwrap();
     ws.show_preferences = true;
@@ -761,7 +779,7 @@ fn preferences_reach_the_editor_and_render() {
     assert_eq!(o.channel_colors, vec![Some([1, 2, 3])]);
 
     // Loading saved preferences applies them; "live simulation" covers documents.
-    ws.set_preferences(Preferences { live_simulation: false, ..Preferences::default() });
+    ws.set_preferences(Preferences { simulate_on_open: false, ..Preferences::default() });
     assert!(!panel(&mut ws, id).simulation_active);
     let new = ws.new_layout();
     assert!(!panel(&mut ws, new).simulation_active);
@@ -771,7 +789,7 @@ fn preferences_reach_the_editor_and_render() {
 
 #[test]
 fn sweeps_run_through_the_workspace_with_components() {
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let mut h = Harness::new();
     let id = demo(&mut ws, "4-channel WDM optical link");
     h.frame(&mut ws, Vec::new());
@@ -782,7 +800,7 @@ fn sweeps_run_through_the_workspace_with_components() {
     h.frame(&mut ws, Vec::new());
     let r = panel(&mut ws, id).sweep.result.clone().expect("the workspace ran it");
     // A link can do the same: ?example=…&sweep
-    let mut linked = Workspace::default();
+    let mut linked = live();
     linked.apply_url_query("example=4-channel-wdm-optical-link&sweep");
     Harness::new().frame(&mut linked, Vec::new());
     let doc = linked.active.unwrap();
@@ -796,7 +814,7 @@ fn sweeps_run_through_the_workspace_with_components() {
 #[test]
 fn slow_designs_resimulate_less_often_while_dragging() {
     // As in the browser, which has no threads to simulate in the background.
-    let mut ws = Workspace { background_after_ms: f64::INFINITY, ..Workspace::default() };
+    let mut ws = Workspace { background_after_ms: f64::INFINITY, ..live() };
     let id = ws.active.unwrap();
     let laser = OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 650.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None };
     panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: laser, pos: Pos2::new(20.0, 20.0) });
@@ -828,7 +846,7 @@ fn changed_tabs_are_starred_and_reload_reads_the_file_again() {
     let dir = std::env::temp_dir().join(format!("shine-reload-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("work.shine");
-    let mut ws = Workspace::default();
+    let mut ws = live();
     let first = ws.active.unwrap();
     ws.new_layout();
     let second = ws.active.unwrap();
@@ -853,7 +871,7 @@ fn changed_tabs_are_starred_and_reload_reads_the_file_again() {
     assert!(ws.pending_open.is_none());
     std::fs::remove_dir_all(&dir).ok();
     // A project never saved has nothing to reload.
-    let mut fresh = Workspace::default();
+    let mut fresh = live();
     fresh.reload();
     assert!(fresh.status.as_ref().unwrap().0.contains("hasn't been saved"));
 }
@@ -863,7 +881,7 @@ fn unsaved_changes_are_tracked_and_saves_are_atomic() {
     let dir = std::env::temp_dir().join(format!("shine-unsaved-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("work.shine");
-    let mut ws = Workspace::default();
+    let mut ws = live();
     assert!(!ws.has_unsaved_changes(), "a fresh workspace has nothing to lose");
     assert_eq!(ws.file_name(), "Unsaved project");
     let id = ws.active.unwrap();
@@ -885,12 +903,12 @@ fn unsaved_changes_are_tracked_and_saves_are_atomic() {
 
 #[test]
 fn opening_a_project_asks_about_unsaved_changes() {
-    let mut other = Workspace::default();
+    let mut other = live();
     demo(&mut other, ADDER);
     let bytes = other.project.to_bytes();
 
     // Nothing to lose: opens at once, and counts as saved.
-    let mut ws = Workspace::default();
+    let mut ws = live();
     ws.request_open("adder".into(), bytes.clone(), None);
     assert!(ws.pending_open.is_none());
     assert!(!ws.has_unsaved_changes());

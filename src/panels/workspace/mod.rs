@@ -252,6 +252,11 @@ impl Workspace {
         }
         if !self.tabs.contains(&id) {
             self.tabs.push(id);
+            // Opening, it simulates as the preferences say; Space toggles it.
+            let live = self.prefs.simulate_on_open;
+            if let Some(doc) = self.project.doc_mut(id) {
+                doc.panel_mut_untracked().simulation_active = live;
+            }
         }
         self.active = Some(id);
     }
@@ -271,7 +276,6 @@ impl Workspace {
 
     pub fn new_layout(&mut self) -> DocId {
         let id = self.project.add_layout("Layout", Layout::default(), 10.0);
-        self.project.doc_mut(id).expect("just added").panel_mut_untracked().simulation_active = self.prefs.live_simulation;
         self.open_tab(id);
         id
     }
@@ -1162,7 +1166,7 @@ impl Workspace {
     pub fn set_preferences(&mut self, prefs: Preferences) {
         self.prefs = prefs;
         for doc in &mut self.project.documents {
-            doc.panel_mut_untracked().simulation_active = self.prefs.live_simulation;
+            doc.panel_mut_untracked().simulation_active = self.prefs.simulate_on_open;
         }
     }
 
@@ -2051,8 +2055,9 @@ impl Workspace {
                 });
                 ui_kit::section(ui, "Simulation");
                 egui::Grid::new("prefs_sim").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                    ui.label("New documents");
-                    ui.checkbox(&mut p.live_simulation, "Simulate live");
+                    ui.label("Live simulation");
+                    ui.checkbox(&mut p.simulate_on_open, "On when a document opens")
+                        .on_hover_text("Off, a design waits for Space (or the Live simulation box) to simulate");
                     ui.end_row();
                     let l = ui.label("Clock").id;
                     ui.add(egui::Slider::new(&mut p.tick_seconds, 0.05..=2.0).show_value(false).logarithmic(true)).labelled_by(l);

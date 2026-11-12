@@ -214,7 +214,7 @@ impl Default for OpticsPanel {
             tool: None,
             dragging_new: None,
             selected_wire: None,
-            simulation_active: true,
+            simulation_active: false,
             cell_um: 10.0,
             sim: None,
             machine: Machine::default(),
@@ -503,7 +503,6 @@ impl OpticsPanel {
             return;
         };
         self.set_layout((example.build)(), example.cell_um);
-        self.simulation_active = true;
         self.notify(format!("Loaded example: {}", example.name));
     }
 

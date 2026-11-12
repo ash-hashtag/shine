@@ -55,8 +55,10 @@ pub struct Preferences {
     pub default_wavelength_nm: f32,
     /// Seconds between clock ticks while running.
     pub tick_seconds: f64,
-    /// Live simulation on for new documents.
-    pub live_simulation: bool,
+    /// Whether a document simulates live when its tab opens; off, it waits
+    /// for Space (or the Live simulation box). Renamed from
+    /// `live_simulation` (on by default) when the default became off.
+    pub simulate_on_open: bool,
     /// Size of the whole interface (menus, panels, text), as a factor:
     /// 1 is normal. (Ctrl+= and Ctrl+− zoom the canvas instead.)
     pub ui_scale: f32,
@@ -84,7 +86,7 @@ impl Default for Preferences {
             show_performance_graph: false,
             default_wavelength_nm: 650.0,
             tick_seconds: 0.5,
-            live_simulation: true,
+            simulate_on_open: false,
             ui_scale: 1.0,
             remember_canvas_zoom: true,
             canvas_zoom: None,

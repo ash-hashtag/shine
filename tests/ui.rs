@@ -16,11 +16,15 @@ fn app() -> Harness<'static, Workspace> {
 /// The app with frames `dt` seconds apart (the default, a quarter second, is
 /// too slow for double clicks).
 fn app_stepping(dt: f32) -> Harness<'static, Workspace> {
+    // Simulating live (designs open paused): these tests check what it shows.
+    let mut ws = Workspace::default();
+    let prefs = shine::panels::prefs::Preferences { simulate_on_open: true, ..ws.prefs.clone() };
+    ws.set_preferences(prefs);
     let mut h = Harness::builder()
         .with_size(Vec2::new(1400.0, 900.0))
         .with_max_steps(8)
         .with_step_dt(dt)
-        .build_ui_state(|ui, ws: &mut Workspace| ws.ui(ui), Workspace::default());
+        .build_ui_state(|ui, ws: &mut Workspace| ws.ui(ui), ws);
     // Results on the frame they're asked for: an unoptimised build is slow
     // enough to send simulations to the background.
     h.state_mut().background_after_ms = f64::INFINITY;

@@ -26,8 +26,11 @@ and solves the steady state **exactly** as a linear system, once per laser wavel
 
 ## Live simulation and speed
 
-With live simulation on, the design is simulated again whenever it changes. Small designs
-take well under a millisecond, and the result is there on the same frame.
+A design opens paused: press **Space** (or tick **Live simulation**, or the toggle in the
+menu bar) to simulate it, and again to pause. With live simulation on, the design is
+simulated again whenever it changes. Small designs take well under a millisecond, and the
+result is there on the same frame. To have designs simulate as soon as they open, turn on
+**Edit → Preferences… → Live simulation: On when a document opens**.
 
 In the desktop app, a design whose simulation takes longer than about 12 ms simulates in
 the background: you keep editing, the last result stays on screen, and the new one

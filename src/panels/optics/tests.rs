@@ -8,6 +8,12 @@ use crate::panels::circuit::sim::Outcome;
 use crate::panels::units::PowerUnit;
 use model::{cell_center, cell_of};
 
+/// An editor simulating live (they open paused): most tests check what the
+/// simulation shows.
+fn live_panel() -> OpticsPanel {
+    OpticsPanel { simulation_active: true, ..OpticsPanel::default() }
+}
+
 struct Harness {
     ctx: egui::Context,
     time: f64,
@@ -156,7 +162,7 @@ fn ctrl() -> Modifiers {
 
 #[test]
 fn defaults_and_layout_of_panels() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     assert!(panel.layout.components.is_empty() && panel.show_toolbar && panel.show_properties);
     assert_eq!(panel.cell_um, 10.0);
     Harness::new(&mut panel);
@@ -171,7 +177,7 @@ fn defaults_and_layout_of_panels() {
 
 #[test]
 fn click_places_selects_and_deselects() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     panel.tool = Some(Tool::Place(Placeable::Part(DETECTOR)));
     let a = scr(&panel, cell_center(2, 2));
@@ -208,7 +214,7 @@ fn click_places_selects_and_deselects() {
 
 #[test]
 fn double_click_rotates() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let i = place(&mut panel, 1, 1, OpticComponentKind::palette()[2]);
     let mut h = Harness::new(&mut panel);
     let at = scr(&panel, cell_center(1, 1));
@@ -222,7 +228,7 @@ fn double_click_rotates() {
 
 #[test]
 fn box_select_by_dragging_empty_space() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 1, 1, LENS);
     place(&mut panel, 2, 1, LENS);
     place(&mut panel, 8, 8, LENS);
@@ -239,7 +245,7 @@ fn box_select_by_dragging_empty_space() {
 
 #[test]
 fn dragging_a_component_moves_it() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 1, 1, LENS);
     place(&mut panel, 4, 1, LENS);
     let mut h = Harness::new(&mut panel);
@@ -267,7 +273,7 @@ fn dragging_a_component_moves_it() {
 
 #[test]
 fn grab_with_keyboard_axis_lock_confirm_and_cancel() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 0, LENS);
     let mut h = Harness::new(&mut panel);
     h.move_to(scr(&panel, cell_center(0, 0)), &mut panel);
@@ -312,7 +318,7 @@ fn grab_with_keyboard_axis_lock_confirm_and_cancel() {
 
 #[test]
 fn selection_and_edit_shortcuts() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     for i in 0..3 {
         place(&mut panel, i, 0, OpticComponentKind::palette()[0]);
     }
@@ -368,7 +374,7 @@ fn selection_and_edit_shortcuts() {
 
 #[test]
 fn duplicate_follows_the_mouse() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 0, DETECTOR);
     let mut h = Harness::new(&mut panel);
     h.move_to(scr(&panel, cell_center(0, 0)), &mut panel);
@@ -384,7 +390,7 @@ fn duplicate_follows_the_mouse() {
 
 #[test]
 fn view_toggles_and_framing() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     assert!(panel.simulation_active, "on by default");
     h.key(&mut panel, Key::Space);
@@ -425,7 +431,7 @@ fn view_toggles_and_framing() {
 
 #[test]
 fn mouse_navigation() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     let canvas = panel.canvas_rect().unwrap();
     let at = canvas.center();
@@ -514,7 +520,7 @@ fn mouse_navigation() {
 
 #[test]
 fn context_and_add_menus() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 2, 2, LENS);
     panel.editor.selection.clear();
     let mut h = Harness::new(&mut panel);
@@ -546,7 +552,7 @@ fn context_and_add_menus() {
 
 #[test]
 fn menu_choices() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 0, OpticComponentKind::palette()[0]);
     let before = panel.layout.components[0].kind;
     panel.apply_menu_choice(MenuChoice::Rotate(1), cell_center(0, 0));
@@ -589,7 +595,7 @@ fn menu_choices() {
 
 #[test]
 fn rendered_menu_lists_actions() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 2, 2, LENS);
     panel.layout.lines.push(Line {
         start: cell_center(2, 2),
@@ -607,7 +613,7 @@ fn rendered_menu_lists_actions() {
 
 #[test]
 fn palette_drag_and_line_tool() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     panel.dragging_new = Some(Placeable::Part(DETECTOR));
     let target = scr(&panel, cell_center(3, 1));
@@ -646,7 +652,7 @@ fn palette_drag_and_line_tool() {
 
 #[test]
 fn undo_waits_for_the_interaction_to_finish() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     let at = scr(&panel, cell_center(9, 9));
     h.move_to(at, &mut panel);
@@ -663,7 +669,7 @@ fn undo_waits_for_the_interaction_to_finish() {
 
 #[test]
 fn simulation_readouts_and_examples() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     for i in 0..examples::layout_examples().len() {
         panel.load_example(i);
@@ -707,7 +713,7 @@ fn simulation_readouts_and_examples() {
 
 #[test]
 fn properties_for_every_kind_and_errors() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     for (k, kind) in OpticComponentKind::palette().into_iter().enumerate() {
         place(&mut panel, k as i32, 0, kind);
     }
@@ -753,12 +759,12 @@ fn save_load_and_new() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("layout.json");
 
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     panel.load_example(0);
     panel.cell_um = 3.25;
     panel.save_to(&path).unwrap();
 
-    let mut other = OpticsPanel::default();
+    let mut other = live_panel();
     other.load_from(&path).unwrap();
     assert_eq!(other.layout, panel.layout);
     assert_eq!(other.cell_um, 3.25);
@@ -779,7 +785,7 @@ fn save_load_and_new() {
 
 #[test]
 fn status_expires() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     panel.apply(Action::Undo);
     assert!(panel.status.is_some());
@@ -791,7 +797,7 @@ fn status_expires() {
 
 #[test]
 fn header_describes_tool_and_cell() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     panel.tool = Some(Tool::Place(Placeable::Part(DETECTOR)));
     // Pan so a negative cell is on screen.
@@ -850,7 +856,7 @@ fn shortcuts_are_ignored_while_typing() {
 
 #[test]
 fn shortcuts_survive_clicking_library_rows() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 0, LENS);
     place(&mut panel, 1, 0, LENS);
     let mut h = Harness::new(&mut panel);
@@ -864,7 +870,7 @@ fn shortcuts_survive_clicking_library_rows() {
 
 #[test]
 fn box_select_released_outside_the_canvas_finishes() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 0, LENS);
     place(&mut panel, 2, 1, LENS);
     let mut h = Harness::new(&mut panel);
@@ -915,7 +921,7 @@ fn library_lists_sections_and_searches() {
 
 #[test]
 fn signal_wires_are_drawn_by_dragging_between_terminals() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let n = add_box(&mut panel, Builtin::NumberInput { bits: 2, value: 3 }, (0, 0));
     let d = add_box(&mut panel, Builtin::Display { bits: 2 }, (0, 4));
     let mut h = Harness::new(&mut panel);
@@ -948,7 +954,7 @@ fn signal_wires_are_drawn_by_dragging_between_terminals() {
 
 #[test]
 fn waveguides_and_signal_light_mismatches() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let a = add_box(&mut panel, Builtin::YSplitter, (0, 0));
     let b = add_box(&mut panel, Builtin::Attenuator { loss_db: 0.0 }, (6, 3));
     let f = add_box(&mut panel, Builtin::FunctionCell {
@@ -998,7 +1004,7 @@ fn waveguides_and_signal_light_mismatches() {
 
 #[test]
 fn registers_tick_in_a_standalone_panel() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let n = add_box(&mut panel, Builtin::NumberInput { bits: 1, value: 1 }, (0, 0));
     let r = add_box(&mut panel, Builtin::Register { bits: 1 }, (0, 3));
     panel.layout.connect_signal(Terminal { item: Item::Box(n), port: 0 }, Terminal { item: Item::Box(r), port: 0 });
@@ -1024,7 +1030,7 @@ fn registers_tick_in_a_standalone_panel() {
 
 #[test]
 fn clicking_along_a_value_input_sets_it() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     add_box(&mut panel, Builtin::Value { name: "Light 1".into(), value: 0.0 }, (0, 0));
     let mut h = Harness::new(&mut panel);
     // Three quarters of the way along: 0.75.
@@ -1039,7 +1045,7 @@ fn clicking_along_a_value_input_sets_it() {
 
 #[test]
 fn boxes_select_move_and_inspect() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     add_box(&mut panel, Builtin::NumberInput { bits: 4, value: 0 }, (0, 0));
     add_box(&mut panel, Builtin::Coupler { coupling: 0.5 }, (0, 3));
     place(&mut panel, 5, 5, LENS);
@@ -1074,7 +1080,7 @@ fn boxes_select_move_and_inspect() {
 
 #[test]
 fn add_menu_search_places_the_first_match() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     h.move_to(scr(&panel, cell_center(2, 2)), &mut panel);
     h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
@@ -1096,7 +1102,7 @@ fn add_menu_search_places_the_first_match() {
 #[test]
 fn converters_bridge_light_and_signals() {
     // A laser beam into a coupler box; its upper output should drive a display.
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     place(&mut panel, 0, 1, OpticComponentKind::palette()[0]);
     let dc = add_box(&mut panel, Builtin::Coupler { coupling: 0.0 }, (2, 1));
     let d = add_box(&mut panel, Builtin::Display { bits: 1 }, (8, 6));
@@ -1149,7 +1155,7 @@ fn converters_bridge_light_and_signals() {
 
 #[test]
 fn wheel_over_a_menu_does_not_move_the_grid() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     let at = scr(&panel, cell_center(3, 3));
     h.move_to(at, &mut panel);
@@ -1171,7 +1177,7 @@ fn wheel_over_a_menu_does_not_move_the_grid() {
 
 #[test]
 fn add_menu_has_category_submenus() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     h.move_to(scr(&panel, cell_center(3, 3)), &mut panel);
     h.key_with(&mut panel, Key::A, Modifiers::SHIFT);
@@ -1208,7 +1214,7 @@ fn add_menu_has_category_submenus() {
 
 #[test]
 fn browser_lists_folders_and_picks_a_part() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     panel.show_browser = true;
     for section in 0..library::SECTIONS.len() {
@@ -1228,7 +1234,7 @@ fn browser_lists_folders_and_picks_a_part() {
 
 #[test]
 fn library_folders_collapse_and_search_flattens() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mut h = Harness::new(&mut panel);
     h.frame(&mut panel, Vec::new());
     panel.search = "mirror".into();
@@ -1239,7 +1245,7 @@ fn library_folders_collapse_and_search_flattens() {
 
 #[test]
 fn sweep_window_sets_up_runs_and_plots() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     panel.set_layout(examples::mach_zehnder(), 10.0);
     let mut h = Harness::new(&mut panel);
     let laser = panel.layout.components.iter().position(|c| matches!(c.kind, OpticComponentKind::Laser { .. })).unwrap();
@@ -1296,7 +1302,7 @@ fn sweep_window_sets_up_runs_and_plots() {
 fn inspector_shows_real_units() {
     // Every part's inspector renders in mW and in dBm; selecting the laser
     // shows its power editor and the detectors their readings.
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     panel.set_layout(examples::mach_zehnder(), 10.0);
     let mut h = Harness::new(&mut panel);
     for unit in [PowerUnit::MilliWatt, PowerUnit::Dbm] {
@@ -1318,7 +1324,7 @@ fn lasers_wire_into_boxes_with_waveguides() {
     // A free-space laser has a light output: dragging it (or, by mistake, its
     // signal pin) onto a box's light input connects a waveguide, without
     // moving anything, and its light goes through the box.
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mzi = add_box(&mut panel, Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }, (6, 3));
     panel.layout.components.push(model::PlacedComponent {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(0.0, -1.0), source: 0, color: None },
@@ -1376,7 +1382,7 @@ fn lasers_wire_into_boxes_with_waveguides() {
 
 #[test]
 fn duplicating_a_laser_and_box_copies_their_waveguide() {
-    let mut panel = OpticsPanel::default();
+    let mut panel = live_panel();
     let mzi = add_box(&mut panel, Builtin::Mzi { theta: 1.0, phi: 0.0 }, (6, 3));
     panel.layout.components.push(model::PlacedComponent {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },

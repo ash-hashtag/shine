@@ -34,6 +34,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   released under the MIT licence.
 - The model, simulation, analysis and files build without the editor (the `core`
   feature).
+- Designs open paused: Space (or Live simulation) starts simulating, so opening a big
+  design never starts a long simulation by itself. Preferences → Live simulation → "On
+  when a document opens" brings back simulating straight away (the preference is new, and
+  off at first, even if the old "Simulate live" was on).
 - Designs of millions of parts. Passive components are simulated as their matrices,
   solved on all threads and kept between simulations until they change; solving a matrix
   keeps only the fields still to be read; the electronics skip components without any;
