@@ -594,6 +594,10 @@ impl Table {
         if wavelength_nm <= w[0] || last == 0 {
             return self.matrices[0].clone();
         }
+        // At a wavelength in the table, as a solved component is asked.
+        if let Some(k) = w.iter().position(|&x| x == wavelength_nm) {
+            return self.matrices[k].clone();
+        }
         if wavelength_nm >= w[last] {
             return self.matrices[last].clone();
         }

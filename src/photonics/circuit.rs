@@ -326,7 +326,7 @@ impl Circuit {
         outputs: &[OutPort],
     ) -> Result<Matrix, CircuitError> {
         self.compile(wavelength_nm)?
-            .transfer_matrix(inputs, outputs)
+            .into_transfer_matrix(inputs, outputs)
     }
 }
 

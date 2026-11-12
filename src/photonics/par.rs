@@ -18,14 +18,12 @@ pub fn threads() -> usize {
 
 /// `items.map(f)` in parallel when possible, preserving order.
 pub fn map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync + Send) -> Vec<R> {
+    // One item runs here: handing it to a thread only costs.
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        items.par_iter().map(f).collect()
+    if items.len() > 1 {
+        return items.par_iter().map(f).collect();
     }
-    #[cfg(target_arch = "wasm32")]
-    {
-        items.iter().map(f).collect()
-    }
+    items.iter().map(f).collect()
 }
 
 /// Like [`map`], stopping at an error.
@@ -34,13 +32,10 @@ pub fn try_map<T: Sync, R: Send, E: Send>(
     f: impl Fn(&T) -> Result<R, E> + Sync + Send,
 ) -> Result<Vec<R>, E> {
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        items.par_iter().map(f).collect()
+    if items.len() > 1 {
+        return items.par_iter().map(f).collect();
     }
-    #[cfg(target_arch = "wasm32")]
-    {
-        items.iter().map(f).collect()
-    }
+    items.iter().map(f).collect()
 }
 
 #[cfg(test)]

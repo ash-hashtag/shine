@@ -41,6 +41,9 @@ const CHUNK_LANES: usize = 256;
 /// holding every field of every input (which can be hundreds of GB).
 const TRANSFER_BYTES: usize = 256 << 20;
 
+/// The fewest lanes a chunk runs, so the SIMD multiply-adds have work.
+const MIN_LANES: usize = 8;
+
 /// Maps ports to slots.
 #[derive(Debug)]
 pub(crate) struct Layout {
@@ -200,6 +203,9 @@ pub struct Program {
     slot_group: Arc<Vec<u32>>,
     /// The part each source id emits in.
     source_group: HashMap<u32, u32>,
+    /// Fields a lane holds while running: one per slot, unless
+    /// [`Program::compact`] has them share.
+    state_slots: usize,
 }
 
 const NO_GROUP: u32 = u32::MAX;
@@ -255,6 +261,7 @@ impl Program {
             }),
             slot_group: Arc::new(Vec::new()),
             source_group: HashMap::new(),
+            state_slots: layout.num_slots,
         };
 
         // Sharing lanes only pays with several independent sources.
@@ -487,33 +494,170 @@ impl Program {
         inputs: &[InPort],
         outputs: &[OutPort],
     ) -> Result<Matrix, CircuitError> {
-        let n = inputs.len();
+        let (slots, out_slots) = self.transfer_slots(inputs, outputs)?;
+        Ok(self.transfer(&slots, &out_slots))
+    }
+
+    /// Like [`Self::transfer_matrix`], for a program used for nothing else:
+    /// it is [compacted](Self::compact) first, so each lane holds only the
+    /// fields still to be read. For a mesh of hundreds of thousands of MZIs,
+    /// kilobytes a lane instead of tens of megabytes.
+    pub fn into_transfer_matrix(self, inputs: &[InPort], outputs: &[OutPort]) -> Result<Matrix, CircuitError> {
+        let (slots, out_slots) = self.transfer_slots(inputs, outputs)?;
+        let (program, slots, out_slots) = self.compact(&slots, &out_slots);
+        Ok(program.transfer(&slots, &out_slots))
+    }
+
+    fn transfer_slots(&self, inputs: &[InPort], outputs: &[OutPort]) -> Result<(Vec<usize>, Vec<usize>), CircuitError> {
         let slots = inputs
             .iter()
             .map(|&p| self.layout.drive_slot(p))
             .collect::<Result<Vec<_>, _>>()?;
-        let out_slots: Vec<usize> = outputs.iter().map(|&p| self.layout.output_slot(p)).collect();
-        // Lanes per chunk so the chunks running at once fit TRANSFER_BYTES.
-        let per_lane = 16 * self.layout.num_slots.max(1) * super::par::threads();
-        let width = (TRANSFER_BYTES / per_lane).clamp(1, CHUNK_LANES);
+        Ok((slots, outputs.iter().map(|&p| self.layout.output_slot(p)).collect()))
+    }
+
+    /// The fields on `out_slots` per unit field on each of `slots`.
+    fn transfer(&self, slots: &[usize], out_slots: &[usize]) -> Matrix {
+        let n = slots.len();
+        // Lanes per chunk, and chunks at once, to fit TRANSFER_BYTES: one
+        // chunk a thread if each can have MIN_LANES, else fewer at once.
+        let per_lane = 16 * self.state_slots.max(1);
+        let threads = super::par::threads();
+        let width = (TRANSFER_BYTES / (per_lane * threads))
+            .min(n.div_ceil(threads))
+            .clamp(MIN_LANES, CHUNK_LANES)
+            .min(n.max(1));
+        let at_once = (TRANSFER_BYTES / (per_lane * width)).clamp(1, threads);
         let starts: Vec<usize> = (0..n).step_by(width).collect();
         let identity = Mat::<C64>::identity(n, n);
         // Each chunk's columns of the matrix; its fields are dropped at once.
-        let columns = super::par::map(&starts, |&start| {
-            let width = width.min(n - start);
-            let state = self.run_chunk(&slots, identity.as_ref(), start, width, Sources::Off);
-            Mat::<C64>::from_fn(out_slots.len(), width, |i, l| state.get(out_slots[i], l))
-        });
-        let mut m = Mat::<C64>::zeros(outputs.len(), n);
-        for (&start, part) in starts.iter().zip(&columns) {
-            m.as_mut().submatrix_mut(0, start, outputs.len(), part.ncols()).copy_from(part);
+        let mut columns = Vec::with_capacity(starts.len());
+        for group in starts.chunks(at_once) {
+            columns.extend(super::par::map(group, |&start| {
+                let width = width.min(n - start);
+                let state = self.run_chunk(slots, identity.as_ref(), start, width, Sources::Off);
+                Mat::<C64>::from_fn(out_slots.len(), width, |i, l| state.get(out_slots[i], l))
+            }));
         }
-        Ok(m)
+        let mut m = Mat::<C64>::zeros(out_slots.len(), n);
+        for (&start, part) in starts.iter().zip(&columns) {
+            m.as_mut().submatrix_mut(0, start, out_slots.len(), part.ncols()).copy_from(part);
+        }
+        m
+    }
+
+    /// This program with its slots shared, for computing only the fields of
+    /// `keep` from those injected on `drives`: a slot holds a field from the
+    /// row that writes it until the last row that reads it, then the next
+    /// one. Rows run in order, each slot written once before it's read, and
+    /// a feedback loop's rows read only fields from outside it, so a
+    /// field's life is known when compiling. Slot 0 stays zero, for open
+    /// inputs nothing drives; slot 1 takes fields nothing reads.
+    /// Returns the program and the new slots of `drives` and `keep`; the
+    /// program reads and writes only those, not ports.
+    fn compact(mut self, drives: &[usize], keep: &[usize]) -> (Self, Vec<usize>, Vec<usize>) {
+        const UNREAD: u32 = 0;
+        const KEPT: u32 = u32::MAX;
+        const NONE: u32 = u32::MAX;
+        let n = self.state_slots;
+        // When each slot is last read: rows count from 1, a feedback loop
+        // being one step.
+        let mut last_read = vec![UNREAD; n];
+        let mut time = 0u32;
+        let mut mark = |row: &Row, time: u32| {
+            for t in &self.terms[row.terms.start as usize..row.terms.end as usize] {
+                last_read[t.slot as usize] = time;
+            }
+        };
+        for step in &self.steps {
+            match step {
+                Step::Rows(r) => {
+                    for row in &self.rows[r.start as usize..r.end as usize] {
+                        time += 1;
+                        mark(row, time);
+                    }
+                }
+                Step::Solve(b) => {
+                    time += 1;
+                    let rows = self.blocks[*b as usize].rows.clone();
+                    for row in &self.rows[rows.start as usize..rows.end as usize] {
+                        mark(row, time);
+                    }
+                }
+            }
+        }
+        for &k in keep {
+            last_read[k] = KEPT;
+        }
+
+        let mut map = vec![NONE; n];
+        let mut free: Vec<u32> = Vec::new();
+        let mut next = 2u32;
+        let mut take = |free: &mut Vec<u32>| {
+            free.pop().unwrap_or_else(|| {
+                next += 1;
+                next - 1
+            })
+        };
+        for &d in drives {
+            if map[d] == NONE {
+                map[d] = take(&mut free);
+            }
+        }
+        // A field read at `time`: its new slot, freed if this is its last read.
+        let read = |slot: &mut u32, map: &mut [u32], last_read: &mut [u32], free: &mut Vec<u32>, time: u32| {
+            let old = *slot as usize;
+            let new = map[old];
+            if new == NONE {
+                *slot = 0; // never written nor driven: zero
+                return;
+            }
+            *slot = new;
+            if last_read[old] == time {
+                free.push(new);
+                last_read[old] = UNREAD; // freed once, however often it's read now
+            }
+        };
+        let write = |old: u32, map: &mut [u32], last_read: &[u32], free: &mut Vec<u32>, take: &mut dyn FnMut(&mut Vec<u32>) -> u32| {
+            let new = if last_read[old as usize] == UNREAD { 1 } else { take(free) };
+            map[old as usize] = new;
+            new
+        };
+        let mut time = 0u32;
+        for step in self.steps.clone() {
+            match step {
+                Step::Rows(r) => {
+                    for row in &mut self.rows[r.start as usize..r.end as usize] {
+                        time += 1;
+                        for t in &mut self.terms[row.terms.start as usize..row.terms.end as usize] {
+                            read(&mut t.slot, &mut map, &mut last_read, &mut free, time);
+                        }
+                        row.target = write(row.target, &mut map, &last_read, &mut free, &mut take);
+                    }
+                }
+                Step::Solve(b) => {
+                    time += 1;
+                    let block = &mut self.blocks[b as usize];
+                    for row in &self.rows[block.rows.start as usize..block.rows.end as usize] {
+                        for t in &mut self.terms[row.terms.start as usize..row.terms.end as usize] {
+                            read(&mut t.slot, &mut map, &mut last_read, &mut free, time);
+                        }
+                    }
+                    for u in &mut block.unknowns {
+                        *u = write(*u, &mut map, &last_read, &mut free, &mut take);
+                    }
+                }
+            }
+        }
+        self.state_slots = next as usize;
+        let new = |slots: &[usize]| slots.iter().map(|&s| if map[s] == NONE { 0 } else { map[s] as usize }).collect();
+        let (drives, keep) = (new(drives), new(keep));
+        (self, drives, keep)
     }
 
     /// Run lanes `start..start + width` of `fields`, injected on `slots`.
     fn run_chunk(&self, slots: &[usize], fields: MatRef<'_, C64>, start: usize, width: usize, sources: Sources<'_>) -> State {
-        let mut state = State::zeros(self.layout.num_slots, width);
+        let mut state = State::zeros(self.state_slots, width);
         if fields.ncols() > 0 {
             for (i, &slot) in slots.iter().enumerate() {
                 let (re, im) = state.slot_mut(slot);
@@ -926,6 +1070,40 @@ mod tests {
     use crate::photonics::*;
 
     const WL: f64 = 1550.0;
+
+    #[test]
+    fn a_compacted_program_gives_the_same_transfer_matrix() {
+        // A 12-mode mesh with a ring resonator (a feedback loop) on one
+        // mode's way out, an open input nothing drives, and outputs read
+        // more than once and from the middle of the mesh.
+        let u = Matrix::from_fn(12, 12, |r, c| C64::new(((r * 7 + c * 3) as f64).sin(), ((r * 5 + c * 11) as f64).cos()));
+        let u = u.svd().unwrap().U().to_owned();
+        let mesh = UnitaryMesh::decompose(&u).unwrap();
+        let mut c = Circuit::new();
+        let ports = c.add_block(&mesh).unwrap();
+        let dc = c.add(DirectionalCoupler::new(0.2));
+        let ring = c.add(Waveguide::new(31.0, 2.4));
+        c.connect(ports.outputs[3], dc.input(0)).unwrap();
+        c.connect(dc.output(1), ring.input(0)).unwrap();
+        c.connect(ring.output(0), dc.input(1)).unwrap();
+        let extra = c.add(Mzi::new(0.3, 0.9));
+        c.connect(ports.outputs[5], extra.input(0)).unwrap();
+        let inputs = &ports.inputs[..10];
+        let mut outputs = ports.outputs.clone();
+        outputs[3] = dc.output(0);
+        outputs[5] = extra.output(1);
+        outputs.push(extra.output(0));
+        outputs.push(outputs[0]);
+        for wl in [1549.0, WL] {
+            let program = c.compile(wl).unwrap();
+            let whole = program.transfer_matrix(inputs, &outputs).unwrap();
+            let slots = program.num_slots();
+            let (compact, ..) = c.compile(wl).unwrap().compact(&[], &[]);
+            assert!(compact.state_slots < slots / 2, "{} of {slots} slots", compact.state_slots);
+            let compacted = c.compile(wl).unwrap().into_transfer_matrix(inputs, &outputs).unwrap();
+            assert!((&whole - &compacted).norm_l2() < 1e-12, "at {wl} nm");
+        }
+    }
 
     /// Gain-less element that also emits: `out = 0.5 * in + 1`.
     #[derive(Debug)]
