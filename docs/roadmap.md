@@ -89,8 +89,8 @@ want them.
 - [x] **An AI inference chip**: a two-layer optical neural network reading handwritten
       digits, simulated whole and checked against SAX and PhotonForge
       ([Optical neural network](neural-network.md))
-- [ ] **Program a mesh from a matrix in the editor**: choose or type a matrix, and Shine
-      sets the mesh's heaters (the decomposition is there; the panel isn't)
+- [x] **Program a mesh from a matrix**: any matrix as a component of MZI meshes, in the
+      editor (Component → New layer from a matrix…), `shine layer` and the libraries
 - [ ] **Smaller SAX netlists**: leave out components' pins (zero-phase pass-throughs, a
       third of the instances in a large design)
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than

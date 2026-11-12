@@ -4711,7 +4711,7 @@ dependencies = [
 
 [[package]]
 name = "shine"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -4753,7 +4753,7 @@ dependencies = [
 
 [[package]]
 name = "shine-photonics"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "boltffi",
  "shine",

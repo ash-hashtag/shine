@@ -10,7 +10,10 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
-## 0.1.2 (unreleased)
+## 0.1.3 (2026-11-12)
+
+The simulator for designs of millions of parts, and Shine as a library. (0.1.2 wasn't
+released: its changes are here.)
 
 ### Added
 
@@ -31,6 +34,11 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   `shine` program ([Optical neural network](neural-network.md#at-full-size)).
 - `shine simulate --input FILE|-` sets a design's inputs from a stream of numbers, several
   samples at a time; `--inputs` lists them and `--only TEXT` picks readings.
+- Matrices as light: any matrix W (any shape, real or complex) becomes a component
+  computing W x / σmax from two MZI meshes and an attenuator per mode, or a unitary one
+  mesh: **Component → New layer from a matrix…**, `shine layer`, and
+  `new_weight_layer` / `new_unitary_mesh` in the libraries
+  ([Components](components.md#components-from-a-matrix)).
 
 ### Changed
 
@@ -48,9 +56,14 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   building big meshes is linear. The editor draws and points through a spatial index,
   keeps fingerprints and the component catalog until something changes, simulates big
   designs in the background from the start, and takes undo snapshots only of documents
-  being edited, bounded by size. The app and MCP server use mimalloc. On the MNIST chip:
-  building 503 s → 1.7 s, a simulation 26 s and 2.1 GB → 0.08 s, layer matrices from out
-  of memory to 0.56 s, the editor 100–200 ms → 2.6–22 ms a frame.
+  being edited, bounded by size. The app and MCP server use mimalloc. On the 28×28 chip:
+  building 503 s → 1.7 s, a simulation 26 s and 2.1 GB → 0.07 s, layer matrices from out
+  of memory to 0.5 s, the editor 100–200 ms → 2–20 ms a frame.
+- Saving the session writes the project only when it changed (it was written every 5 s,
+  20 MB for the 28×28 chip), and panning or zooming no longer counts as changing a design.
+- Opening a document of over 50 000 parts asks first.
+- Function cells (built-in electronics) are drawn in amber; double-clicking a built-in
+  block, or Tab, shows its settings in the inspector.
 
 ## 0.1.1 (2026-11-11)
 
