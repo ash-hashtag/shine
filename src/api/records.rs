@@ -92,6 +92,13 @@ impl Matrix {
         self.values.get((row * self.cols + col) as usize).copied().unwrap_or_default()
     }
 
+    pub(crate) fn to_core(&self) -> CoreMatrix {
+        CoreMatrix::from_fn(self.rows as usize, self.cols as usize, |r, c| {
+            let z = self.get(r as u32, c as u32);
+            C64::new(z.re, z.im)
+        })
+    }
+
     pub(crate) fn from_core(m: &CoreMatrix) -> Self {
         Self {
             rows: m.nrows() as u32,

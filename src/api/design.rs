@@ -73,6 +73,12 @@ impl Design {
         self.with(|inner| inner.project.doc(self.id).map_or_else(String::new, |d| d.name.clone()))
     }
 
+    /// What a component says it is (empty for a design): for a weight
+    /// layer, what it computes, with W's largest singular value.
+    pub fn description(&self) -> String {
+        self.with(|inner| inner.project.doc(self.id).and_then(|d| d.component.as_ref()).map_or_else(String::new, |m| m.description.clone()))
+    }
+
     /// Whether it is a component (others can place it) rather than a top-level design.
     pub fn is_component(&self) -> bool {
         self.with(|inner| inner.project.doc(self.id).is_some_and(|d| d.component.is_some()))

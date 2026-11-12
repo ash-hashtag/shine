@@ -105,6 +105,19 @@ class Library(unittest.TestCase):
         laser.to(chip.place(f)).to(pd)
         self.assertAlmostEqual(chip.simulate().power_mw(pd), 0.25, places=12)
 
+    def test_a_weight_matrix_becomes_a_layer_of_light(self):
+        rows = [[0.5, -1.0, 2.0], [0.25, 0.0, 1.0]]
+        w = shine.Matrix(rows=2, cols=3, values=[shine.Complex(re=x, im=0.0) for row in rows for x in row])
+        project = shine.Project()
+        layer = project.new_weight_layer("Weights", w)
+        self.assertIn(f"{shine.layer_scale(w):.6f}", layer.description())
+        t = layer.transmission([1550.0])
+        self.assertEqual((t.inputs(), t.outputs()), (["in1", "in2", "in3"], ["out1", "out2"]))
+        # Powers in the ratios of |W|².
+        self.assertAlmostEqual(t.power("out1", "in3")[0] / t.power("out1", "in1")[0], 16.0, places=9)
+        with self.assertRaisesRegex(shine.ShineErrorException, "needs 6 values"):
+            project.new_weight_layer("Bad", shine.Matrix(rows=2, cols=3, values=[]))
+
     def test_monte_carlo_and_optimisation(self):
         chip = shine.Project().new_design("Split")
         laser = chip.laser()

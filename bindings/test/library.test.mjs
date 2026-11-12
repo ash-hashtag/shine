@@ -2,7 +2,7 @@
 //   cd bindings && pnpm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Direction, Goal, Project, ShineErrorException } from "../dist/wasm/pkg/node.js";
+import { Direction, Goal, Project, ShineErrorException, layerScale } from "../dist/wasm/pkg/node.js";
 
 const close = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, `${what ?? ""} ${a} vs ${b}`);
 
@@ -80,6 +80,16 @@ test("a component written as a TypeScript function", () => {
   const pd = chip.detector();
   chip.laser(1555, 1).to(chip.place(f)).to(pd);
   close(chip.simulate().powerMw(pd), 0.25, 1e-12, "amplitude 0.5");
+});
+
+test("a weight matrix becomes a layer of light", () => {
+  const rows = [[0.5, -1, 2], [0.25, 0, 1]];
+  const w = { rows: 2, cols: 3, values: rows.flat().map((re) => ({ re, im: 0 })) };
+  const layer = Project.new().newWeightLayer("Weights", w);
+  assert.ok(layer.description().includes(layerScale(w).toFixed(6)), layer.description());
+  const t = layer.transmission([1550]);
+  assert.deepEqual([t.inputs(), t.outputs()], [["in1", "in2", "in3"], ["out1", "out2"]]);
+  close(t.power("out1", "in3")[0] / t.power("out1", "in1")[0], 16, 1e-9, "|W|² ratios");
 });
 
 test("Monte Carlo repeats from its seed", () => {

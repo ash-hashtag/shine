@@ -211,3 +211,31 @@ fn electronics_drive_the_light() -> Result<()> {
     assert_eq!(chip.simulate()?.display(&d)?, 9);
     Ok(())
 }
+
+#[test]
+fn a_weight_matrix_becomes_a_layer_of_light() -> Result<()> {
+    let p = Project::new();
+    let w = Matrix::from_rows(&[
+        vec![Complex::new(0.5, 0.0), Complex::new(-1.0, 0.0), Complex::new(2.0, 0.0)],
+        vec![Complex::new(0.25, 0.0), Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)],
+    ]);
+    let layer = p.new_weight_layer("Weights", &w)?;
+    assert!(layer.is_component());
+    let scale = layer_scale(&w)?;
+    assert!(layer.description().contains(&format!("{scale:.6}")), "{}", layer.description());
+    let t = layer.transmission(&[1550.0])?;
+    assert_eq!((t.inputs.len(), t.outputs.len()), (3, 2));
+    // |W x / σmax|, up to the arms' common loss: the ratios of powers match.
+    let p00 = t.power("out1", "in1")?[0];
+    for (o, i, w) in [("out1", "in2", 1.0), ("out1", "in3", 2.0), ("out2", "in1", 0.25), ("out2", "in3", 1.0)] {
+        let ratio = t.power(o, i)?[0] / p00;
+        assert!(close(ratio, (w / 0.5f64).powi(2), 1e-9), "{o}←{i}: {ratio}");
+    }
+    assert!(t.power("out2", "in2")?[0] < 1e-20);
+    // A unitary as one mesh; mistakes are explained.
+    let swap = p.new_unitary_mesh("Swap", &Matrix::from_rows(&[vec![Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)], vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)]]))?;
+    assert!(close(swap.transmission(&[1550.0])?.power("out2", "in1")?[0], swap.transmission(&[1550.0])?.power("out1", "in2")?[0], 1e-12));
+    let bad = Matrix { rows: 2, cols: 2, values: vec![Complex::new(1.0, 0.0)] };
+    assert!(p.new_weight_layer("Bad", &bad).unwrap_err().to_string().contains("needs 4 values"));
+    Ok(())
+}

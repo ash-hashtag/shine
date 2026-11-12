@@ -112,6 +112,29 @@ impl Project {
         }
     }
 
+    /// A weight matrix as light: a component with inputs in1…in{cols} and
+    /// outputs out1…out{rows} that computes W x / σmax, where σmax is W's
+    /// largest singular value (light can't be amplified): W = U Σ V†, the
+    /// two unitaries as meshes of MZIs (the rectangular, Clements,
+    /// arrangement) and Σ/σmax as an attenuator per mode. Any shape, real or
+    /// complex. The meshes are components of their own, named after it; its
+    /// description gives σmax ([`Design::description`]); `layer_scale` too.
+    pub fn new_weight_layer(&self, name: &str, weights: &Matrix) -> Result<Design> {
+        let m = checked(weights)?;
+        let mut inner = lock(&self.inner);
+        let layer = crate::panels::optics::layers::weight_layer(&mut inner.project, name, &m).map_err(Error::Invalid)?;
+        Ok(Design { inner: self.inner.clone(), id: layer.id })
+    }
+
+    /// A unitary matrix as one mesh of MZIs: a component with inputs in1…
+    /// and outputs out1… that computes U x.
+    pub fn new_unitary_mesh(&self, name: &str, unitary: &Matrix) -> Result<Design> {
+        let m = checked(unitary)?;
+        let mut inner = lock(&self.inner);
+        let id = crate::panels::optics::layers::unitary_mesh(&mut inner.project, name, &m).map_err(Error::Invalid)?;
+        Ok(Design { inner: self.inner.clone(), id })
+    }
+
     /// The names of every design and component, in order.
     pub fn designs(&self) -> Vec<String> {
         lock(&self.inner).project.documents.iter().map(|d| d.name.clone()).collect()
@@ -229,6 +252,19 @@ impl<F: Fn(f64) -> Matrix> TransferFunction for F {
     fn matrix(&self, wavelength_nm: f64) -> Matrix {
         self(wavelength_nm)
     }
+}
+
+/// W's largest singular value σmax: what a weight layer divides by.
+pub fn layer_scale(weights: &Matrix) -> Result<f64> {
+    Ok(crate::panels::optics::layers::svd(&checked(weights)?).map_err(Error::Invalid)?.scale)
+}
+
+/// A matrix whose values fill its rows and columns, as the core's.
+fn checked(m: &Matrix) -> Result<crate::photonics::Matrix> {
+    if m.rows == 0 || m.cols == 0 || m.values.len() != (m.rows * m.cols) as usize {
+        return Err(Error::Invalid(format!("a {}×{} matrix needs {} values; it has {}", m.rows, m.cols, m.rows * m.cols, m.values.len())));
+    }
+    Ok(m.to_core())
 }
 
 impl std::fmt::Debug for Project {

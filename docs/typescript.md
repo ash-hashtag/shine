@@ -55,6 +55,18 @@ chip.laser(1555, 1).to(chip.place(f)).to(chip.detector());
 Shine samples the function at the wavelengths given and keeps the table, so the component
 saves with the project and opens in the app.
 
+## Matrices as light
+
+Any matrix becomes a component that multiplies by it, built from MZI meshes: W x / σmax,
+σmax being W's largest singular value (see [Python](python.md#matrices-as-light)).
+
+```typescript
+import { layerScale } from "shine-photonics";
+const w = { rows: 2, cols: 3, values: [0.5, -1, 2, 0.25, 0, 1].map((re) => ({ re, im: 0 })) };
+const layer = project.newWeightLayer("Weights", w);   // in1…in3 → out1, out2
+layerScale(w);                                        // σmax
+```
+
 ## Errors
 
 Every failure throws `ShineErrorException`, whose message says what would have worked:

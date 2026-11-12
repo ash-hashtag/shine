@@ -88,6 +88,24 @@ project.new_model_from_function("Filter", ["in"], ["out"], [1550.0, 1555.0, 1560
 A function-written component is sampled at the wavelengths you give and kept as a table,
 so it saves with the project and opens in the app like any other.
 
+### Matrices as light
+
+Any matrix becomes a component that multiplies by it, built from MZI meshes, as optical
+neural networks and signal processors are:
+
+```python
+rows = [[0.5, -1.0, 2.0], [0.25, 0.0, 1.0]]
+w = shine.Matrix(rows=2, cols=3, values=[shine.Complex(re=x, im=0.0) for r in rows for x in r])
+layer = project.new_weight_layer("Weights", w)   # inputs in1…in3, outputs out1, out2
+shine.layer_scale(w)                              # σmax: the layer computes W x / σmax
+project.new_unitary_mesh("Mixer", u)              # a unitary as one mesh
+```
+
+A weight layer is W = U Σ V†: two meshes of MZIs (the rectangular, Clements, arrangement)
+with an attenuator per mode between them. Light can't be amplified, so it computes W x
+divided by W's largest singular value, σmax, which its `description()` gives too. Any
+shape, real or complex. The meshes are components of their own, to open in the app.
+
 ## Finding your way around
 
 Everything can say what it has, and errors say what would have worked:

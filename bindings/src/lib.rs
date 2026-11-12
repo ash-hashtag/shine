@@ -318,6 +318,19 @@ impl Project {
         Ok(Design(self.0.new_model_from_function(&name, inputs, outputs, wavelengths_nm, &f)?))
     }
 
+    /// A weight matrix as light: a component with inputs in1…in{cols} and
+    /// outputs out1…out{rows} computing W x / σmax (σmax, W's largest
+    /// singular value: light can't be amplified), as two meshes of MZIs
+    /// with an attenuator per mode between them. Any shape, real or complex.
+    pub fn new_weight_layer(&self, name: String, weights: Matrix) -> Result<Design, ShineError> {
+        Ok(Design(self.0.new_weight_layer(&name, &weights.into())?))
+    }
+
+    /// A unitary matrix as one mesh of MZIs computing U x.
+    pub fn new_unitary_mesh(&self, name: String, unitary: Matrix) -> Result<Design, ShineError> {
+        Ok(Design(self.0.new_unitary_mesh(&name, &unitary.into())?))
+    }
+
     /// A component whose light and signals a JavaScript program computes, as
     /// written in the app. Not in the browser.
     pub fn new_scripted_component(&self, code: String) -> Result<Design, ShineError> {
@@ -346,6 +359,12 @@ impl Design {
     /// Whether it is a component (others can place it).
     pub fn is_component(&self) -> bool {
         self.0.is_component()
+    }
+
+    /// What a component says it is (empty for a design): for a weight
+    /// layer, what it computes, with W's largest singular value.
+    pub fn description(&self) -> String {
+        self.0.description()
     }
 
     /// A laser: one wavelength, coherent; its light leaves from `out`.
@@ -889,6 +908,12 @@ impl MonteCarlo {
     pub fn to_csv(&self) -> String {
         self.0.to_csv()
     }
+}
+
+/// W's largest singular value σmax: what a weight layer divides by.
+#[export]
+pub fn layer_scale(weights: Matrix) -> Result<f64, ShineError> {
+    Ok(api::layer_scale(&weights.into())?)
 }
 
 /// Shine's version.

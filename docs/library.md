@@ -80,8 +80,15 @@ demultiplexer, and MZI meshes.
 
 ## Programming MZI meshes
 
-`UnitaryMesh::decompose(&u)` finds MZI phases for a unitary matrix (a triangular, Reck
-mesh). `SvdMesh::decompose(&m)` handles any matrix: two meshes and a row of attenuators,
+`Project::new_weight_layer(name, &matrix)` turns any matrix W into a component computing
+W x / σmax, two meshes of MZIs in the rectangular (Clements) arrangement with an attenuator
+per mode between them; `Project::new_unitary_mesh` turns a unitary into one mesh, and
+`shine::api::layer_scale` gives σmax. They're in Python and TypeScript too, in the editor
+(**Component → New layer from a matrix…**) and on the command line (`shine layer`).
+
+Underneath, `UnitaryMesh::decompose(&u)` finds MZI phases for a unitary matrix (a
+triangular, Reck mesh) and `UnitaryMesh::decompose_rectangular` a Clements one;
+`SvdMesh::decompose(&m)` handles any matrix: two meshes and a row of attenuators,
 `M = scale · U · diag(σ) · V†`. See `examples/matmul.rs`:
 
 ```sh

@@ -41,7 +41,7 @@ pub use analysis::{MonteCarlo, Simulation, Sweep, Transmission};
 pub use design::Design;
 pub use error::{Error, Result};
 pub use part::{Part, Port};
-pub use project::{Project, TransferFunction};
+pub use project::{Project, TransferFunction, layer_scale};
 pub use records::{Complex, Direction, Goal, Matrix, Optimised, Param, PortInfo, PortKind, Reading, Readouts, Series, Stats, Variation};
 
 #[cfg(test)]
