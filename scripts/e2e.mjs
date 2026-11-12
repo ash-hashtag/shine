@@ -157,9 +157,13 @@ const LASER_IN_LIBRARY = [75, 143];
 const WAVEGUIDE_FOLDER = [78, 263];
 const MZI_IN_LIBRARY = [90, 419];
 
+// Designs open paused: Space starts simulating, as people do.
+const simulate = () => key(" ", "Space", 32);
+
 await test("a laser dragged onto the grid shines a beam", async () => {
   await open();
   await drag(...LASER_IN_LIBRARY, 450, 330);
+  await simulate();
   await move(900, 700);
   await capture();
   expect(lightNear(900, 311), "no beam to the right of the laser");
@@ -202,6 +206,7 @@ await test("work survives reloading the page", async () => {
   await move(900, 700);
   await sleep(500);
   await open();
+  await simulate();
   await move(900, 700);
   await capture();
   expect(lightNear(900, 311), "the laser is gone after a reload");
