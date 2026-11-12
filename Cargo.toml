@@ -44,6 +44,10 @@ required-features = ["gui"]
 name = "crash"
 required-features = ["gui"]
 
+[[test]]
+name = "mnist"
+required-features = ["gui"]
+
 [[example]]
 name = "frame_bench"
 required-features = ["gui"]

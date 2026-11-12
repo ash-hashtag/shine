@@ -110,13 +110,13 @@ cargo run --release --example mnist -- CACHE [--images N] [--save mnist.shine] [
 
 ### Reading your own digits
 
-Save the chip once, then give `examples/mnist.py` pictures of digits (PNG, JPEG and the
-like, dark ink on light paper or the other way round, any size; it needs Pillow):
+The chip is in the repository, `reference/mnist/mnist-neural-chip.shine`. Give
+`examples/mnist.py` pictures of digits (PNG, JPEG and the like, dark ink on light paper or
+the other way round, any size; it needs Pillow):
 
 ```sh
-cargo run --release --example mnist -- CACHE --write-chip mnist-neural-chip.shine
 pip install pillow
-python examples/mnist.py --image my-digit.png [more.png ...] [--chip mnist-neural-chip.shine]
+python examples/mnist.py --image my-digit.png [more.png ...]
 ```
 
 The script prepares each picture as MNIST's digits were (the ink cropped, fitted in 20×20
@@ -129,10 +129,12 @@ once: about 3.5 s for the first and a tenth of a second for each after. To run `
 yourself, `--print-inputs` prints just the numbers:
 
 ```sh
-python examples/mnist.py --image my-digit.png --print-inputs | shine simulate mnist-neural-chip.shine --input -
+python examples/mnist.py --image my-digit.png --print-inputs | shine simulate reference/mnist/mnist-neural-chip.shine --input -
 ```
 
-The chip opens in the app as any project does (`shine mnist-neural-chip.shine`).
+The chip opens in the app as any project does (`shine reference/mnist/mnist-neural-chip.shine`).
+To build it again from newly trained weights, `cargo run --release --example mnist --
+CACHE --write-chip reference/mnist/mnist-neural-chip.shine`.
 
 The network (784 → 64 → 10, trained for the chip's electronics as above) reads **97.40%**
 of MNIST's 10 000 test digits. Simulated whole (light, detectors and electronics), the chip
@@ -164,9 +166,10 @@ What makes that possible, rather than minutes and tens of gigabytes:
 - **The editor costs what's on screen.** Drawing and pointing go through a spatial index,
   and nothing per frame reads the whole project.
 
-MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0, so neither the digits nor the
-weights and chip made from them are kept in the repository: the script downloads them into
-the folder you give it. What's still to do for designs this size (projects as indexed
+MNIST (LeCun, Cortes and Burges) is under CC BY-SA 3.0, so the digits aren't kept in the
+repository (the training script downloads them into the folder you give it), and the
+chip, whose weights were trained on them, is shared under CC BY-SA 3.0 as well
+([reference/mnist](https://github.com/ash-hashtag/shine/tree/main/reference/mnist)). What's still to do for designs this size (projects as indexed
 databases, loading only what's used, smaller designs in memory) is on the
 [Roadmap](roadmap.md#milestone-design-at-scale).
 

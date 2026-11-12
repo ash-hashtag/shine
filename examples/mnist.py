@@ -6,14 +6,9 @@ MNIST's digits were, and runs the `shine` program on the chip with them:
 
     shine simulate mnist-neural-chip.shine --input -     (the pixels on standard input)
 
-The chip is a Shine project: an optical neural network of 3.1 million parts
-(see docs/neural-network.md). Make it once:
-
-    pip install numpy jax
-    python reference/mnist/train.py CACHE
-    cargo run --release --example mnist -- CACHE --write-chip mnist-neural-chip.shine
-
-Then (needs Pillow, to read pictures: pip install pillow)
+The chip is a Shine project, reference/mnist/mnist-neural-chip.shine: an
+optical neural network of 3.1 million parts (see docs/neural-network.md).
+With Pillow, to read pictures (pip install pillow):
 
     python examples/mnist.py --image digit.png [more.png ...] [--chip FILE] [--shine PROGRAM]
 
@@ -22,9 +17,11 @@ each digit's detector. Several pictures go through one run of `shine`, one after
 another. `--print-inputs` only prints the pixel values, a picture per line, for
 `shine` yourself:
 
-    python examples/mnist.py --image digit.png --print-inputs | shine simulate mnist-neural-chip.shine --input -
+    python examples/mnist.py --image digit.png --print-inputs | shine simulate reference/mnist/mnist-neural-chip.shine --input -
 """
 import argparse, csv, io, os, shutil, subprocess, sys
+
+CHIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reference", "mnist", "mnist-neural-chip.shine")
 
 SIDE, BOX = 28, 20  # MNIST: 28×28 pictures, the digit fitted in 20×20
 
@@ -94,8 +91,8 @@ def find_shine(given):
 def main():
     a = argparse.ArgumentParser(description="Read handwritten digits with Shine's MNIST chip.")
     a.add_argument("--image", nargs="+", required=True, help="pictures of digits (PNG, JPEG, ...)")
-    a.add_argument("--chip", default=os.environ.get("SHINE_MNIST_CHIP", "mnist-neural-chip.shine"),
-                   help="the chip (default mnist-neural-chip.shine, or SHINE_MNIST_CHIP)")
+    a.add_argument("--chip", default=os.environ.get("SHINE_MNIST_CHIP", os.path.normpath(CHIP)),
+                   help="the chip (default reference/mnist/mnist-neural-chip.shine, or SHINE_MNIST_CHIP)")
     a.add_argument("--shine", help="the shine program (default: SHINE, else shine on PATH)")
     a.add_argument("--print-inputs", action="store_true", help="only print the pixel values, a picture per line")
     args = a.parse_args()
@@ -106,8 +103,7 @@ def main():
         sys.stdout.write(stream)
         return
     if not os.path.exists(args.chip):
-        sys.exit(f"No chip at {args.chip}: make it with "
-                 "`cargo run --release --example mnist -- CACHE --write-chip mnist-neural-chip.shine`, or give --chip")
+        sys.exit(f"No chip at {args.chip}: see reference/mnist/README.md to make it, or give --chip")
 
     # The ten scores are the light leaving layer 2; the display shows the digit.
     command = [find_shine(args.shine), "simulate", args.chip, "--input", "-", "--csv", "--box-outputs",
