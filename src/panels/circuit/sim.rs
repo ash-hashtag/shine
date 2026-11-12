@@ -33,6 +33,11 @@ pub trait Documents: Sync {
     /// A layout used as a component, and its cell size in µm.
     fn layout(&self, id: DocId) -> Option<(&Layout, f64)>;
     fn name(&self, id: DocId) -> String;
+    /// A hash of document `id`'s content that changes when it does, if
+    /// known: what lets a solved component be reused by later simulations.
+    fn fingerprint(&self, _id: DocId) -> Option<u64> {
+        None
+    }
 }
 
 /// For layouts that use only built-in blocks.
@@ -51,11 +56,12 @@ impl Documents for NoDocuments {
 /// be simulated on another thread while the editor carries on.
 pub struct Snapshot {
     docs: HashMap<DocId, (Layout, f64, String)>,
+    fingerprints: HashMap<DocId, u64>,
 }
 
 impl Snapshot {
     pub fn of(layout: &Layout, docs: &dyn Documents) -> Self {
-        let mut s = Self { docs: HashMap::new() };
+        let mut s = Self { docs: HashMap::new(), fingerprints: HashMap::new() };
         let mut todo: Vec<DocId> = Vec::new();
         let used = |l: &Layout, todo: &mut Vec<DocId>| {
             todo.extend(l.instances.iter().filter_map(|i| match i.block {
@@ -71,6 +77,9 @@ impl Snapshot {
             if let Some((l, cell)) = docs.layout(id) {
                 used(l, &mut todo);
                 s.docs.insert(id, (l.clone(), cell, docs.name(id)));
+                if let Some(f) = docs.fingerprint(id) {
+                    s.fingerprints.insert(id, f);
+                }
             }
         }
         s
@@ -83,6 +92,9 @@ impl Documents for Snapshot {
     }
     fn name(&self, id: DocId) -> String {
         self.docs.get(&id).map_or_else(|| "a deleted component".into(), |d| d.2.clone())
+    }
+    fn fingerprint(&self, id: DocId) -> Option<u64> {
+        self.fingerprints.get(&id).copied()
     }
 }
 
@@ -499,10 +511,108 @@ struct Reducer {
     passive: HashMap<DocId, bool>,
     /// Matrices by component and the parameter values of its box.
     tables: HashMap<TableKey, Arc<Table>>,
+    /// Each component's content with all it uses, hashed, if known.
+    subtrees: HashMap<DocId, Option<u64>>,
 }
 
 /// A component and its box's parameter values (as bits, to compare exactly).
 type TableKey = (DocId, Vec<(String, u64)>);
+
+/// Components solved by earlier simulations, kept for later ones: editing
+/// the layout around a big mesh doesn't solve the mesh again. Keyed by
+/// content (the component's and everything it uses), the box's parameters
+/// and the wavelengths, so a component changed is a new key. Only solves
+/// taking [`KEEP_SOLVES_AFTER_MS`] or more are kept, up to
+/// [`SOLVED_BYTES`], the least recently used going first.
+mod solved {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    use crate::photonics::Table;
+
+    pub const SOLVED_BYTES: usize = 256 << 20;
+    pub const KEEP_SOLVES_AFTER_MS: f64 = 10.0;
+
+    /// Content, parameter values and wavelengths, as bits.
+    pub type Key = (u64, Vec<(String, u64)>, Vec<u64>);
+
+    #[derive(Default)]
+    struct Solved {
+        entries: HashMap<Key, (Arc<Table>, usize, u64)>,
+        bytes: usize,
+        clock: u64,
+    }
+
+    static SOLVED: Mutex<Option<Solved>> = Mutex::new(None);
+
+    pub fn get(key: &Key) -> Option<Arc<Table>> {
+        let mut guard = SOLVED.lock().unwrap_or_else(|e| e.into_inner());
+        let s = guard.get_or_insert_with(Solved::default);
+        s.clock += 1;
+        let clock = s.clock;
+        s.entries.get_mut(key).map(|e| {
+            e.2 = clock;
+            e.0.clone()
+        })
+    }
+
+    pub fn keep(key: Key, table: Arc<Table>) {
+        let bytes = table.matrices.iter().map(|m| 16 * m.nrows() * m.ncols()).sum::<usize>() + 64;
+        if bytes > SOLVED_BYTES {
+            return;
+        }
+        let mut guard = SOLVED.lock().unwrap_or_else(|e| e.into_inner());
+        let s = guard.get_or_insert_with(Solved::default);
+        while s.bytes + bytes > SOLVED_BYTES {
+            let Some(oldest) = s.entries.iter().min_by_key(|e| e.1.2).map(|e| e.0.clone()) else { break };
+            if let Some((_, b, _)) = s.entries.remove(&oldest) {
+                s.bytes -= b;
+            }
+        }
+        s.clock += 1;
+        let clock = s.clock;
+        if let Some((_, old, _)) = s.entries.insert(key, (table, bytes, clock)) {
+            s.bytes -= old;
+        }
+        s.bytes += bytes;
+    }
+}
+
+/// Component `doc`'s content and that of every component it uses, hashed;
+/// None if some fingerprint isn't known.
+fn subtree_fingerprint(docs: &dyn Documents, doc: DocId, memo: &mut HashMap<DocId, Option<u64>>, stack: &mut Vec<DocId>) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    if let Some(f) = memo.get(&doc) {
+        return *f;
+    }
+    if stack.contains(&doc) {
+        return None;
+    }
+    stack.push(doc);
+    let f = (|| {
+        let (layout, _) = docs.layout(doc)?;
+        let mut uses: Vec<DocId> = layout
+            .instances
+            .iter()
+            .filter_map(|i| if let BlockRef::Component(d) = i.block { Some(d) } else { None })
+            .collect();
+        uses.sort_unstable();
+        uses.dedup();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (doc, docs.fingerprint(doc)?).hash(&mut h);
+        for d in uses {
+            (d, subtree_fingerprint(docs, d, memo, stack)?).hash(&mut h);
+        }
+        Some(h.finish())
+    })();
+    stack.pop();
+    memo.insert(doc, f);
+    f
+}
+
+/// Components smaller than this (boxes and waveguides inside) are quicker
+/// to solve than to look up among earlier simulations' solves.
+const LOOK_UP_SOLVES_FROM_SIZE: usize = 64;
 
 fn table_key(doc: DocId, params: &[(String, f64)]) -> TableKey {
     (doc, params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect())
@@ -650,6 +760,19 @@ impl Optics<'_> {
         let docs = self.docs;
         let wavelengths = self.reduce.as_deref().map(|r| r.wavelengths.clone()).unwrap_or_default();
         let (child, cell) = docs.layout(doc).ok_or("A component used here was deleted")?;
+        // Solved by an earlier simulation?
+        let kept = match self.reduce.as_deref_mut() {
+            Some(r) if child.instances.len() + child.wires.len() >= LOOK_UP_SOLVES_FROM_SIZE => {
+                subtree_fingerprint(docs, doc, &mut r.subtrees, &mut Vec::new()).map(|f| {
+                    let params = params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect();
+                    (f, params, wavelengths.iter().map(|w| w.to_bits()).collect::<Vec<_>>())
+                })
+            }
+            _ => None,
+        };
+        if let Some(table) = kept.as_ref().and_then(solved::get) {
+            return Ok(table);
+        }
         let configured = configure(child, params);
         let child = configured.as_ref().unwrap_or(child);
         let started = web_time::Instant::now();
@@ -672,7 +795,14 @@ impl Optics<'_> {
                 (started.elapsed() - assembled).as_secs_f64() * 1e3
             );
         }
-        Ok(Arc::new(Table { wavelengths_nm: wavelengths, matrices }))
+        let table = Arc::new(Table { wavelengths_nm: wavelengths, matrices });
+        // (Tests keep every solve, to see them reused.)
+        if let Some(key) = kept
+            && (started.elapsed().as_secs_f64() * 1e3 >= solved::KEEP_SOLVES_AFTER_MS || cfg!(test))
+        {
+            solved::keep(key, table.clone());
+        }
+        Ok(table)
     }
 
     /// Solve the passive components among `layout`'s boxes that aren't yet,
@@ -704,7 +834,7 @@ impl Optics<'_> {
         let (wavelengths, memo) = (r.wavelengths.clone(), r.passive.clone());
         let (signals, light, max_len, stack) = (self.signals, self.light, self.max_len, &self.stack);
         let tables = crate::photonics::par::try_map(&todo, |(key, inst)| {
-            let mut own = Reducer { wavelengths: wavelengths.clone(), passive: memo.clone(), tables: HashMap::new() };
+            let mut own = Reducer { wavelengths: wavelengths.clone(), passive: memo.clone(), ..Reducer::default() };
             let mut optics = Optics {
                 docs,
                 signals,

@@ -693,6 +693,10 @@ impl Documents for Project {
     fn name(&self, id: DocId) -> String {
         self.doc(id).map_or_else(|| "a deleted component".into(), |d| d.name.clone())
     }
+
+    fn fingerprint(&self, id: DocId) -> Option<u64> {
+        self.doc_fingerprint(id)
+    }
 }
 
 impl Project {

@@ -489,3 +489,29 @@ fn exports_follow_their_part_and_go_with_it() {
     l.remove_instances(&[ring]);
     assert!(l.exports.is_empty(), "deleting what's exported removes the export");
 }
+
+#[test]
+fn solved_components_are_reused_until_they_change() {
+    use crate::panels::optics::model::BlockRef;
+    use crate::panels::project::Project;
+    let mut p = crate::panels::optics::reference::sized_project(8);
+    let top = p.documents.iter().find(|d| d.component.is_none()).unwrap().id;
+    let mesh = p.documents.iter().find(|d| d.name.contains("mesh")).unwrap().id;
+    let run = |p: &Project, reduce: bool| {
+        let d = p.doc(top).unwrap();
+        let o = simulate(d.layout(), d.cell_um(), p, &Machine::default(), Some(top), &Options { reduce, ..Options::default() });
+        assert!(o.error.is_none(), "{:?}", o.error);
+        o.port_power
+    };
+    let first = run(&p, true);
+    assert_eq!(run(&p, true), first, "the mesh's kept solve, the same light");
+    // An MZI inside the mesh changes: the kept solve no longer fits.
+    let l = p.doc_mut(mesh).unwrap().layout_mut();
+    let mzi = l.instances.iter_mut().find(|i| matches!(i.block, BlockRef::Component(_))).unwrap();
+    mzi.set_param("θ", Some(1.234));
+    let changed = run(&p, true);
+    assert_ne!(changed, first);
+    for (port, w) in &run(&p, false) {
+        assert!((changed[port] - w).abs() < 1e-12, "{port:?}: {} mW, every part kept {w} mW", changed[port]);
+    }
+}
