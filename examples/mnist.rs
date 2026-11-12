@@ -16,7 +16,9 @@
 //! - computes both layers' matrices once and runs all 10 000 test digits
 //!   through them, as the chip would;
 //! - `--save FILE` writes the chip, to open in the app;
-//! - `--editor` times editor frames on the chip and inside its biggest mesh.
+//! - `--editor` times editor frames, idle and panning, on the chip, a small
+//!   component and the biggest mesh; `--open FILE` (no CACHE) does only that,
+//!   on a saved chip.
 //!
 //!
 //! `--write-chip FILE` only builds the chip (its pixels dark) and saves it,
@@ -115,6 +117,11 @@ fn main() {
     let _log = shine::logging::init(&shine::logging::LogConfig::from_env()).expect("logging");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    // --open FILE: only the editor, on a saved chip.
+    if let Some(file) = value("--open") {
+        editor(&std::fs::read(&file).unwrap_or_else(|e| panic!("can't read {file}: {e}")));
+        return;
+    }
     let cache = args.first().filter(|a| !a.starts_with("--")).expect("usage: mnist CACHE [--images N] [--save FILE] [--editor] | CACHE --write-chip FILE").clone();
     let images: usize = value("--images").and_then(|v| v.parse().ok()).unwrap_or(5);
 
@@ -223,35 +230,47 @@ fn main() {
 
 #[cfg(feature = "gui")]
 fn editor(bytes: &[u8]) {
-    use egui::{Pos2, Rect, Vec2};
-    let mut ws = shine::panels::workspace::Workspace::default();
+    use egui::{Event, PointerButton, Pos2, Rect, Vec2};
+    use shine::panels::workspace::Workspace;
+    let mut ws = Workspace::default();
     let before = memory_mb("VmRSS:");
     step("Open in the editor", || ws.open_bytes("mnist.shine", bytes).unwrap());
     let ctx = egui::Context::default();
     let mut t = 0.0;
-    let mut frame = |ws: &mut shine::panels::workspace::Workspace, events: Vec<egui::Event>| {
+    let mut frame = |ws: &mut Workspace, events: Vec<Event>| {
         t += 1.0 / 60.0;
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 1000.0))), time: Some(t), events, ..Default::default() };
         let started = Instant::now();
         ctx.run_ui(input, |ui| ws.ui(ui)).textures_delta.clear();
         started.elapsed().as_secs_f64() * 1e3
     };
-    let first = frame(&mut ws, Vec::new());
-    let idle: Vec<f64> = profiled("Editor frames on the chip", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
-    tracing::info!(
-        "Editor on the chip: first frame {first:.0} ms, then {:.1} ms a frame; the editor holds {:.0} MB",
-        idle.iter().sum::<f64>() / 10.0,
-        memory_mb("VmRSS:") - before
-    );
+    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+    // A view: its first frame, idle frames, then panning (a drag across the canvas).
+    let mut view = |ws: &mut Workspace, name: &str| {
+        let first = frame(ws, Vec::new());
+        let idle: Vec<f64> = profiled(&format!("Idle frames: {name}"), || (0..10).map(|_| frame(ws, Vec::new())).collect());
+        let at = |k: usize| Pos2::new(700.0 + 10.0 * k as f32, 500.0);
+        frame(ws, vec![Event::PointerMoved(at(0)), Event::PointerButton { pos: at(0), button: PointerButton::Middle, pressed: true, modifiers: Default::default() }]);
+        let pan: Vec<f64> = profiled(&format!("Panning: {name}"), || (1..=30).map(|k| frame(ws, vec![Event::PointerMoved(at(k))])).collect());
+        frame(ws, vec![Event::PointerButton { pos: at(30), button: PointerButton::Middle, pressed: false, modifiers: Default::default() }]);
+        tracing::info!(
+            "Editor, {name}: first frame {first:.0} ms, idle {:.1} ms, panning {:.1} ms a frame (slowest {:.1}); the editor holds {:.0} MB",
+            mean(&idle),
+            mean(&pan),
+            pan.iter().cloned().fold(0.0, f64::max),
+            memory_mb("VmRSS:") - before
+        );
+    };
+    let session = step("Encode the session (the app saves it every 5 s)", || ws.session().encode());
+    tracing::info!("  {:.1} MB", session.len() as f64 / 1e6);
+    view(&mut ws, "the chip");
+    if let Some(m) = ws.project.find("Linear modulator") {
+        ws.open_tab(m);
+        view(&mut ws, "the linear modulator");
+    }
     let biggest = ws.project.documents.iter().max_by_key(|d| d.layout().instances.len()).unwrap().id;
     ws.open_tab(biggest);
-    let first = profiled("Editor first frame in the mesh", || frame(&mut ws, Vec::new()));
-    let idle: Vec<f64> = profiled("Editor frames in the mesh", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
-    tracing::info!(
-        "Editor inside the biggest mesh: first frame {first:.0} ms, then {:.1} ms a frame; the editor holds {:.0} MB",
-        idle.iter().sum::<f64>() / 10.0,
-        memory_mb("VmRSS:") - before
-    );
+    view(&mut ws, "the biggest mesh");
 }
 
 #[cfg(not(feature = "gui"))]
