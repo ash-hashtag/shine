@@ -834,39 +834,14 @@ impl Project {
 
     /// Changes whenever any document's content or component info changes.
     pub fn fingerprint(&self) -> u64 {
-        // Every frame asks, so the documents are serialised straight into a
-        // fast hasher, without copying them or the bytes.
-        use std::hash::BuildHasher;
-        struct Hashing(foldhash::fast::FoldHasher<'static>);
-        impl postcard::ser_flavors::Flavor for Hashing {
-            type Output = u64;
-            fn try_push(&mut self, b: u8) -> postcard::Result<()> {
-                self.0.write_u8(b);
-                Ok(())
-            }
-            fn try_extend(&mut self, bytes: &[u8]) -> postcard::Result<()> {
-                self.0.write(bytes);
-                Ok(())
-            }
-            fn finalize(self) -> postcard::Result<u64> {
-                Ok(self.0.finish())
-            }
-        }
-        #[derive(Serialize)]
-        struct DocumentRef<'a> {
-            id: DocId,
-            name: &'a str,
-            component: &'a Option<ComponentMeta>,
-            cell_um: f64,
-            layout: &'a Layout,
-        }
-        let documents: Vec<DocumentRef> = self
-            .documents
-            .iter()
-            .map(|d| DocumentRef { id: d.id, name: &d.name, component: &d.component, cell_um: d.cell_um(), layout: d.layout() })
-            .collect();
-        let hasher = Hashing(foldhash::fast::FixedState::with_seed(0x5348_494e).build_hasher());
-        postcard::serialize_with_flavor(&documents, hasher).expect("serialisable")
+        let documents: Vec<DocumentRef> = self.documents.iter().map(DocumentRef::of).collect();
+        hash_serialized(&documents)
+    }
+
+    /// Changes whenever document `id`'s content or component info changes:
+    /// what tells a tab it has unsaved changes.
+    pub fn doc_fingerprint(&self, id: DocId) -> Option<u64> {
+        self.doc(id).map(|d| hash_serialized(&DocumentRef::of(d)))
     }
 
     /// Encode the project in Shine's binary file format.
@@ -942,3 +917,42 @@ impl Project {
 
 #[cfg(test)]
 mod tests;
+
+/// A document as the file holds it, borrowed: what fingerprints hash.
+#[derive(Serialize)]
+struct DocumentRef<'a> {
+    id: DocId,
+    name: &'a str,
+    component: &'a Option<ComponentMeta>,
+    cell_um: f64,
+    layout: &'a Layout,
+}
+
+impl<'a> DocumentRef<'a> {
+    fn of(d: &'a Document) -> Self {
+        Self { id: d.id, name: &d.name, component: &d.component, cell_um: d.cell_um(), layout: d.layout() }
+    }
+}
+
+/// A fast hash of a value's serialisation: every frame asks, so it is
+/// serialised straight into the hasher, without copying it or the bytes.
+fn hash_serialized(value: &impl Serialize) -> u64 {
+    use std::hash::BuildHasher;
+    struct Hashing(foldhash::fast::FoldHasher<'static>);
+    impl postcard::ser_flavors::Flavor for Hashing {
+        type Output = u64;
+        fn try_push(&mut self, b: u8) -> postcard::Result<()> {
+            self.0.write_u8(b);
+            Ok(())
+        }
+        fn try_extend(&mut self, bytes: &[u8]) -> postcard::Result<()> {
+            self.0.write(bytes);
+            Ok(())
+        }
+        fn finalize(self) -> postcard::Result<u64> {
+            Ok(self.0.finish())
+        }
+    }
+    let hasher = Hashing(foldhash::fast::FixedState::with_seed(0x5348_494e).build_hasher());
+    postcard::serialize_with_flavor(value, hasher).expect("serialisable")
+}

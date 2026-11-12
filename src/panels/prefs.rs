@@ -58,7 +58,7 @@ pub struct Preferences {
     /// Live simulation on for new documents.
     pub live_simulation: bool,
     /// Size of the whole interface (menus, panels, text), as a factor:
-    /// 1 is normal. Ctrl+= and Ctrl+− change it too.
+    /// 1 is normal. (Ctrl+= and Ctrl+− zoom the canvas instead.)
     pub ui_scale: f32,
     /// Open designs at the canvas zoom last used ([`Self::canvas_zoom`])
     /// rather than fitted to the window.

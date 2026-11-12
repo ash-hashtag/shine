@@ -95,8 +95,10 @@ pub fn shortcut(key: Key, m: Modifiers, grabbing: bool) -> Option<Action> {
         Key::N if plain => ToggleProperties,
         Key::T if plain => ToggleToolbar,
         Key::Tab if plain => Inspect,
-        Key::Plus | Key::Equals if !m.command => ZoomIn,
-        Key::Minus if !m.command => ZoomOut,
+        // With or without Ctrl: Ctrl+= / Ctrl+− zoom the canvas, not the interface.
+        Key::Plus | Key::Equals if !m.alt => ZoomIn,
+        Key::Minus if !m.alt => ZoomOut,
+        Key::Num0 if m.command => FrameAll,
         Key::CloseBracket if plain => SelectNext,
         Key::W if plain => Wire,
         Key::Enter if plain => Confirm,
@@ -129,7 +131,8 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("R / Shift+R", "Rotate clockwise / counter-clockwise"),
     ("Shift+D", "Duplicate and move"),
     ("Arrow keys / Shift+arrows", "Move the selection (or a grab) 1 / 5 cells; with nothing selected, pan"),
-    ("+ / −", "Zoom in / out"),
+    ("+ / − or Ctrl+= / Ctrl+−", "Zoom the canvas in / out"),
+    ("Ctrl+0", "Fit the design to the window"),
     ("] / [", "Select the next / previous part or box"),
     ("W, then ] / [ and Enter", "Wire the selected item to another, first free ports"),
     ("X / Delete", "Delete selected"),
@@ -146,6 +149,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Space", "Toggle simulation"),
     ("T / N", "Toggle toolbar / properties"),
     ("Ctrl+N / Ctrl+O / Ctrl+S", "New / open / save"),
+    ("F5", "Reload the project from its file (desktop)"),
     ("F1 / ?", "This help"),
 ];
 

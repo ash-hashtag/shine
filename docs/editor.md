@@ -99,7 +99,7 @@ sessions (a settings file on desktop, the browser's storage on the web):
 | Setting | Options |
 |---|---|
 | Theme | System, light or dark |
-| Interface size | The size of menus, panels and text, 50 to 250% (Ctrl+= and Ctrl+− change it too); the canvas zooms separately |
+| Interface size | The size of menus, panels and text, 50 to 250%; the keyboard and wheel zoom only the canvas |
 | Canvas zoom | Open designs at the zoom you last used on the canvas (wheel, pinch, + and −), or fit each design to the window |
 | Grid, port names | Show or hide the grid and the names on component boxes |
 | Performance | Frames per second, frame time (drawing included) and simulation time in the status bar; the performance graph (also View → Performance graph) |
@@ -149,7 +149,8 @@ selected. A test checks that no control on any panel or window is left unnamed.
 | R / Shift+R | Rotate clockwise / counter-clockwise |
 | Shift+D | Duplicate and move |
 | Arrow keys / Shift+arrows | Move the selection (or a grab) 1 / 5 cells; with nothing selected, pan |
-| + / − | Zoom in / out |
+| + / − or Ctrl+= / Ctrl+− | Zoom the canvas in / out |
+| Ctrl+0 | Fit the design to the window |
 | ] / [ | Select the next / previous part or box |
 | W, then ] / [ and Enter | Wire the selected item to another, first free ports |
 | X / Delete | Delete selected |
@@ -160,4 +161,5 @@ selected. A test checks that no control on any panel or window is left unnamed.
 | Space | Toggle simulation |
 | T / N | Toggle toolbar / properties |
 | Ctrl+N / Ctrl+O / Ctrl+S | New / open / save |
+| F5 | Reload the project from its file (desktop) |
 | F1 / ? | This help |

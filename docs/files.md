@@ -12,11 +12,14 @@ A project holds every document you have open in tabs: layouts and components. **
 Save** writes the whole project to one `.shine` file; **File → Open** reads it back.
 
 - **Desktop:** Save asks for a path the first time, then saves in place (**Save as…** to
-  choose again). Ctrl+S, Ctrl+O and Ctrl+N work too.
+  choose again). Ctrl+S, Ctrl+O and Ctrl+N work too. **Reload from disk** (F5) reads the
+  file again, discarding changes since it was saved (asking first), and keeps the same
+  design open: handy when a script or another tool has changed the file.
 - **Browser:** Save downloads the file; Open uploads one. Nothing is stored on a server.
 
-The status bar shows **● unsaved changes** when the project differs from the last save
-(on desktop the window title gets a dot too). Opening another project replaces the open
+The status bar shows **● unsaved changes** when the project differs from the last save; on
+desktop the window title gets a star (`ring.shine* - Shine`), and so does each tab whose
+design changed since (`Layout*`). Opening another project replaces the open
 one, so with unsaved changes Shine asks first: save (or download) and open, open without
 saving, or cancel. Saving writes the file under a temporary name and then renames it, so a
 save that fails part-way never damages the file you had.

@@ -137,6 +137,8 @@ pub struct Workspace {
     pub background_after_ms: f64,
     /// The project's fingerprint when it was last saved or opened.
     saved_fingerprint: u64,
+    /// Each document's fingerprint then, to mark the tabs changed since.
+    saved_docs: std::collections::HashMap<DocId, u64>,
     /// A project waiting to be opened until the user decides about unsaved changes.
     pub pending_open: Option<PendingOpen>,
     /// Window title last set (desktop).
@@ -193,6 +195,7 @@ impl Default for Workspace {
             // unoptimised build is slow enough to go to the background).
             background_after_ms: if cfg!(test) { f64::INFINITY } else { BACKGROUND_AFTER_MS },
             saved_fingerprint: 0,
+            saved_docs: Default::default(),
             pending_open: None,
             title: String::new(),
             closing: false,
@@ -218,6 +221,8 @@ pub struct PendingOpen {
     pub name: String,
     pub bytes: Vec<u8>,
     pub path: Option<std::path::PathBuf>,
+    /// The document to show once it's open (a reload keeps its place).
+    pub show: Option<String>,
 }
 
 /// What to do with unsaved changes before opening another project.
@@ -381,6 +386,7 @@ impl Workspace {
                 })
                 .collect(),
             clean_exit: self.closing,
+            saved_docs: self.saved_docs.iter().map(|(id, f)| (id.0, *f)).collect(),
         }
     }
 
@@ -391,6 +397,11 @@ impl Workspace {
         self.project = project;
         self.project.path = session.path.map(std::path::PathBuf::from);
         self.saved_fingerprint = session.saved_fingerprint;
+        self.saved_docs = session.saved_docs.iter().map(|&(id, f)| (DocId(id), f)).collect();
+        // From an older session: if nothing changed since the save, nothing did per document.
+        if session.saved_docs.is_empty() && self.project.fingerprint() == self.saved_fingerprint {
+            self.mark_saved();
+        }
         for (id, x, y, zoom) in session.views {
             if let Some(doc) = self.project.doc_mut(DocId(id)) {
                 doc.panel_mut().set_view(super::optics::view::View { pan: egui::Vec2::new(x, y), zoom });
@@ -432,13 +443,43 @@ impl Workspace {
     /// The project as it is now counts as saved.
     pub fn mark_saved(&mut self) {
         self.saved_fingerprint = self.project.fingerprint();
+        self.saved_docs = self.project.documents.iter().filter_map(|d| Some((d.id, self.project.doc_fingerprint(d.id)?))).collect();
+    }
+
+    /// Whether document `id` changed since the project was last saved or
+    /// opened (a document added since has).
+    pub fn doc_has_unsaved_changes(&self, id: DocId) -> bool {
+        self.saved_docs.get(&id).copied() != self.project.doc_fingerprint(id)
+    }
+
+    /// Read the project again from its file, discarding what changed since it
+    /// was saved (after asking, if anything did), and come back to the
+    /// document that was open.
+    pub fn reload(&mut self) {
+        let Some(path) = self.project.path.clone() else {
+            self.notify("The project hasn't been saved to a file yet: nothing to reload");
+            return;
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let name = path.file_stem().map_or_else(|| "Project".into(), |s| s.to_string_lossy().into_owned());
+                let show = self.active.and_then(|id| self.project.doc(id)).map(|d| d.name.clone());
+                let pending = PendingOpen { name, bytes, path: Some(path), show };
+                if self.has_unsaved_changes() {
+                    self.pending_open = Some(pending);
+                } else {
+                    self.finish_open(pending);
+                }
+            }
+            Err(e) => self.notify(format!("Can't reload {}: {e}", path.display())),
+        }
     }
 
     /// Open a file the user picked: a project replaces the current one, so
     /// with unsaved changes it waits for [`Self::resolve_unsaved`]; an old
     /// JSON layout is added as a document.
     pub fn request_open(&mut self, name: String, bytes: Vec<u8>, path: Option<std::path::PathBuf>) {
-        let pending = PendingOpen { name, bytes, path };
+        let pending = PendingOpen { name, bytes, path, show: None };
         if Project::is_project(&pending.bytes) && self.has_unsaved_changes() {
             self.pending_open = Some(pending);
         } else {
@@ -472,7 +513,13 @@ impl Workspace {
                     self.project.path = pending.path;
                     self.mark_saved();
                 }
-                self.notify(format!("Opened {}", pending.name));
+                match pending.show.as_deref().and_then(|name| self.project.find(name)) {
+                    Some(id) => {
+                        self.open_tab(id);
+                        self.notify(format!("Reloaded {}", pending.name));
+                    }
+                    None => self.notify(format!("Opened {}", pending.name)),
+                }
             }
             Err(e) => {
                 tracing::error!("Failed to open {}: {e}", pending.name);
@@ -1013,6 +1060,14 @@ impl Workspace {
         self.apply_theme(ui.ctx());
         self.apply_ui_scale(ui.ctx());
         self.receive_files();
+        // F5 reads the project's file again (desktop; in the browser it reloads the page).
+        if cfg!(not(target_arch = "wasm32")) && self.project.path.is_some() && ui.input(|i| i.key_pressed(Key::F5)) {
+            self.reload();
+        }
+        // F5 reads the project's file again (desktop; in the browser it reloads the page).
+        if cfg!(not(target_arch = "wasm32")) && self.project.path.is_some() && ui.input(|i| i.key_pressed(Key::F5)) {
+            self.reload();
+        }
         self.receive_dropped_files(&ui.ctx().clone());
         self.receive_screenshot(ui);
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
@@ -1096,25 +1151,14 @@ impl Workspace {
         }
     }
 
-    /// Keep the interface size and the preference in step: a change in the
-    /// preferences resizes the interface; Ctrl+= / Ctrl+− (egui's own
-    /// shortcuts) change the preference.
+    /// Size the interface as the preferences say. (The keyboard zooms the
+    /// canvas, not the interface: egui's own Ctrl+= / Ctrl+− are off.)
     fn apply_ui_scale(&mut self, ctx: &egui::Context) {
         let scale = self.prefs.ui_scale.clamp(UI_SCALES.0, UI_SCALES.1);
-        match self.applied_ui_scale {
-            Some(applied) if (applied - scale).abs() > 1e-4 => {
-                ctx.set_zoom_factor(scale);
-                self.applied_ui_scale = Some(scale);
-            }
-            Some(applied) if (ctx.zoom_factor() - applied).abs() > 1e-4 => {
-                self.prefs.ui_scale = ctx.zoom_factor();
-                self.applied_ui_scale = Some(self.prefs.ui_scale);
-            }
-            Some(_) => {}
-            None => {
-                ctx.set_zoom_factor(scale);
-                self.applied_ui_scale = Some(scale);
-            }
+        if self.applied_ui_scale.is_none_or(|applied| (applied - scale).abs() > 1e-4) {
+            ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            ctx.set_zoom_factor(scale);
+            self.applied_ui_scale = Some(scale);
         }
     }
 
@@ -1342,7 +1386,9 @@ impl Workspace {
                         continue;
                     };
                     let active = self.active == Some(id);
-                    let text = egui::RichText::new(&doc.name);
+                    // A star marks a document changed since the project was saved.
+                    let unsaved = self.doc_has_unsaved_changes(id);
+                    let text = egui::RichText::new(if unsaved { format!("{}*", doc.name) } else { doc.name.clone() });
                     let response = ui
                         .selectable_label(
                             active,
@@ -1352,7 +1398,12 @@ impl Workspace {
                                 text
                             },
                         )
-                        .on_hover_text(if doc.component.is_some() { "Component" } else { "Layout" });
+                        .on_hover_text(match (doc.component.is_some(), unsaved) {
+                            (true, true) => "Component, changed since the project was saved",
+                            (true, false) => "Component",
+                            (false, true) => "Layout, changed since the project was saved",
+                            (false, false) => "Layout",
+                        });
                     if response.clicked() {
                         activate = Some(id);
                     }
@@ -1414,6 +1465,15 @@ impl Workspace {
             }
             if ui.button("Save as…").clicked() {
                 self.save(true);
+            }
+            let on_disk = self.project.path.is_some();
+            if ui
+                .add_enabled(on_disk, egui::Button::new("Reload from disk").shortcut_text("F5"))
+                .on_hover_text("Read the project's file again, discarding changes since it was saved")
+                .on_disabled_hover_text("The project hasn't been saved to a file (desktop app)")
+                .clicked()
+            {
+                self.reload();
             }
             ui.separator();
             if ui
@@ -1721,10 +1781,10 @@ impl Workspace {
         }
     }
 
-    /// The desktop window's title: the file, and a dot when it has unsaved changes.
+    /// The desktop window's title: the file, and a star when it has unsaved changes.
     fn update_title(&mut self, ctx: &egui::Context) {
-        let dot = if self.has_unsaved_changes() { " ●" } else { "" };
-        let title = format!("{}{dot} - Shine", self.file_name());
+        let star = if self.has_unsaved_changes() { "*" } else { "" };
+        let title = format!("{}{star} - Shine", self.file_name());
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -1893,7 +1953,7 @@ impl Workspace {
                         let changed = ui
                             .add(egui::Slider::new(&mut percent, UI_SCALES.0 * 100.0..=UI_SCALES.1 * 100.0).step_by(5.0).suffix("%"))
                             .labelled_by(l)
-                            .on_hover_text("Menus, panels and text; Ctrl+= and Ctrl+− change it too. The canvas zooms on its own.")
+                            .on_hover_text("Menus, panels and text. The canvas zooms on its own (wheel, +/−, Ctrl+= / Ctrl+−).")
                             .changed();
                         if changed {
                             p.ui_scale = percent / 100.0;

@@ -4,6 +4,7 @@ name = "shine-photonics"
 crate = "shine_photonics"
 version = "0.1.2"
 description = "Design and simulate photonic circuits in code: Shine's library"
+license = "GPL-3.0-only"
 repository = "https://github.com/ash-hashtag/shine"
 
 [targets.apple]
@@ -31,5 +32,6 @@ runtime_version = "0.32.1"
 
 [targets.wasm.npm]
 package_name = "shine-photonics"
+license = "GPL-3.0-only"
 targets = ["nodejs", "web", "bundler"]
 repository = "https://github.com/ash-hashtag/shine"

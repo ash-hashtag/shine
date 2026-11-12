@@ -4,7 +4,7 @@ version = "0.1.2"
 edition = "2024"
 default-run = "shine"
 description = "Photonic circuit simulator: design and simulate photonic circuits, from free-space optics to waveguide chips"
-license = "MIT"
+license = "GPL-3.0-only"
 repository = "https://github.com/ash-hashtag/shine"
 homepage = "https://shine.lupyd.com"
 

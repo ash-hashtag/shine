@@ -35,4 +35,10 @@ current, CI and releases.
 
 ## License
 
-See [LICENSE](LICENSE).
+Shine is free software under the GNU General Public License, version 3
+(`GPL-3.0-only`): you may use, study, share and change it, and what you share must stay
+under the same licence. See [LICENSE](LICENSE). Versions up to 0.1.1 were released under
+the MIT licence.
+
+The handwritten digits in `reference/digits` are from the UCI Machine Learning Repository
+(Alpaydin & Kaynak, 1998), under CC BY 4.0.

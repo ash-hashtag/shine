@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 /// Storage key of the session.
 pub const KEY: &str = "shine.session";
 /// Prefix marking the encoding, so a future one can be told apart.
-const PREFIX: &str = "shine-session-1:";
+const PREFIX: &str = "shine-session-2:";
+/// Sessions saved before each document's fingerprint was kept.
+const PREFIX_1: &str = "shine-session-1:";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Session {
@@ -26,6 +28,21 @@ pub struct Session {
     pub views: Vec<(u64, f32, f32, f32)>,
     /// Whether the app was closed normally (desktop), rather than crashing.
     pub clean_exit: bool,
+    /// Each document's fingerprint when last saved (document id, fingerprint),
+    /// so the tabs changed since stay marked.
+    pub saved_docs: Vec<(u64, u64)>,
+}
+
+/// A session as version 1 kept it: without `saved_docs`.
+#[derive(Deserialize)]
+struct Session1 {
+    project: Vec<u8>,
+    path: Option<String>,
+    saved_fingerprint: u64,
+    tabs: Vec<u64>,
+    active: Option<u64>,
+    views: Vec<(u64, f32, f32, f32)>,
+    clean_exit: bool,
 }
 
 impl Session {
@@ -35,6 +52,19 @@ impl Session {
     }
 
     pub fn decode(text: &str) -> Result<Self, String> {
+        if let Some(body) = text.strip_prefix(PREFIX_1) {
+            let s: Session1 = postcard::from_bytes(&base64_decode(body)?).map_err(|e| format!("damaged session: {e}"))?;
+            return Ok(Self {
+                project: s.project,
+                path: s.path,
+                saved_fingerprint: s.saved_fingerprint,
+                tabs: s.tabs,
+                active: s.active,
+                views: s.views,
+                clean_exit: s.clean_exit,
+                saved_docs: Vec::new(),
+            });
+        }
         let body = text.strip_prefix(PREFIX).ok_or("not a Shine session")?;
         let bytes = base64_decode(body)?;
         postcard::from_bytes(&bytes).map_err(|e| format!("damaged session: {e}"))
@@ -105,9 +135,17 @@ mod tests {
             active: Some(3),
             views: vec![(3, 10.0, -20.5, 1.5)],
             clean_exit: true,
+            saved_docs: vec![(1, 7), (3, 9)],
         };
         assert_eq!(Session::decode(&s.encode()).unwrap(), s);
         assert!(Session::decode("hello").is_err());
         assert!(Session::decode("shine-session-1:AAAA").is_err());
+        assert!(Session::decode("shine-session-2:AAAA").is_err());
+        // A version 1 session (before per-document fingerprints) still restores.
+        #[derive(Serialize)]
+        struct Old<'a>(&'a [u8], &'a Option<String>, u64, &'a [u64], Option<u64>, &'a [(u64, f32, f32, f32)], bool);
+        let old = Old(&s.project, &s.path, s.saved_fingerprint, &s.tabs, s.active, &s.views, s.clean_exit);
+        let text = format!("{PREFIX_1}{}", base64_encode(&postcard::to_allocvec(&old).unwrap()));
+        assert_eq!(Session::decode(&text).unwrap(), Session { saved_docs: Vec::new(), ..s.clone() });
     }
 }

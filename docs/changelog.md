@@ -20,6 +20,15 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   the file). Errors say what would have worked; parts, ports and parameters have the app's
   names ([Python](python.md), [TypeScript](typescript.md)).
 - `shine PROJECT.shine [--doc NAME]` opens a project in the app.
+- **File → Reload from disk** (F5) reads the project's file again, keeping the same design
+  open; a star marks the window title and each tab changed since the last save.
+- Ctrl+= and Ctrl+− zoom the canvas, as + and − do, and Ctrl+0 fits the design to the
+  window; they no longer resize the whole interface, whose size is set in Preferences.
+
+### Changed
+
+- Shine is now under the GNU GPL version 3 (`GPL-3.0-only`); versions up to 0.1.1 were
+  released under the MIT licence.
 - The model, simulation, analysis and files build without the editor (the `core`
   feature).
 

@@ -568,7 +568,7 @@ fn the_canvas_zoom_is_remembered_and_designs_open_at_it() {
 }
 
 #[test]
-fn the_interface_size_follows_the_preference_and_the_shortcuts() {
+fn the_interface_size_follows_the_preference_and_the_keyboard_zooms_the_canvas() {
     let mut ws = Workspace::default();
     let mut h = Harness::new();
     h.frame(&mut ws, Vec::new());
@@ -577,12 +577,15 @@ fn the_interface_size_follows_the_preference_and_the_shortcuts() {
     h.frame(&mut ws, Vec::new());
     assert_eq!(h.ctx.zoom_factor(), 1.5);
     assert_eq!(ws.prefs.ui_scale, 1.5, "kept while the window catches up");
-    // Ctrl+= changes the window's size; the preference keeps it.
-    h.ctx.set_zoom_factor(1.2);
+    // Ctrl+= zooms the canvas, not the interface.
+    let before = ws.active_panel().unwrap().view.zoom;
+    h.key_with(&mut ws, Key::Equals, Modifiers::COMMAND);
     h.frame(&mut ws, Vec::new());
-    assert!((ws.prefs.ui_scale - 1.2).abs() < 1e-6);
-    let canvas_zoom = ws.active_panel().unwrap().view.zoom;
-    assert_eq!(ws.prefs.canvas_zoom, None, "the canvas zoom is separate: {canvas_zoom}");
+    assert_eq!(h.ctx.zoom_factor(), 1.5, "the interface keeps its size");
+    assert!(ws.active_panel().unwrap().view.zoom > before, "the canvas zoomed in");
+    h.key_with(&mut ws, Key::Minus, Modifiers::COMMAND);
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(h.ctx.zoom_factor(), 1.5);
 }
 
 #[test]
@@ -795,6 +798,41 @@ fn slow_designs_resimulate_less_often_while_dragging() {
     panel(&mut ws, id).dragging_new = None;
     assert!(ws.refresh_simulation(), "released");
     assert!(!ws.refresh_simulation(), "and then up to date");
+}
+
+#[test]
+fn changed_tabs_are_starred_and_reload_reads_the_file_again() {
+    let dir = std::env::temp_dir().join(format!("shine-reload-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("work.shine");
+    let mut ws = Workspace::default();
+    let first = ws.active.unwrap();
+    ws.new_layout();
+    let second = ws.active.unwrap();
+    ws.save_project_to(&path).unwrap();
+    assert!(!ws.doc_has_unsaved_changes(first) && !ws.doc_has_unsaved_changes(second));
+    // Change the second design: only its tab is marked.
+    panel(&mut ws, second).layout.add_instance(BlockRef::Builtin(Builtin::Detector), (2, 2));
+    assert!(ws.doc_has_unsaved_changes(second) && !ws.doc_has_unsaved_changes(first));
+    let mut h = Harness::new();
+    h.frame(&mut ws, Vec::new());
+    // Reloading asks first, then reads the file and keeps the same design open.
+    ws.reload();
+    assert!(ws.pending_open.is_some(), "unsaved changes: it asks");
+    ws.resolve_unsaved(UnsavedChoice::Discard);
+    let name = ws.active.and_then(|id| ws.project.doc(id)).unwrap().name.clone();
+    let second_name = ws.project.documents[1].name.clone();
+    assert_eq!(name, second_name, "back on the design that was open");
+    assert!(ws.active_panel().unwrap().layout.instances.is_empty(), "the change is gone");
+    assert!(!ws.has_unsaved_changes() && !ws.doc_has_unsaved_changes(ws.active.unwrap()));
+    // Nothing unsaved: it reloads straight away.
+    ws.reload();
+    assert!(ws.pending_open.is_none());
+    std::fs::remove_dir_all(&dir).ok();
+    // A project never saved has nothing to reload.
+    let mut fresh = Workspace::default();
+    fresh.reload();
+    assert!(fresh.status.as_ref().unwrap().0.contains("hasn't been saved"));
 }
 
 #[test]
