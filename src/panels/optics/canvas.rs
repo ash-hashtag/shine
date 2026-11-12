@@ -1048,6 +1048,9 @@ fn power_into(layout: &model::Layout, outcome: &Outcome, inst: model::InstanceId
     outcome.port_power.get(&(wire.from.instance, wire.from.port)).copied()
 }
 
+/// The colour of function cells: built-in electronics, set in the inspector.
+const FUNCTION_CELL: Color32 = Color32::from_rgb(214, 150, 40);
+
 #[allow(clippy::too_many_arguments)]
 fn draw_box(
     painter: &egui::Painter,
@@ -1062,9 +1065,18 @@ fn draw_box(
 ) {
     let BoxStyle { hovered, port_names, .. } = style;
     let dark = theme.background.r() < 100;
-    let body = if dark { Color32::from_rgb(50, 53, 60) } else { Color32::from_rgb(232, 235, 241) };
+    // Function cells, built-in electronics, stand out in amber.
+    let function = matches!(inst.block, BlockRef::Builtin(Builtin::FunctionCell { .. }));
+    let body = match (function, dark) {
+        (true, true) => Color32::from_rgb(74, 60, 30),
+        (true, false) => Color32::from_rgb(255, 241, 208),
+        (false, true) => Color32::from_rgb(50, 53, 60),
+        (false, false) => Color32::from_rgb(232, 235, 241),
+    };
     let border = if hovered {
         theme.active
+    } else if function {
+        FUNCTION_CELL
     } else if dark {
         Color32::from_rgb(110, 116, 128)
     } else {
@@ -1143,6 +1155,10 @@ fn draw_box(
         }
         BlockRef::Builtin(Builtin::FunctionCell { name, .. }) => {
             painter.text(r.center(), Align2::CENTER_CENTER, format!("ƒ {name}"), big, theme.text);
+            // Said in so many words, close up: it opens in the inspector, not as a design.
+            if zoom >= 0.8 {
+                painter.text(r.left_top() + Vec2::new(0.0, -2.0 * zoom), Align2::LEFT_BOTTOM, "built-in", small.clone(), FUNCTION_CELL);
+            }
         }
         BlockRef::Builtin(Builtin::Detector) => {
             // How much light it reads, glowing with it and written beside it.
