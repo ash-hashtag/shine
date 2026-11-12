@@ -1,6 +1,6 @@
 ---
 title: Rust library
-description: Use Shine from Rust without the editor: the library of designs, components and analyses (shine::api), and the photonics engine underneath.
+description: "Use Shine from Rust without the editor: the library of designs, components and analyses (shine::api), and the photonics engine underneath."
 order: 13
 ---
 

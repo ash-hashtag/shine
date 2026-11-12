@@ -140,6 +140,9 @@ js-sys = "0.3"
 # Drives the UI by widget labels in tests (tests/ui.rs).
 egui_kittest = "0.37.0"
 mimalloc = "0.1.52"
+
+# Profiling examples/mnist.rs's steps (SHINE_PROFILE): it builds on Unix only.
+[target.'cfg(unix)'.dev-dependencies]
 pprof = "0.15.0"
 
 # Debug builds: quick to rebuild and quick enough to use. No debug info

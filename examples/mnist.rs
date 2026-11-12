@@ -57,6 +57,7 @@ fn step<T>(what: &str, f: impl FnOnce() -> T) -> T {
 }
 
 /// A function's name without generic arguments: `a::B<C>::f` → `a::B::f`.
+#[cfg(unix)]
 fn short_name(name: &str) -> String {
     let mut out = String::new();
     let mut depth = 0;
@@ -73,6 +74,15 @@ fn short_name(name: &str) -> String {
 
 /// With SHINE_PROFILE set to part of a step's name, samples that step (pprof,
 /// in-process: no perf permissions needed) and logs where its time goes.
+/// (Unix: pprof doesn't build on Windows, where steps just run.)
+#[cfg(not(unix))]
+fn profiled<T>(_what: &str, f: impl FnOnce() -> T) -> T {
+    f()
+}
+
+/// With SHINE_PROFILE set to part of a step's name, samples that step (pprof,
+/// in-process: no perf permissions needed) and logs where its time goes.
+#[cfg(unix)]
 fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
     let wanted = std::env::var("SHINE_PROFILE").is_ok_and(|w| what.contains(&w));
     let guard = wanted.then(|| pprof::ProfilerGuardBuilder::default().frequency(999).build().expect("profiler"));
@@ -146,7 +156,7 @@ fn main() {
     let raw = std::fs::read(format!("{cache}/test-images.f32")).expect("test images");
     let labels = std::fs::read(format!("{cache}/test-labels.u8")).expect("test labels");
     let (inputs, hidden, classes) = w.sizes();
-    let test: Vec<Vec<f64>> = raw.chunks_exact(4 * inputs).map(|c| c.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap()) as f64).collect()).collect();
+    let test: Vec<Vec<f64>> = raw.chunks_exact(4 * inputs).map(|c| c.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b) as f64).collect()).collect();
     tracing::info!("Network {inputs} → {hidden} → {classes}, trained to {:.2}% on {} test images", 100.0 * w.test_accuracy, test.len());
 
     let mut p = Project::new();
