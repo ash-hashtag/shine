@@ -68,6 +68,53 @@ impl OpticsPanel {
         box_geometry(inst.cell, self.counts(&inst.block))
     }
 
+    /// Build the spatial index again if the layout may have changed since:
+    /// an edit recorded, boxes or waveguides added or removed, a component's
+    /// ports changed, or boxes being moved now.
+    pub(super) fn refresh_spatial(&mut self) {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for e in &self.catalog.entries {
+            e.id.hash(&mut h);
+            let c = e.interface.counts();
+            (c.optical_in, c.optical_out, c.signal_in, c.signal_out).hash(&mut h);
+        }
+        let key = super::spatial::IndexKey {
+            changes: self.editor.history.changes(),
+            instances: self.layout.instances.len(),
+            waveguides: self.waveguide_count(),
+            interfaces: h.finish(),
+        };
+        if self.editor.grab.is_none() && self.spatial.as_ref().is_some_and(|s| s.key == key) {
+            return;
+        }
+        let boxes: Vec<Rect> = self.layout.instances.iter().map(|i| self.geometry(i).rect).collect();
+        let waveguides: Vec<Option<Rect>> = (0..self.waveguide_count())
+            .map(|w| {
+                // A waveguide's curve stays within its ends' box, widened by
+                // its control points' reach (at most half its length, and a cell).
+                self.waveguide_ends(w).map(|(a, b)| Rect::from_two_pos(a, b).expand(((b.x - a.x).abs() / 2.0).max(GRID)))
+            })
+            .collect();
+        self.spatial = Some(super::spatial::SpatialIndex::new(key, boxes.into_iter(), waveguides.into_iter()));
+    }
+
+    /// Boxes (indices into the instances) that may touch `area` (world units).
+    fn boxes_in(&self, area: Rect) -> Vec<usize> {
+        match &self.spatial {
+            Some(s) => s.boxes_in(area),
+            None => (0..self.layout.instances.len()).collect(),
+        }
+    }
+
+    /// Waveguides that may pass through `area` (world units).
+    fn waveguides_in(&self, area: Rect) -> Vec<usize> {
+        match &self.spatial {
+            Some(s) => s.waveguides_in(area),
+            None => (0..self.waveguide_count()).collect(),
+        }
+    }
+
     /// Where a signal terminal sits, in world units.
     pub fn terminal_pos(&self, t: Terminal, output: bool) -> Option<Pos2> {
         match t.item {
@@ -90,6 +137,12 @@ impl OpticsPanel {
 
     /// Every port and terminal with its world position.
     pub fn ports(&self) -> Vec<(Hit, Pos2)> {
+        self.ports_of(0..self.layout.instances.len())
+    }
+
+    /// The parts' ports and terminals, and those of `boxes` (indices into
+    /// the instances), with their world positions.
+    fn ports_of(&self, boxes: impl IntoIterator<Item = usize>) -> Vec<(Hit, Pos2)> {
         let mut out = Vec::new();
         for (i, c) in self.layout.components.iter().enumerate() {
             for k in 0..c.kind.signal_inputs().len() {
@@ -102,7 +155,7 @@ impl OpticsPanel {
                 out.push((Hit::LaserOut(i), model::laser_light_out(c.pos, dir)));
             }
         }
-        for inst in &self.layout.instances {
+        for inst in boxes.into_iter().filter_map(|b| self.layout.instances.get(b)) {
             let g = self.geometry(inst);
             let t = |port| Terminal { item: Item::Box(inst.id), port };
             let p = |port| PortRef { instance: inst.id, port };
@@ -188,8 +241,9 @@ impl OpticsPanel {
     /// What is at `world`, with tolerances in screen points.
     pub fn hit(&self, world: Pos2) -> Hit {
         let tolerance = 8.0 / self.view.zoom;
+        let near = Rect::from_center_size(world, Vec2::splat(2.0 * (tolerance + GRID)));
         if let Some((hit, _)) = self
-            .ports()
+            .ports_of(self.boxes_in(near))
             .into_iter()
             .map(|(h, at)| (h, at.distance(world)))
             .filter(|(_, d)| *d < tolerance)
@@ -200,8 +254,11 @@ impl OpticsPanel {
         if let Some(i) = self.layout.component_at(world) {
             return Hit::Part(i);
         }
-        let catalog = &self.catalog;
-        if let Some(b) = self.layout.instance_at(world, &|b| catalog.counts(b)) {
+        // The topmost box there: the last drawn.
+        let cell = model::cell_of(world);
+        if let Some(b) = self.boxes_in(near).into_iter().rev().find(|&b| {
+            self.layout.instances.get(b).is_some_and(|inst| self.geometry(inst).cells.contains(&cell))
+        }) {
             return Hit::Box(b);
         }
         let wire_tolerance = 5.0 / self.view.zoom;
@@ -210,7 +267,7 @@ impl OpticsPanel {
                 return Hit::Signal(w);
             }
         }
-        for w in 0..self.waveguide_count() {
+        for w in self.waveguides_in(near) {
             if self.waveguide_points(w).is_some_and(|path| near_path(world, &path, wire_tolerance)) {
                 return Hit::Waveguide(w);
             }
@@ -374,7 +431,9 @@ impl OpticsPanel {
             self.user_zoom = Some(self.view.zoom);
         }
         self.mouse_world = pointer.map(|p| self.view.to_world(rect, p));
+        self.refresh_spatial();
         self.interact(ui, rect, &response, pointer);
+        self.refresh_spatial();
 
         let painter = ui.painter_at(rect);
         let zoom = self.view.zoom;
@@ -441,8 +500,12 @@ impl OpticsPanel {
 
         let outcome = self.outcome().filter(|o| o.error.is_none()).cloned();
 
+        // What's in view, in world units, give or take a cell.
+        let visible = Rect::from_min_max(self.view.to_world(rect, rect.min), self.view.to_world(rect, rect.max)).expand(GRID);
+
         // Boxes.
-        for (b, inst) in self.layout.instances.iter().enumerate() {
+        for b in self.boxes_in(visible) {
+            let Some(inst) = self.layout.instances.get(b) else { continue };
             let g = self.geometry(inst);
             let r = Rect::from_min_max(to_screen(g.rect.min), to_screen(g.rect.max));
             if !rect.intersects(r.expand(20.0)) {
@@ -473,8 +536,7 @@ impl OpticsPanel {
         );
 
         // Waveguides, one coloured strand per lit channel.
-        let visible = Rect::from_min_max(self.view.to_world(rect, rect.min), self.view.to_world(rect, rect.max)).expand(GRID);
-        for w in 0..self.waveguide_count() {
+        for w in self.waveguides_in(visible) {
             // A waveguide's curve stays within its ends' box, widened by
             // its control points' reach (at most half its length, and a cell).
             if let Some((a, b)) = self.waveguide_ends(w) {
@@ -611,7 +673,16 @@ impl OpticsPanel {
 
         // Ports and terminals.
         if zoom >= 0.35 {
-            for (hit, at) in self.ports() {
+            // Ports with a waveguide: any such waveguide passes through the view.
+            let mut connected = std::collections::HashSet::new();
+            for w in self.waveguides_in(visible) {
+                if let Some(wire) = self.layout.wires.get(w) {
+                    connected.insert((wire.from, true));
+                    connected.insert((wire.to, false));
+                }
+            }
+            connected.extend(self.layout.feeds.iter().map(|f| (f.to, false)));
+            for (hit, at) in self.ports_of(self.boxes_in(visible)) {
                 let screen = to_screen(at);
                 if !rect.expand(10.0).contains(screen) {
                     continue;
@@ -626,9 +697,7 @@ impl OpticsPanel {
                     }
                     Hit::LightIn(p) | Hit::LightOut(p) => {
                         let output = matches!(hit, Hit::LightOut(_));
-                        let connected = self.layout.wires.iter().any(|w| if output { w.from == p } else { w.to == p })
-                            || (!output && self.layout.feeds.iter().any(|f| f.to == p));
-                        draw_light_port(&painter, screen, output || connected, is_hovered, zoom, theme);
+                        draw_light_port(&painter, screen, output || connected.contains(&(p, output)), is_hovered, zoom, theme);
                     }
                     // Like a box's light output: always there to drag from.
                     Hit::LaserOut(_) => draw_light_port(&painter, screen, true, is_hovered, zoom, theme),

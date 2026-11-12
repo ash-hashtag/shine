@@ -27,6 +27,8 @@ pub mod reference;
 #[cfg(feature = "gui")]
 pub mod render;
 #[cfg(feature = "gui")]
+pub mod spatial;
+#[cfg(feature = "gui")]
 pub mod sweep_ui;
 #[cfg(feature = "gui")]
 pub mod view;
@@ -197,6 +199,8 @@ pub struct OpticsPanel {
     /// for the workspace to remember; framing doesn't count.
     pub user_zoom: Option<f32>,
     time: f64,
+    /// Where the boxes and waveguides are, for drawing and pointing.
+    spatial: Option<spatial::SpatialIndex>,
 }
 
 #[cfg(feature = "gui")]
@@ -246,6 +250,7 @@ impl Default for OpticsPanel {
             frame_pending: false,
             user_zoom: None,
             time: 0.0,
+            spatial: None,
         }
     }
 }
