@@ -26,8 +26,10 @@ pub enum ExamplesTab {
 
 mod assets_ui;
 mod export_window;
+mod matrix_window;
 mod files;
 pub use export_window::{ExportFormat, ExportWindow};
+pub use matrix_window::MatrixWindow;
 mod library_window;
 mod monte_carlo_window;
 mod optimise_window;
@@ -122,6 +124,7 @@ pub struct Workspace {
     pub library_window: LibraryWindow,
     /// File → Export for other tools….
     pub export_window: ExportWindow,
+    pub matrix_window: MatrixWindow,
     /// Analysis → Transmission….
     pub transmission_window: TransmissionWindow,
     /// Analysis → Monte Carlo….
@@ -191,6 +194,7 @@ impl Default for Workspace {
             moving_asset: None,
             library_window: LibraryWindow::default(),
             export_window: ExportWindow::default(),
+            matrix_window: MatrixWindow::default(),
             transmission_window: TransmissionWindow::default(),
             monte_carlo_window: MonteCarloWindow::default(),
             optimise_window: OptimiseWindow::default(),
@@ -1679,6 +1683,13 @@ impl Workspace {
             }
             ui.separator();
             if ui
+                .button("New layer from a matrix…")
+                .on_hover_text("Any matrix as a component that multiplies light by it, built from MZI meshes")
+                .clicked()
+            {
+                self.open_matrix_window();
+            }
+            if ui
                 .button("New scripted component")
                 .on_hover_text("A component whose light and signals a JavaScript program computes, run in a sandbox")
                 .clicked()
@@ -1905,6 +1916,7 @@ impl Workspace {
 
     fn windows(&mut self, ctx: &egui::Context) {
         self.export_window_ui(ctx);
+        self.matrix_window_ui(ctx);
         self.transmission_window_ui(ctx);
         self.monte_carlo_window_ui(ctx);
         self.optimise_window_ui(ctx);

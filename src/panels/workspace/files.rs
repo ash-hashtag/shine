@@ -17,6 +17,8 @@ pub enum FilePurpose {
     Picture,
     /// Components to add to the asset library.
     Library,
+    /// A matrix, as text, for New layer from a matrix.
+    Matrix,
     /// Dropped on the window, on the asset library or elsewhere.
     Dropped(DropTarget),
 }
@@ -65,6 +67,7 @@ impl Workspace {
             FilePurpose::Open => self.request_open(stem(&file.name), file.bytes, file.path),
             FilePurpose::Picture => self.set_dialog_picture(&file.name, &file.bytes),
             FilePurpose::Library => self.add_file_to_library(&file.name, &file.bytes),
+            FilePurpose::Matrix => self.set_matrix_text(&file.name, &file.bytes),
             FilePurpose::Dropped(target) => self.drop_file(target, file),
         }
     }

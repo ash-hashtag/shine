@@ -175,6 +175,18 @@ Reflections and light running backwards aren't modelled. Its inspector shows the
 wavelength range and points. Touchstone files are read in the desktop app; Lumerical
 files in the browser too.
 
+## Components from a matrix
+
+**Component → New layer from a matrix…** turns any matrix W into a component that
+multiplies light by it, as optical neural networks and signal processors do: type or paste
+the matrix (a row per line, complex entries as `0.5-0.2i`) or read it from a file. It
+becomes two meshes of MZIs (W = U Σ V†) with an attenuator per mode between them; light
+can't be amplified, so the component computes W x divided by W's largest singular value,
+which the window shows before you create it, with how many MZIs it takes. **Unitary: one
+mesh** builds a unitary matrix as a single mesh. The meshes are components of their own,
+to open and look inside. The same is on the [command line](command-line.md#matrices-as-components)
+(`shine layer`) and in the [libraries](python.md#matrices-as-light).
+
 ## Components from code: JavaScript
 
 **Component → New scripted component** (or **+ New scripted component** in the Assets
