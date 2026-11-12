@@ -8,13 +8,18 @@ import { inflateSync } from "node:zlib";
 const [port, site, out = "e2e-failures"] = process.argv.slice(2);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Chrome can take a while to start on a busy CI machine: up to a minute.
 let targets;
-for (let i = 0; i < 200 && !targets; i++) {
+for (let i = 0; i < 600 && !targets; i++) {
   try {
     targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
   } catch {
     await sleep(100);
   }
+}
+if (!targets) {
+  console.error(`Chrome's debugging port (${port}) didn't answer within a minute`);
+  process.exit(1);
 }
 const page = targets.find((t) => t.type === "page");
 const ws = new WebSocket(page.webSocketDebuggerUrl);
