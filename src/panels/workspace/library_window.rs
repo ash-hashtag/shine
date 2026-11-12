@@ -485,7 +485,7 @@ impl Workspace {
                     p.dragging_new = Some(placeable(item));
                 }
             }
-            Some(Action::Open(Item::Project(id))) => self.open_tab(id),
+            Some(Action::Open(Item::Project(id))) => self.open_tab_asking(id),
             Some(Action::Open(Item::Asset(k))) => self.open_asset(k.into()),
             Some(Action::Export(Item::Project(id))) => self.export_component(id),
             Some(Action::Export(Item::Asset(k))) => self.export_asset(k.into()),

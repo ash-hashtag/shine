@@ -225,7 +225,7 @@ impl Workspace {
         }
 
         match action {
-            Some(Action::Open(id)) => self.open_tab(id),
+            Some(Action::Open(id)) => self.open_tab_asking(id),
             Some(Action::Edit(id)) => self.open_document_dialog(id, true),
             Some(Action::AddToLibrary(id, folder)) => self.add_to_library(id, &folder),
             Some(Action::ExportComponent(id)) => self.export_component(id),

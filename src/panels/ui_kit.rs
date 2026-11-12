@@ -417,3 +417,27 @@ mod tests {
         .clear();
     }
 }
+
+/// A count with its thousands apart, as the docs write them: 310 072.
+pub fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (k, c) in digits.chars().enumerate() {
+        if k > 0 && (digits.len() - k).is_multiple_of(3) {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod thousands_tests {
+    #[test]
+    fn groups_of_three() {
+        assert_eq!(super::thousands(7), "7");
+        assert_eq!(super::thousands(1000), "1 000");
+        assert_eq!(super::thousands(310_072), "310 072");
+        assert_eq!(super::thousands(3_124_074), "3 124 074");
+    }
+}

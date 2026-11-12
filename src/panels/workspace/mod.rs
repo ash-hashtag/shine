@@ -85,6 +85,10 @@ pub const BACKGROUND_AFTER_MS: f64 = 12.0;
 /// background from the start, before it's timed: it would hold up the frame.
 pub const BACKGROUND_FROM_SIZE: usize = 5_000;
 
+/// A document with more boxes, parts and waveguides than this asks before it
+/// opens: a mesh of 300 000 MZIs is slower to work in than a design.
+pub const ASK_BEFORE_OPENING: usize = 50_000;
+
 /// A simulation running on another thread, and what it's for.
 struct Background {
     doc: DocId,
@@ -145,6 +149,8 @@ pub struct Workspace {
     saved_docs: std::collections::HashMap<DocId, u64>,
     /// A project waiting to be opened until the user decides about unsaved changes.
     pub pending_open: Option<PendingOpen>,
+    /// A big document waiting for the go-ahead to open (see [`ASK_BEFORE_OPENING`]).
+    pub pending_big: Option<DocId>,
     /// Window title last set (desktop).
     title: String,
     /// The window is closing (desktop): the session is saved as a clean exit.
@@ -201,6 +207,7 @@ impl Default for Workspace {
             saved_fingerprint: 0,
             saved_docs: Default::default(),
             pending_open: None,
+            pending_big: None,
             title: String::new(),
             closing: false,
             crash_report: None,
@@ -259,6 +266,20 @@ impl Workspace {
             }
         }
         self.active = Some(id);
+    }
+
+    /// Open document `id` as the user asked to: a big one not open yet
+    /// waits for the go-ahead (see [`Self::big_document_dialog`]).
+    pub fn open_tab_asking(&mut self, id: DocId) {
+        let size = self.project.doc(id).map_or(0, |d| {
+            let l = d.layout();
+            l.instances.len() + l.components.len() + l.wires.len() + l.signals.len()
+        });
+        if size > ASK_BEFORE_OPENING && !self.tabs.contains(&id) {
+            self.pending_big = Some(id);
+        } else {
+            self.open_tab(id);
+        }
     }
 
     pub fn close_tab(&mut self, id: DocId) {
@@ -379,8 +400,13 @@ impl Workspace {
 
     /// The session to keep in the app's storage.
     pub fn session(&self) -> super::session::Session {
+        super::session::Session { project: self.project.to_bytes(), ..self.session_without_project() }
+    }
+
+    /// The session but its project (left empty): tabs, views, what was saved.
+    pub fn session_without_project(&self) -> super::session::Session {
         super::session::Session {
-            project: self.project.to_bytes(),
+            project: Vec::new(),
             path: self.project.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
             saved_fingerprint: self.saved_fingerprint,
             tabs: self.tabs.iter().map(|d| d.0).collect(),
@@ -841,7 +867,7 @@ impl Workspace {
                 Request::ToggleLibrary => self.show_library = !self.show_library,
                 Request::ToggleInspector => self.show_inspector = !self.show_inspector,
                 Request::ShowShortcuts => self.show_shortcuts = !self.show_shortcuts,
-                Request::Inspect(doc) => self.open_tab(doc),
+                Request::Inspect(doc) => self.open_tab_asking(doc),
                 Request::NewComponent => {
                     self.new_component();
                 }
@@ -1282,7 +1308,7 @@ impl Workspace {
         }
 
         if let Some(doc) = open {
-            self.open_tab(doc);
+            self.open_tab_asking(doc);
         }
         if let Some((doc, component)) = dialog {
             self.open_document_dialog(doc, component);
@@ -1802,6 +1828,49 @@ impl Workspace {
         }
     }
 
+    /// Before opening a big document: how big, and whether to go ahead.
+    fn big_document_dialog(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.pending_big else { return };
+        let Some(doc) = self.project.doc(id) else {
+            self.pending_big = None;
+            return;
+        };
+        let l = doc.layout();
+        let what = format!(
+            "“{}” has {} boxes and {} waveguides{}.",
+            doc.name,
+            ui_kit::thousands(l.instances.len() + l.components.len()),
+            ui_kit::thousands(l.wires.len()),
+            if l.signals.is_empty() { String::new() } else { format!(" and {} signal wires", ui_kit::thousands(l.signals.len())) }
+        );
+        let mut choice = None;
+        let modal = egui::Modal::new(egui::Id::unique("big_document_dialog")).show(ctx, |ui| {
+            ui.set_width(400.0);
+            ui.heading("A big design");
+            ui.add_space(6.0);
+            ui.label(what);
+            ui.label("Opening it shows every part: working in it is slower than in the designs that use it, and simulating it takes a while (it opens paused).");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Open").clicked() {
+                    choice = Some(true);
+                }
+                if ui.button("Cancel").clicked() {
+                    choice = Some(false);
+                }
+            });
+        });
+        if modal.should_close() && choice.is_none() {
+            choice = Some(false);
+        }
+        if let Some(open) = choice {
+            self.pending_big = None;
+            if open {
+                self.open_tab(id);
+            }
+        }
+    }
+
     /// The desktop window's title: the file, and a star when it has unsaved changes.
     fn update_title(&mut self, ctx: &egui::Context) {
         let star = if self.has_unsaved_changes() { "*" } else { "" };
@@ -1850,6 +1919,7 @@ impl Workspace {
         }
         self.crash_window(ctx);
         self.unsaved_dialog(ctx);
+        self.big_document_dialog(ctx);
         if !cfg!(target_arch = "wasm32") {
             self.update_title(ctx);
         }

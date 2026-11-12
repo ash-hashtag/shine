@@ -946,3 +946,26 @@ fn opening_a_project_asks_about_unsaved_changes() {
     h.key(&mut ws, Key::Escape);
     assert!(ws.pending_open.is_none(), "Escape cancels");
 }
+
+#[test]
+fn a_big_document_asks_before_it_opens() {
+    let mut ws = live();
+    // A component of 60 000 boxes, and a small one.
+    let mut big = Layout::default();
+    for k in 0..60_000 {
+        big.add_instance(BlockRef::Builtin(Builtin::PhaseShifter { phase: 0.0 }), (0, 2 * k));
+    }
+    let big = ws.project.add_component("Big mesh", "B", "", big, 10.0);
+    let small = ws.project.add_component("Small", "S", "", Layout::default(), 10.0);
+    ws.open_tab_asking(small);
+    assert_eq!(ws.active, Some(small), "a small one opens at once");
+    ws.open_tab_asking(big);
+    assert_eq!((ws.active, ws.pending_big), (Some(small), Some(big)), "a big one waits");
+    let mut h = Harness::new();
+    h.frame(&mut ws, Vec::new());
+    assert_eq!(ws.pending_big, Some(big), "the question is up");
+    // Cancelled with Escape: it stays closed.
+    h.key(&mut ws, Key::Escape);
+    assert_eq!((ws.pending_big, ws.active), (None, Some(small)));
+    assert!(!ws.tabs.contains(&big));
+}
