@@ -122,4 +122,4 @@ jobs:
           cd /tmp && python -m unittest discover -v -s "$GITHUB_WORKSPACE/bindings/tests"
       - name: TypeScript tests
         working-directory: bindings
-        run: node --test test/
+        run: node --test test/*.test.mjs

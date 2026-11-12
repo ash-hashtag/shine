@@ -241,7 +241,7 @@ jobs:
         run: bindings/pack.sh --release wasm
       - name: Test
         working-directory: bindings
-        run: node --test test/
+        run: node --test test/*.test.mjs
       - name: No token
         if: env.NODE_AUTH_TOKEN == ''
         run: |

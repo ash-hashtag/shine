@@ -4,7 +4,7 @@
   "description": "What building the TypeScript package needs: the BoltFFI runtime it imports, and the compiler that checks it. The package itself is generated into dist/wasm/pkg.",
   "scripts": {
     "pack": "PATH=node_modules/.bin:$PATH boltffi pack wasm",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "@boltffi/runtime": "0.32.1",

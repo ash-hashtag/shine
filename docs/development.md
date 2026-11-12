@@ -141,7 +141,7 @@ cargo install boltffi_cli --version 0.32.1 --locked
 bindings/pack.sh                    # dist/python/wheelhouse/*.whl and dist/wasm/pkg
 pip install bindings/dist/python/wheelhouse/*.whl
 python -m unittest discover -s bindings/tests
-cd bindings && node --test test/
+cd bindings && node --test test/*.test.mjs
 ```
 
 Doc comments in `bindings/src/lib.rs` become the packages' docstrings and JSDoc.
