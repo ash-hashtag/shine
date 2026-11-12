@@ -81,6 +81,10 @@ const UI_SCALES: (f32, f32) = (0.5, 2.5);
 /// arrives. Below it, results are ready on the same frame.
 pub const BACKGROUND_AFTER_MS: f64 = 12.0;
 
+/// A design with more boxes and waveguides than this simulates in the
+/// background from the start, before it's timed: it would hold up the frame.
+pub const BACKGROUND_FROM_SIZE: usize = 5_000;
+
 /// A simulation running on another thread, and what it's for.
 struct Background {
     doc: DocId,
@@ -945,7 +949,8 @@ impl Workspace {
             }
             return finished;
         }
-        if cfg!(not(target_arch = "wasm32")) && self.stats.last_simulation_ms > self.background_after_ms {
+        let big = panel.layout.instances.len() + panel.layout.wires.len() > BACKGROUND_FROM_SIZE && self.background_after_ms.is_finite();
+        if cfg!(not(target_arch = "wasm32")) && (self.stats.last_simulation_ms > self.background_after_ms || big) {
             self.start_background(id, key);
             return finished;
         }
