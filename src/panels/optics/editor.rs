@@ -75,12 +75,30 @@ fn box_cells(layout: &Layout, counts: Counts, skip: Option<usize>) -> HashSet<(i
         .collect()
 }
 
+/// The most a layout's undo steps may hold together, in boxes, parts and
+/// wires: each step is a whole copy.
+const UNDO_ITEMS: usize = 2_000_000;
+
+fn layout_items(l: &Layout) -> usize {
+    l.instances.len() + l.wires.len() + l.components.len() + l.signals.len() + 1
+}
+
 impl Editor {
     pub fn new(layout: &Layout) -> Self {
+        Self::with_history(History::new(layout).weighed(layout_items, UNDO_ITEMS))
+    }
+
+    /// An editor whose undo history starts from the layout as it first
+    /// sees it (see [`History::lazy`]), for documents loaded or added.
+    pub fn lazy() -> Self {
+        Self::with_history(History::lazy(256).weighed(layout_items, UNDO_ITEMS))
+    }
+
+    fn with_history(history: History<Layout>) -> Self {
         Self {
             selection: Selection::default(),
             boxes: Selection::default(),
-            history: History::new(layout),
+            history,
             grab: None,
             seen_cell_um: None,
         }

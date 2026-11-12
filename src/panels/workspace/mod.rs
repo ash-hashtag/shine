@@ -806,7 +806,9 @@ impl Workspace {
         let Some(doc) = self.active.and_then(|id| self.project.doc_mut(id)) else {
             return;
         };
-        doc.panel_mut().apply(action);
+        let p = doc.panel_mut();
+        p.editor.history.start(&p.layout);
+        p.apply(action);
         self.handle_requests();
     }
 
@@ -815,7 +817,10 @@ impl Workspace {
     /// any change made through it.
     fn active_panel(&mut self) -> Option<&mut OpticsPanel> {
         let id = self.active?;
-        Some(self.project.doc_mut(id)?.panel_mut_untracked())
+        let p = self.project.doc_mut(id)?.panel_mut_untracked();
+        // About to be edited: its undo history starts here if not before.
+        p.editor.history.start(&p.layout);
+        Some(p)
     }
 
     fn handle_requests(&mut self) {

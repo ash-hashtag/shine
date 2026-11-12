@@ -280,7 +280,7 @@ impl OpticsPanel {
     /// An embedded editor for an existing layout.
     pub fn with_layout(layout: Layout, cell_um: f64) -> Self {
         Self {
-            editor: Editor::new(&layout),
+            editor: Editor::lazy(),
             layout,
             cell_um,
             embedded: true,
