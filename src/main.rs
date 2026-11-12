@@ -19,12 +19,25 @@ fn main() -> eframe::Result {
         }
         Some("--help" | "-h") => {
             println!(
-                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [--log-file PATH] [--log-level FILTER]   open the editor\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine export PROJECT.shine [options]          S-parameters or a gdsfactory layout (--help for options)\n  shine --version",
+                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [PROJECT.shine [--doc NAME]] [--log-file PATH] [--log-level FILTER]\n                                                 open the editor, on a project (and one of its designs)\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine export PROJECT.shine [options]          S-parameters or a gdsfactory layout (--help for options)\n  shine --version",
                 env!("CARGO_PKG_VERSION")
             );
             return Ok(());
         }
         _ => {}
+    }
+    // A project to open, and which of its designs to show.
+    let (mut open, mut doc) = (None, None);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--log-file" | "--log-level" => {
+                rest.next();
+            }
+            "--doc" => doc = rest.next().cloned(),
+            a if a.starts_with('-') => {}
+            path => open = Some(std::path::PathBuf::from(path)),
+        }
     }
     let _log_guard = match logging::init(&LogConfig::from_env()) {
         Ok(guard) => Some(guard),
@@ -53,6 +66,17 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             let mut app = ShineApp::new(cc);
             app.workspace.crash_report = last_crash;
+            if let Some(path) = &open {
+                match app.workspace.open_path(path) {
+                    Ok(()) => {
+                        let id = doc.as_deref().and_then(|name| app.workspace.project.find(name));
+                        if let Some(id) = id {
+                            app.workspace.open_tab(id);
+                        }
+                    }
+                    Err(e) => app.workspace.notify(format!("Can't open {}: {e}", path.display())),
+                }
+            }
             Ok(Box::new(app))
         }),
     );

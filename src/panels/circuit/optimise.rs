@@ -53,10 +53,13 @@ struct Problem<'a> {
     machine: &'a Machine,
     root: Option<DocId>,
     vars: &'a [Variable],
-    objective: &'a Objective,
-    names: &'a (dyn Fn(InstanceId) -> String + Sync),
+    goal: Goal,
+    measure: &'a Measure<'a>,
     count: std::sync::atomic::AtomicUsize,
 }
+
+/// What an optimisation brings to its goal: a number from a simulated layout.
+pub type Measure<'a> = dyn Fn(&Layout, &super::sim::Outcome) -> Result<f64, String> + Sync + 'a;
 
 impl Problem<'_> {
     /// Values from a point of the unit cube (clamped into it).
@@ -75,11 +78,7 @@ impl Problem<'_> {
         if let Some(e) = o.error {
             return Err(e);
         }
-        outputs(&l, &o, self.names)
-            .into_iter()
-            .find(|o| o.0 == self.objective.output)
-            .map(|o| o.1)
-            .ok_or_else(|| format!("no output “{}”", self.objective.output))
+        (self.measure)(&l, &o)
     }
 }
 
@@ -95,7 +94,7 @@ impl CostFunction for Cost<'_, '_> {
         let p = this.power(&this.values(u)).map_err(Error::msg)?;
         // Outside the bounds: the clamped value, plus a push back inside.
         let outside: f64 = u.iter().map(|&x| (x - x.clamp(0.0, 1.0)).powi(2)).sum();
-        let cost = match this.objective.goal {
+        let cost = match this.goal {
             Goal::Maximise => -p,
             Goal::Minimise => p,
             Goal::Target(t) => (p - t).powi(2),
@@ -117,6 +116,30 @@ pub fn optimise(
     max_steps: u64,
     names: &(dyn Fn(InstanceId) -> String + Sync),
 ) -> Optimised {
+    let measure = |l: &Layout, o: &super::sim::Outcome| {
+        outputs(l, o, names)
+            .into_iter()
+            .find(|out| out.0 == objective.output)
+            .map(|out| out.1)
+            .ok_or_else(|| format!("no output “{}”", objective.output))
+    };
+    optimise_measured(layout, cell_um, docs, machine, root, vars, objective.goal, max_steps, &measure)
+}
+
+/// Adjust `vars` to bring what `measure` reads from each simulation towards
+/// `goal`.
+#[allow(clippy::too_many_arguments)]
+pub fn optimise_measured(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &(dyn Documents + Sync),
+    machine: &Machine,
+    root: Option<DocId>,
+    vars: &[Variable],
+    goal: Goal,
+    max_steps: u64,
+    measure: &Measure,
+) -> Optimised {
     let mut result = Optimised::default();
     if vars.is_empty() {
         result.error = Some("Choose at least one parameter to adjust".into());
@@ -131,7 +154,7 @@ pub fn optimise(
         let span = v.max - v.min;
         start.push(if span > 0.0 { ((x - v.min) / span).clamp(0.0, 1.0) } else { 0.0 });
     }
-    let problem = Problem { layout, cell_um, docs, machine, root, vars, objective, names, count: Default::default() };
+    let problem = Problem { layout, cell_um, docs, machine, root, vars, goal, measure, count: Default::default() };
     match problem.power(&problem.values(&start)) {
         Ok(p) => result.before = p,
         Err(e) => {

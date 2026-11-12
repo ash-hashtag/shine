@@ -1,5 +1,9 @@
 pub mod photonics;
 
+/// Shine as a library: designs, simulation, analysis and files, without the app.
+#[cfg(feature = "core")]
+pub mod api;
+
 #[cfg(all(feature = "logging", not(target_arch = "wasm32")))]
 pub mod logging;
 

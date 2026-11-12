@@ -175,15 +175,15 @@ class Design:
     def remove(self, part: Part) -> None
 
     def parts(self) -> list[Part]
-    def part(self, name: str) -> Part                       # by name; raises listing them
+    def find_part(self, name: str) -> Part                  # by name; raises listing them
 
     # Analysis.
     def simulate(self) -> Simulation
     def transmission(self, wavelengths_nm: list[float]) -> Transmission
     def sweep(self, part: Part, param: str, start: float, stop: float, points: int) -> Sweep
-    def sweep_2d(self, x: SweepAxis, y: SweepAxis, output: str) -> Map
     def monte_carlo(self, runs: int, seed: int, variation: Variation) -> MonteCarlo
     def optimise(self, variables: list[Variable], output: str, goal: Goal, steps: int) -> Optimised
+    def apply(self, variables: list[Variable], values: list[float]) -> None   # what optimise found
 
     # Other tools.
     def to_touchstone(self, wavelengths_nm: list[float]) -> str
@@ -203,17 +203,21 @@ ring = chip.ring(coupling=0.05, length_um=100).set("n_g", 4.2).set("loss", 3)
 
 ### Part
 
+A component's pins face into it: an input pin's only port is `out` (where its light enters
+the component's circuit), an output pin's is `in`. Signal pins likewise: a signal input has
+`out`, a signal output `in`.
+
 ```python
 class Part:
-    name: str                       # unique in its design: "Ring", "Ring 2"…; settable
-    kind: str                       # "Ring", "Coupler", or the component's name
+    name: str                       # unique in its design: "Ring resonator", "Ring resonator 2"…
+    kind: str                       # "Ring resonator", "Directional coupler", or the component's name
 
     def port(self, name: str) -> Port               # raises listing the ports there are
     def ports(self) -> list[PortInfo]
     def params(self) -> list[Param]                 # name, unit, value, typical range
     def get(self, param: str) -> float
     def set(self, param: str, value: float) -> Part # returns the part, to chain
-    def rename(self, name: str) -> Part
+    def place_at(self, column: int, row: int) -> Part   # its position in the app (else laid out on save)
 ```
 
 ### Records
@@ -313,6 +317,13 @@ bindings/  [new crate]   BoltFFI exports of `api`: Python extension + wheel,
    the examples above against the built packages.
 4. **Docs**: a Python page and a TypeScript page, each a tutorial plus the reference;
    docstrings/JSDoc in the packages.
+
+## Later
+
+- **2-D sweeps** (`sweep_2d`), as the app's sweep window does.
+- **Names kept in the file**, so a part can be renamed and the app shows the name: needs a
+  file-format version.
+- **Free-space parts**, with explicit positions.
 
 ## Decided
 

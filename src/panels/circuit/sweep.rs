@@ -179,6 +179,7 @@ pub fn params(layout: &Layout, item: Item) -> Vec<Param> {
                     p("loss", "dB/cm", 0.0, 100.0),
                 ],
                 Builtin::Mzi { .. } => vec![p("θ", "rad", 0.0, TAU), p("φ", "rad", 0.0, TAU)],
+                Builtin::Value { .. } => vec![p("value", "", 0.0, 1.0)],
                 Builtin::Ring { .. } | Builtin::AddDropRing { .. } => vec![
                     p("coupling", "", 0.0, 1.0),
                     p("length", "µm", 1.0, 200.0),
@@ -294,6 +295,7 @@ fn visit(layout: &mut Layout, item: Item, param: &str, f: &mut dyn FnMut(&mut f6
             match (b, param) {
                 (Builtin::Laser { amplitude, .. }, "power") => as_power(amplitude, f),
                 (Builtin::Laser { wavelength_nm, .. }, "wavelength") => f(wavelength_nm),
+                (Builtin::Value { value, .. }, "value") => f(value),
                 (Builtin::Laser { phase, .. } | Builtin::PhaseShifter { phase }, "phase") => f(phase),
                 (Builtin::Coupler { coupling }, "coupling") => f(coupling),
                 (Builtin::Attenuator { loss_db }, "loss") => f(loss_db),
