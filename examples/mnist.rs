@@ -39,8 +39,59 @@ fn peak_mb() -> f64 {
 
 fn step<T>(what: &str, f: impl FnOnce() -> T) -> T {
     let started = Instant::now();
-    let out = f();
+    let out = profiled(what, f);
     tracing::info!("{what}: {:.2} s, peak memory {:.0} MB", started.elapsed().as_secs_f64(), peak_mb());
+    out
+}
+
+/// A function's name without generic arguments: `a::B<C>::f` → `a::B::f`.
+fn short_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0;
+    for c in name.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// With SHINE_PROFILE set to part of a step's name, samples that step (pprof,
+/// in-process: no perf permissions needed) and logs where its time goes.
+fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
+    let wanted = std::env::var("SHINE_PROFILE").is_ok_and(|w| what.contains(&w));
+    let guard = wanted.then(|| pprof::ProfilerGuardBuilder::default().frequency(999).build().expect("profiler"));
+    let out = f();
+    if let Some(report) = guard.and_then(|g| g.report().build().ok()) {
+        // Samples in which each function is on the stack, and at its top.
+        let mut inclusive: std::collections::HashMap<String, usize> = Default::default();
+        let mut own: std::collections::HashMap<String, usize> = Default::default();
+        let mut total = 0;
+        for (frames, &count) in &report.data {
+            let count = count.max(0) as usize;
+            total += count;
+            let names: Vec<String> = frames.frames.iter().flatten().map(|s| short_name(&s.name())).collect();
+            if let Some(top) = names.first() {
+                *own.entry(top.clone()).or_default() += count;
+            }
+            let mut seen = std::collections::HashSet::new();
+            for n in names {
+                if seen.insert(n.clone()) {
+                    *inclusive.entry(n).or_default() += count;
+                }
+            }
+        }
+        for (title, map) in [("on the stack", inclusive), ("at the top", own)] {
+            let runtime = ["std::", "core::", "alloc::", "rayon", "__", "call_once", "call_mut", "{closure", "mnist", "main", "fold", "for_each", "collect", "from_iter", "map", "extend", "spec_", "run_", "lang_start", "start_thread", "clone3", "backtrace", "pprof", "do_call", "try", "catch_unwind", "Iterator"];
+            let mut rows: Vec<_> = map.into_iter().filter(|(n, _)| title == "at the top" || !runtime.iter().any(|r| n.starts_with(r))).collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+            let lines: Vec<String> = rows.iter().take(40).map(|(n, c)| format!("{:5.1}% {n}", 100.0 * *c as f64 / total.max(1) as f64)).collect();
+            tracing::info!("profile of “{what}”, {total} samples, {title}:\n{}", lines.join("\n"));
+        }
+    }
     out
 }
 
@@ -168,12 +219,12 @@ fn editor(bytes: &[u8]) {
         started.elapsed().as_secs_f64() * 1e3
     };
     let first = frame(&mut ws, Vec::new());
-    let idle: Vec<f64> = (0..10).map(|_| frame(&mut ws, Vec::new())).collect();
+    let idle: Vec<f64> = profiled("Editor frames on the chip", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
     tracing::info!("Editor on the chip: first frame {first:.0} ms, then {:.1} ms a frame", idle.iter().sum::<f64>() / 10.0);
     let biggest = ws.project.documents.iter().max_by_key(|d| d.layout().instances.len()).unwrap().id;
     ws.open_tab(biggest);
-    let first = frame(&mut ws, Vec::new());
-    let idle: Vec<f64> = (0..10).map(|_| frame(&mut ws, Vec::new())).collect();
+    let first = profiled("Editor first frame in the mesh", || frame(&mut ws, Vec::new()));
+    let idle: Vec<f64> = profiled("Editor frames in the mesh", || (0..10).map(|_| frame(&mut ws, Vec::new())).collect());
     tracing::info!("Editor inside the biggest mesh: first frame {first:.0} ms, then {:.1} ms a frame, peak memory {:.0} MB", idle.iter().sum::<f64>() / 10.0, peak_mb());
 }
 
