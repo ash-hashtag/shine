@@ -969,3 +969,18 @@ fn a_big_document_asks_before_it_opens() {
     assert_eq!((ws.pending_big, ws.active), (None, Some(small)));
     assert!(!ws.tabs.contains(&big));
 }
+
+#[test]
+fn inspecting_a_built_in_block_shows_its_settings() {
+    // The MNIST chip's linear modulator: its driver is a function cell.
+    let mut ws = live();
+    let id = crate::panels::optics::digits::linear_modulator(&mut ws.project);
+    ws.open_tab(id);
+    ws.show_inspector = false;
+    let driver = panel(&mut ws, id).layout.instances.iter().position(|i| matches!(&i.block, BlockRef::Builtin(Builtin::FunctionCell { name, .. }) if name == "driver")).unwrap();
+    panel(&mut ws, id).editor.boxes.select_only(driver);
+    ws.apply(Action::Inspect);
+    assert!(ws.show_inspector, "the inspector shows the driver's settings");
+    let status = &panel(&mut ws, id).status.as_ref().unwrap().0;
+    assert!(status.contains("“driver”, a function cell, is a built-in block"), "{status}");
+}

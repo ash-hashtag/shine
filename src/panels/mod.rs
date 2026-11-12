@@ -47,6 +47,8 @@ pub enum Request {
     Save,
     ToggleLibrary,
     ToggleInspector,
+    /// Show the inspector (a built-in block's settings are there).
+    ShowInspector,
     ShowShortcuts,
     /// Open this document in a tab.
     Inspect(project::DocId),

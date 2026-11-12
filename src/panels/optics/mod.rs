@@ -557,6 +557,23 @@ impl OpticsPanel {
     }
 
     /// The component behind the selected box, if any.
+    /// Box `b` is a built-in block: it has no design inside to open, its
+    /// settings are in the inspector, so show that.
+    pub fn inspect_builtin(&mut self, b: usize) {
+        let Some(inst) = self.layout.instances.get(b) else { return };
+        let BlockRef::Builtin(block) = &inst.block else { return };
+        let name = match block {
+            Builtin::FunctionCell { name, .. } if !name.is_empty() => format!("“{name}”, a function cell,"),
+            _ => format!("The {}", self.catalog.display(&inst.block).name.to_lowercase()),
+        };
+        if self.embedded {
+            self.requests.push(Request::ShowInspector);
+        } else {
+            self.show_properties = true;
+        }
+        self.notify(format!("{name} is a built-in block: its settings are in the inspector"));
+    }
+
     pub fn selected_component(&self) -> Option<DocId> {
         let i = self.editor.boxes.active()?;
         match self.layout.instances.get(i)?.block {
@@ -638,7 +655,10 @@ impl OpticsPanel {
             Action::Inspect => match self.selected_component() {
                 Some(id) if self.embedded => self.requests.push(Request::Inspect(id)),
                 Some(_) => self.notify("Components open in the workspace"),
-                None => self.notify("Select a component box to open it"),
+                None => match self.editor.boxes.active() {
+                    Some(b) => self.inspect_builtin(b),
+                    None => self.notify("Select a component box to open it"),
+                },
             },
             Action::AddMenu => self.open_menu(None),
             Action::Save if self.embedded => self.requests.push(Request::Save),

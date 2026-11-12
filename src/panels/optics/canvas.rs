@@ -961,13 +961,11 @@ impl OpticsPanel {
                     if !shift {
                         self.toggle_bit(b, world);
                     }
-                    if response.double_clicked()
-                        && let BlockRef::Component(id) = self.layout.instances[b].block
-                    {
-                        if self.embedded {
-                            self.requests.push(Request::Inspect(id));
-                        } else {
-                            self.notify("Components open in the workspace");
+                    if response.double_clicked() {
+                        match self.layout.instances[b].block {
+                            BlockRef::Component(id) if self.embedded => self.requests.push(Request::Inspect(id)),
+                            BlockRef::Component(_) => self.notify("Components open in the workspace"),
+                            BlockRef::Builtin(_) => self.inspect_builtin(b),
                         }
                     }
                 }

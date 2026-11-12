@@ -866,6 +866,7 @@ impl Workspace {
                 Request::Save => self.save(false),
                 Request::ToggleLibrary => self.show_library = !self.show_library,
                 Request::ToggleInspector => self.show_inspector = !self.show_inspector,
+                Request::ShowInspector => self.show_inspector = true,
                 Request::ShowShortcuts => self.show_shortcuts = !self.show_shortcuts,
                 Request::Inspect(doc) => self.open_tab_asking(doc),
                 Request::NewComponent => {

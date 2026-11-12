@@ -1069,9 +1069,11 @@ fn boxes_select_move_and_inspect() {
     assert!(panel.hover_text(Hit::Box(0)).unwrap().contains("toggle"));
     assert!(panel.hover_text(Hit::Part(0)).unwrap().contains("Lens"));
     assert!(panel.hover_text(Hit::Empty).is_none());
-    // Tab on a built-in box has nothing to open.
+    // Tab on a built-in box has nothing to open: its settings are in the inspector.
+    panel.show_properties = false;
     panel.apply(Action::Inspect);
-    assert!(panel.status.as_ref().unwrap().0.contains("component box"));
+    assert!(panel.status.as_ref().unwrap().0.contains("built-in block: its settings are in the inspector"));
+    assert!(panel.show_properties);
     // Box select catches boxes and parts.
     h.drag(scr(&panel, cell_center(-1, -1)), scr(&panel, cell_center(6, 7)), &mut panel, PointerButton::Primary);
     assert_eq!((panel.editor.boxes.len(), panel.editor.selection.len()), (2, 1));
