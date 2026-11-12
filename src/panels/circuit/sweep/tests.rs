@@ -1,4 +1,4 @@
-use egui::Vec2;
+use emath::Vec2;
 
 use super::*;
 use crate::panels::circuit::sim::NoDocuments;

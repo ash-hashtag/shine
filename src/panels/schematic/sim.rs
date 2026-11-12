@@ -212,7 +212,7 @@ pub fn simulate(
 
 #[cfg(test)]
 mod tests {
-    use egui::Pos2;
+    use emath::Pos2;
 
     use super::*;
     use crate::panels::schematic::model::PortRef;

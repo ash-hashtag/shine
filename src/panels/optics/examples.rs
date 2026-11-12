@@ -1,6 +1,6 @@
 //! Ready-made free-space layouts for the editor.
 
-use egui::Vec2;
+use emath::Vec2;
 
 use super::model::{
     BlockRef, Builtin, Item, Layout, OpticComponentKind, PlacedComponent, PortRef, Terminal, cell_center,

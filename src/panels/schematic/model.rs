@@ -1,6 +1,6 @@
 //! Schematic documents: blocks placed freely and wired with waveguides.
 
-use egui::{Pos2, Vec2};
+use emath::{Pos2, Vec2};
 use serde::{Deserialize, Serialize};
 
 use crate::panels::project::DocId;

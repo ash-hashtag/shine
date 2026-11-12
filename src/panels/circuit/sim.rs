@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use egui::{Pos2, Vec2};
+use emath::{Pos2, Vec2};
 
 use super::expr;
 use crate::panels::beam_sim::{Beam, DIRECTIONS, direction, direction_index, scattering};

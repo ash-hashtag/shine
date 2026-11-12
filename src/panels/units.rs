@@ -88,6 +88,7 @@ pub fn loss_db(transmission: f64) -> f64 {
 
 /// Edits a laser's field amplitude as its power, in the chosen unit, with
 /// the other unit beside it. Returns whether it changed.
+#[cfg(feature = "gui")]
 pub fn power_editor(ui: &mut egui::Ui, amplitude: &mut f64, unit: PowerUnit) -> egui::Response {
     let mw = *amplitude * *amplitude;
     ui.horizontal(|ui| {
@@ -157,6 +158,7 @@ mod tests {
         assert_eq!(format_both(0.5, PowerUnit::Dbm), "-3.01 dBm (0.500 mW)");
     }
 
+    #[cfg(feature = "gui")]
     #[test]
     fn power_editor_keeps_amplitude() {
         // Drawing the editor without input leaves the amplitude alone.

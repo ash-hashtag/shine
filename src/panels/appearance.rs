@@ -7,6 +7,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+#[cfg(feature = "gui")]
 use egui::{Color32, Pos2, Rect, Shape, Stroke};
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +41,7 @@ impl BoxShape {
     }
 
     /// The outline filling `rect`, as a closed polygon (or a rounded rect).
+    #[cfg(feature = "gui")]
     pub fn shape(self, rect: Rect, fill: Color32, stroke: Stroke) -> Shape {
         let short = rect.width().min(rect.height());
         match self {
@@ -66,10 +68,12 @@ impl BoxShape {
     }
 }
 
+#[cfg(feature = "gui")]
 trait WithStroke {
     fn with_stroke(self, stroke: Stroke) -> Shape;
 }
 
+#[cfg(feature = "gui")]
 impl WithStroke for Shape {
     fn with_stroke(self, stroke: Stroke) -> Shape {
         match self {
@@ -144,6 +148,7 @@ pub struct Appearance {
     pub icon: Option<Icon>,
 }
 
+#[cfg(feature = "gui")]
 fn is_svg(name: &str, bytes: &[u8]) -> bool {
     if name.to_lowercase().ends_with(".svg") {
         return true;
@@ -155,6 +160,7 @@ fn is_svg(name: &str, bytes: &[u8]) -> bool {
 
 /// An icon from a picture file: an SVG as it is, any other picture scaled
 /// down to fit [`ICON_PX`] and saved as WebP.
+#[cfg(feature = "gui")]
 pub fn icon_from_file(name: &str, bytes: &[u8]) -> Result<Icon, String> {
     if is_svg(name, bytes) {
         if bytes.len() > MAX_SVG_BYTES {
@@ -182,6 +188,7 @@ pub fn icon_from_file(name: &str, bytes: &[u8]) -> Result<Icon, String> {
 
 /// Draw `icon` fitted inside `rect`. Returns false until the picture is
 /// decoded (or if it can't be), so the caller can draw something else.
+#[cfg(feature = "gui")]
 pub fn paint_icon(painter: &egui::Painter, rect: Rect, icon: &Icon) -> bool {
     let ctx = painter.ctx();
     let uri = icon.uri();
@@ -208,6 +215,7 @@ pub fn paint_icon(painter: &egui::Painter, rect: Rect, icon: &Icon) -> bool {
 }
 
 /// The fill colour of a component's box.
+#[cfg(feature = "gui")]
 pub fn fill(appearance: &Appearance, name: &str) -> Color32 {
     match appearance.color {
         Some([r, g, b]) => Color32::from_rgb(r, g, b),
@@ -216,6 +224,7 @@ pub fn fill(appearance: &Appearance, name: &str) -> Color32 {
 }
 
 /// White or near-black, whichever reads better on `fill`.
+#[cfg(feature = "gui")]
 pub fn text_on(fill: Color32) -> Color32 {
     let luminance = 0.2126 * fill.r() as f32 + 0.7152 * fill.g() as f32 + 0.0722 * fill.b() as f32;
     if luminance > 160.0 { Color32::from_gray(25) } else { Color32::WHITE }
@@ -223,6 +232,7 @@ pub fn text_on(fill: Color32) -> Color32 {
 
 /// A small badge for lists: the picture if there is one, else the initials
 /// on the box's colour and shape.
+#[cfg(feature = "gui")]
 pub fn paint_badge(painter: &egui::Painter, rect: Rect, appearance: &Appearance, name: &str, initials: &str) {
     let fill = fill(appearance, name);
     if let Some(icon) = &appearance.icon {
@@ -246,7 +256,7 @@ pub fn is_picture(name: &str) -> bool {
     PICTURE_EXTENSIONS.iter().any(|e| lower.ends_with(&format!(".{e}")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::*;
 

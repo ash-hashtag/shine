@@ -43,9 +43,16 @@ jobs:
       # Includes the headless UI tests and the docs coverage tests.
       - name: Test
         run: cargo test --locked
-      - name: Library without the editor
+      - name: The engine alone
         if: runner.os == 'Linux'
         run: cargo test --locked --no-default-features --lib
+      # Designs, simulation and files without the editor: what the library and
+      # the Python and TypeScript packages are built on.
+      - name: The library without the editor
+        if: runner.os == 'Linux'
+        run: |
+          cargo clippy --locked --no-default-features --features core,logging --all-targets -- -D warnings
+          cargo test --locked --no-default-features --features core
 
   web:
     name: Web app, site and browser tests

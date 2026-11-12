@@ -209,7 +209,7 @@ mod tests {
     use super::*;
     use crate::panels::circuit::sim::NoDocuments;
     use crate::panels::optics::model::{PlacedComponent, PortRef, cell_center};
-    use egui::Vec2;
+    use emath::Vec2;
 
     fn no_names(id: InstanceId) -> String {
         format!("box {}", id.0)

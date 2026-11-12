@@ -18,7 +18,7 @@ pub fn wavelengths(from: f64, to: f64, points: usize) -> Vec<f64> {
 /// (the `N` of `.sNp`).
 pub fn touchstone(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &str) -> Result<(String, usize), String> {
     let d = project.doc(doc).ok_or("no such document")?;
-    let t = sim::transmission(d.layout(), d.panel().cell_um, project, &Machine::default(), Some(doc), wavelengths_nm)?;
+    let t = sim::transmission(d.layout(), d.cell_um(), project, &Machine::default(), Some(doc), wavelengths_nm)?;
     let names = layout_interface(d.layout());
     let s = touchstone::SParameters::from_transmission(&t.wavelengths_nm, &t.matrices);
     let (from, to) = wavelengths_nm.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &w| (a.min(w), b.max(w)));

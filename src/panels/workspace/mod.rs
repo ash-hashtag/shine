@@ -49,12 +49,7 @@ pub enum LeftTab {
     Assets,
 }
 
-/// A name as a file name or URL part: "Mach–Zehnder switch" → "mach-zehnder-switch".
-pub(crate) fn slug(name: &str) -> String {
-    let words: Vec<String> =
-        name.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect();
-    if words.is_empty() { "component".into() } else { words.join("-") }
-}
+pub(crate) use super::names::slug;
 
 /// "Save as component" / rename dialog.
 #[derive(Clone, Debug, PartialEq)]

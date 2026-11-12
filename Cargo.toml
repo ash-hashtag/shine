@@ -10,8 +10,12 @@ homepage = "https://shine.lupyd.com"
 
 [features]
 default = ["gui"]
-# The editor. Disable with `default-features = false` to use only the `photonics` library.
-gui = ["logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image", "dep:rust-rf", "dep:rquickjs", "dep:argmin", "dep:argmin-math"]
+# Designs, simulation, analysis, files and exports, with no window: what the
+# library (`shine::api`) and the Python and TypeScript packages use.
+core = ["dep:emath", "dep:rust-rf", "dep:rquickjs", "dep:argmin", "dep:argmin-math"]
+# The editor. Disable default features to use only the `photonics` engine, or
+# use `core` for the library without the editor.
+gui = ["core", "logging", "dep:egui", "dep:eframe", "dep:egui_plot", "dep:rfd", "dep:ehttp", "dep:png", "dep:egui_extras", "dep:image"]
 # Stderr + optional file logging setup for binaries.
 logging = ["dep:tracing-subscriber", "dep:tracing-appender"]
 
@@ -23,12 +27,52 @@ required-features = ["gui"]
 name = "shine-mcp"
 required-features = ["gui"]
 
+# Tests and examples of the app itself need the editor; the rest run on the
+# library alone (`cargo test --no-default-features --features core`).
+[[test]]
+name = "ui"
+required-features = ["gui"]
+
+[[test]]
+name = "crash"
+required-features = ["gui"]
+
+[[example]]
+name = "frame_bench"
+required-features = ["gui"]
+
+[[example]]
+name = "library_bench"
+required-features = ["gui"]
+
+[[example]]
+name = "reference_design"
+required-features = ["gui"]
+
+[[example]]
+name = "digits"
+required-features = ["core", "logging"]
+
+[[example]]
+name = "scale_bench"
+required-features = ["core", "logging"]
+
+[[example]]
+name = "sweep_bench"
+required-features = ["core", "logging"]
+
+[[example]]
+name = "matmul"
+required-features = ["logging"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 egui = { version = "0.37.0", features = ["serde", "monochrome_emoji_fonts"], optional = true }
 eframe = { version = "0.37.0", features = ["serde", "persistence"], optional = true }
+# Points, vectors and rectangles of designs on the grid (the types egui uses).
+emath = { version = "0.37.0", features = ["serde"], optional = true }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
 serde = { version = "1.0.229", features = ["derive", "rc"] }

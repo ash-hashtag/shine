@@ -287,16 +287,7 @@ pub fn beam_label(beam: &Beam, unit: PowerUnit) -> String {
     )
 }
 
-/// Distance from `p` to the segment `a`-`b`.
-pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
-    let v = b - a;
-    let len_sq = v.length_sq();
-    if len_sq == 0.0 {
-        return p.distance(a);
-    }
-    let t = ((p - a).dot(v) / len_sq).clamp(0.0, 1.0);
-    p.distance(a + v * t)
-}
+pub use crate::panels::schematic::geometry::distance_to_segment;
 
 /// How beams are drawn.
 pub struct BeamStyle<'a> {

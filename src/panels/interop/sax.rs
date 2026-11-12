@@ -169,7 +169,7 @@ fn string(text: &str) -> String {
 /// run. `source` names the project file, for the header.
 pub fn export(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &str) -> Result<SaxExport, String> {
     let d = project.doc(doc).ok_or("no such document")?;
-    let (circuit, ports) = sim::circuit(d.layout(), d.panel().cell_um, project, &Machine::default(), Some(doc))?;
+    let (circuit, ports) = sim::circuit(d.layout(), d.cell_um(), project, &Machine::default(), Some(doc))?;
     if ports.inputs.is_empty() || ports.outputs.is_empty() {
         return Err("It needs light Input and Output ports (or pins) for a netlist".into());
     }

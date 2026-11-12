@@ -5,7 +5,7 @@
 //! Formats 1–3 decode into these types too and upgrade through them (and on
 //! through format 5's).
 
-use egui::Pos2;
+use emath::Pos2;
 use serde::{Deserialize, Serialize};
 
 use super::v6::Meta6 as ComponentMeta;

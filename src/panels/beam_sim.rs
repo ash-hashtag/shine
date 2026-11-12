@@ -9,7 +9,7 @@
 
 use std::f32::consts::FRAC_PI_4;
 
-use egui::{Pos2, Vec2};
+use emath::{Pos2, Vec2};
 
 use super::circuit::sim;
 use super::optics::model::Layout;
@@ -20,7 +20,7 @@ pub const DIRECTIONS: usize = 8;
 
 pub fn direction(k: usize) -> Vec2 {
     let a = k as f32 * FRAC_PI_4;
-    egui::vec2(a.cos(), a.sin())
+    emath::vec2(a.cos(), a.sin())
 }
 
 pub fn direction_index(v: Vec2) -> usize {
@@ -155,13 +155,13 @@ mod tests {
         OpticComponentKind::BeamSplitter {
             reflectivity: 0.5,
             transparency: 0.5,
-            normal: egui::vec2(nx, ny).normalized(),
+            normal: emath::vec2(nx, ny).normalized(),
         }
     }
 
     fn mirror(nx: f32, ny: f32) -> OpticComponentKind {
         OpticComponentKind::Mirror {
-            normal: egui::vec2(nx, ny).normalized(),
+            normal: emath::vec2(nx, ny).normalized(),
         }
     }
 
@@ -175,7 +175,7 @@ mod tests {
                     amplitude: 1.0,
                     phase: 0.0,
                     wavelength: 650.0,
-                    dir: egui::vec2(1.0, 0.0),
+                    dir: emath::vec2(1.0, 0.0),
                     source: 0,
                     color: None,
                 },
@@ -247,7 +247,7 @@ mod layout_tests {
     }
 
     fn right() -> Vec2 {
-        egui::vec2(1.0, 0.0)
+        emath::vec2(1.0, 0.0)
     }
 
     fn power(sim: &LayoutSimulation, index: usize) -> f64 {
@@ -261,7 +261,7 @@ mod layout_tests {
     #[test]
     fn mirror_scattering() {
         let s = scattering(&OpticComponentKind::Mirror {
-            normal: egui::vec2(-1.0, -1.0).normalized(),
+            normal: emath::vec2(-1.0, -1.0).normalized(),
         })
         .unwrap();
         // Rightwards light is turned upwards (direction 6) with a pi phase.
@@ -277,7 +277,7 @@ mod layout_tests {
         let s = scattering(&OpticComponentKind::BeamSplitter {
             reflectivity: 0.3,
             transparency: 0.7,
-            normal: egui::vec2(-1.0, -1.0).normalized(),
+            normal: emath::vec2(-1.0, -1.0).normalized(),
         })
         .unwrap();
         assert!(is_unitary(&s));
@@ -308,10 +308,10 @@ mod layout_tests {
 
     #[test]
     fn direction_index_snaps_and_wraps() {
-        assert_eq!(direction_index(egui::vec2(1.0, 0.1)), 0);
-        assert_eq!(direction_index(egui::vec2(0.0, -1.0)), 6);
-        assert_eq!(direction_index(egui::vec2(1.0, -0.01)), 0);
-        assert_eq!(direction_index(egui::vec2(-1.0, 0.0)), 4);
+        assert_eq!(direction_index(emath::vec2(1.0, 0.1)), 0);
+        assert_eq!(direction_index(emath::vec2(0.0, -1.0)), 6);
+        assert_eq!(direction_index(emath::vec2(1.0, -0.01)), 0);
+        assert_eq!(direction_index(emath::vec2(-1.0, 0.0)), 4);
     }
 
     #[test]
@@ -380,7 +380,7 @@ mod layout_tests {
                 2.0,
                 0.0,
                 OpticComponentKind::Mirror {
-                    normal: egui::vec2(1.0, 0.0),
+                    normal: emath::vec2(1.0, 0.0),
                 },
             ),
             at(4.0, 0.0, crate::panels::optics::model::DETECTOR),
@@ -395,7 +395,7 @@ mod layout_tests {
     fn lasers_absorb_incoming_light() {
         let layout = [
             at(0.0, 0.0, laser(right(), 650.0)),
-            at(3.0, 0.0, laser(egui::vec2(-1.0, 0.0), 650.0)),
+            at(3.0, 0.0, laser(emath::vec2(-1.0, 0.0), 650.0)),
         ];
         let sim = simulate_layout(&layout, GRID, 10.0, FAR);
         assert!(sim.error.is_none());
@@ -410,7 +410,7 @@ mod layout_tests {
     #[test]
     fn diagonal_beams_connect() {
         let layout = [
-            at(0.0, 0.0, laser(egui::vec2(1.0, 1.0).normalized(), 650.0)),
+            at(0.0, 0.0, laser(emath::vec2(1.0, 1.0).normalized(), 650.0)),
             at(3.0, 3.0, crate::panels::optics::model::DETECTOR),
             // Off the diagonal: must not be hit.
             at(3.0, 2.0, crate::panels::optics::model::DETECTOR),
@@ -424,7 +424,7 @@ mod layout_tests {
     fn wavelengths_add_incoherently() {
         let layout = [
             at(0.0, 0.0, laser(right(), 650.0)),
-            at(4.0, 0.0, laser(egui::vec2(-1.0, 0.0), 532.0)),
+            at(4.0, 0.0, laser(emath::vec2(-1.0, 0.0), 532.0)),
             at(2.0, 0.0, crate::panels::optics::model::DETECTOR),
         ];
         let sim = simulate_layout(&layout, GRID, 10.0, FAR);
@@ -439,7 +439,7 @@ mod layout_tests {
         let wall = |nx: f32| OpticComponentKind::BeamSplitter {
             reflectivity: 1.0,
             transparency: 0.0,
-            normal: egui::vec2(nx, 0.0),
+            normal: emath::vec2(nx, 0.0),
         };
         // Round trip: 6 cells of travel plus two i-reflections (= pi).
         // Pick the cell so the travel adds another pi: resonance.

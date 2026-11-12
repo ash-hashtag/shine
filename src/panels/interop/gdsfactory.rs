@@ -479,7 +479,7 @@ pub fn export(project: &Project, doc: DocId, spacing_um: f64, source: &str) -> R
     }
 
     let mut y = String::new();
-    let file = format!("{}.pic.yml", super::super::workspace::slug(&d.name));
+    let file = format!("{}.pic.yml", crate::panels::names::slug(&d.name));
     let _ = writeln!(y, "# “{}” from Shine {}{}.", d.name, env!("CARGO_PKG_VERSION"), if source.is_empty() { String::new() } else { format!(" ({source})") });
     let _ = writeln!(y, "# A circuit for gdsfactory (https://gdsfactory.github.io), which draws the mask");
     let _ = writeln!(y, "# layout (GDS or OASIS) from it with a foundry's process kit (PDK):");

@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use super::circuit::sim::{self, Documents, Machine, Options, Outcome};
 use super::appearance::Appearance;
 use super::file_format;
-use super::optics::OpticsPanel;
 use super::optics::model::{BlockRef, Builtin, Item, Layout, PortCounts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -31,7 +30,31 @@ pub struct ComponentMeta {
 /// What a document holds. Layouts are the only kind today; the enum leaves
 /// room for others.
 pub enum Content {
-    Layout(Box<OpticsPanel>),
+    Layout(Box<DocumentState>),
+}
+
+/// A document's design and what goes with it: in the app, its editor (which
+/// keeps the layout, scale and registers with the view and selection).
+#[cfg(feature = "gui")]
+pub type DocumentState = super::optics::OpticsPanel;
+
+/// A document's design, scale and registers: what a document is without the
+/// editor (the library).
+#[cfg(not(feature = "gui"))]
+#[derive(Clone, Debug, Default)]
+pub struct DocumentState {
+    pub layout: Layout,
+    /// Physical size of one grid cell in micrometres.
+    pub cell_um: f64,
+    /// Register contents and clock count.
+    pub machine: Machine,
+}
+
+#[cfg(not(feature = "gui"))]
+impl DocumentState {
+    pub fn with_layout(layout: Layout, cell_um: f64) -> Self {
+        Self { layout, cell_um, machine: Machine::default() }
+    }
 }
 
 /// Port names of a document used as a component.
@@ -89,13 +112,13 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn panel(&self) -> &OpticsPanel {
+    pub fn panel(&self) -> &DocumentState {
         match &self.content {
             Content::Layout(p) => p,
         }
     }
 
-    pub fn panel_mut(&mut self) -> &mut OpticsPanel {
+    pub fn panel_mut(&mut self) -> &mut DocumentState {
         match &mut self.content {
             Content::Layout(p) => p,
         }
@@ -103,6 +126,15 @@ impl Document {
 
     pub fn layout(&self) -> &Layout {
         &self.panel().layout
+    }
+
+    pub fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.panel_mut().layout
+    }
+
+    /// Physical size of one grid cell in micrometres.
+    pub fn cell_um(&self) -> f64 {
+        self.panel().cell_um
     }
 
     pub fn interface(&self) -> Interface {
@@ -130,7 +162,7 @@ impl Document {
             .as_ref()
             .map(|m| m.initials.clone())
             .filter(|i| !i.is_empty())
-            .unwrap_or_else(|| super::ui_kit::initials(&self.name))
+            .unwrap_or_else(|| super::names::initials(&self.name))
     }
 
     fn to_file(&self) -> DocumentFile {
@@ -138,7 +170,7 @@ impl Document {
             id: self.id,
             name: self.name.clone(),
             component: self.component.clone(),
-            cell_um: self.panel().cell_um,
+            cell_um: self.cell_um(),
             layout: self.layout().clone(),
         }
     }
@@ -148,7 +180,7 @@ impl Document {
             id: file.id,
             name: file.name,
             component: file.component,
-            content: Content::Layout(Box::new(OpticsPanel::with_layout(file.layout, file.cell_um))),
+            content: Content::Layout(Box::new(DocumentState::with_layout(file.layout, file.cell_um))),
         }
     }
 }
@@ -232,7 +264,7 @@ pub(crate) mod v3 {
 /// Format 2: lasers had no source or colour, and every laser was coherent
 /// with every other. They become lasers on one shared source.
 pub(crate) mod v2 {
-    use egui::{Pos2, Vec2};
+    use emath::{Pos2, Vec2};
     use serde::{Deserialize, Serialize};
 
     use super::v4::{Instance, Layout4};
@@ -332,7 +364,7 @@ pub(crate) mod v2 {
 /// Format 1: layouts held only primitives (detectors had no threshold) and
 /// schematics were a separate document kind. Both become layouts.
 pub(crate) mod v1 {
-    use egui::{Pos2, Vec2};
+    use emath::{Pos2, Vec2};
     use serde::{Deserialize, Serialize};
 
     use super::v6::Meta6 as ComponentMeta;
@@ -492,6 +524,7 @@ pub fn component_parameters(layout: &Layout) -> Vec<ComponentParam> {
 pub struct Catalog {
     pub entries: Vec<CatalogEntry>,
     /// The asset library's components (set by the workspace), placeable too.
+    #[cfg(feature = "gui")]
     pub assets: std::sync::Arc<Vec<super::assets::AssetSummary>>,
 }
 
@@ -526,6 +559,7 @@ impl Catalog {
         self.entries.iter().find(|e| e.id == id)
     }
 
+    #[cfg(feature = "gui")]
     pub fn asset(&self, asset: super::assets::AssetRef) -> Option<&super::assets::AssetSummary> {
         self.assets.iter().find(|a| a.asset == asset)
     }
@@ -615,7 +649,7 @@ impl Default for Project {
 
 impl Documents for Project {
     fn layout(&self, id: DocId) -> Option<(&Layout, f64)> {
-        self.doc(id).map(|d| (d.layout(), d.panel().cell_um))
+        self.doc(id).map(|d| (d.layout(), d.cell_um()))
     }
 
     fn name(&self, id: DocId) -> String {
@@ -654,7 +688,7 @@ impl Project {
             id,
             name,
             component: None,
-            content: Content::Layout(Box::new(OpticsPanel::with_layout(layout, cell_um))),
+            content: Content::Layout(Box::new(DocumentState::with_layout(layout, cell_um))),
         });
         id
     }
@@ -726,6 +760,7 @@ impl Project {
                     appearance: d.component.as_ref().map(|m| m.appearance.clone()).unwrap_or_default(),
                 })
                 .collect(),
+            #[cfg(feature = "gui")]
             assets: Default::default(),
         }
     }
@@ -773,7 +808,7 @@ impl Project {
             }
         }
         let same = self.documents.iter().find(|d| {
-            d.name == file.name && d.component == file.component && d.component.is_some() && *d.layout() == file.layout && d.panel().cell_um == file.cell_um
+            d.name == file.name && d.component == file.component && d.component.is_some() && *d.layout() == file.layout && d.cell_um() == file.cell_um
         });
         let here = match same {
             Some(d) => d.id,
@@ -792,7 +827,7 @@ impl Project {
     /// Settle a document's optics and electronics with the given register state.
     pub fn simulate(&self, id: DocId, machine: &Machine) -> Outcome {
         match self.doc(id) {
-            Some(d) => sim::simulate(d.layout(), d.panel().cell_um, self, machine, Some(id), &Options::default()),
+            Some(d) => sim::simulate(d.layout(), d.cell_um(), self, machine, Some(id), &Options::default()),
             None => Outcome::failed("no such document"),
         }
     }
@@ -828,7 +863,7 @@ impl Project {
         let documents: Vec<DocumentRef> = self
             .documents
             .iter()
-            .map(|d| DocumentRef { id: d.id, name: &d.name, component: &d.component, cell_um: d.panel().cell_um, layout: d.layout() })
+            .map(|d| DocumentRef { id: d.id, name: &d.name, component: &d.component, cell_um: d.cell_um(), layout: d.layout() })
             .collect();
         let hasher = Hashing(foldhash::fast::FixedState::with_seed(0x5348_494e).build_hasher());
         postcard::serialize_with_flavor(&documents, hasher).expect("serialisable")

@@ -4515,6 +4515,7 @@ dependencies = [
  "egui_kittest",
  "egui_plot",
  "ehttp",
+ "emath",
  "faer",
  "foldhash 0.2.0",
  "image",

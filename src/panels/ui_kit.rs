@@ -240,23 +240,7 @@ pub fn accent(name: &str) -> Color32 {
     PALETTE[hash as usize % PALETTE.len()]
 }
 
-/// Up to three initials from a name: "Mach Zehnder switch" -> "MZS".
-pub fn initials(name: &str) -> String {
-    let words: Vec<&str> = name
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    match words.as_slice() {
-        [] => "?".to_owned(),
-        [single] => single.chars().take(2).collect::<String>().to_uppercase(),
-        many => many
-            .iter()
-            .take(3)
-            .filter_map(|w| w.chars().next())
-            .collect::<String>()
-            .to_uppercase(),
-    }
-}
+pub use super::names::initials;
 
 /// A slider with its value box, for screen readers named by `label` (the id
 /// of the label next to them): `egui::Slider`'s own value box can't be named.

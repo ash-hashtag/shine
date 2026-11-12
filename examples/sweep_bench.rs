@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use egui::Vec2;
+use emath::Vec2;
 use shine::panels::circuit::sim::{Machine, NoDocuments};
 use shine::panels::circuit::sweep::{self, SweepKind, SweepSpec};
 use shine::panels::optics::examples;

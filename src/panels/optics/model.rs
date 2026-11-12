@@ -5,7 +5,7 @@
 
 use std::f32::consts::PI;
 
-use egui::{Pos2, Rect, Vec2};
+use emath::{Pos2, Rect, Vec2};
 use serde::{Deserialize, Serialize};
 
 /// World units per grid cell.

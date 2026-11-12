@@ -15,7 +15,7 @@ pub mod cli;
 #[cfg(feature = "gui")]
 pub mod mcp;
 
-#[cfg(feature = "gui")]
+#[cfg(feature = "core")]
 pub mod panels;
 
 #[cfg(feature = "gui")]

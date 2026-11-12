@@ -10,45 +10,69 @@
 //! - [`library`] — the parts library, add menu and parameter widgets
 //! - [`examples`] — ready-made layouts, components and demos
 
+#[cfg(feature = "gui")]
 pub mod bridge;
+#[cfg(feature = "gui")]
 pub mod canvas;
+#[cfg(feature = "gui")]
 pub mod editor;
 pub mod digits;
 pub mod examples;
+#[cfg(feature = "gui")]
 pub mod input;
+#[cfg(feature = "gui")]
 pub mod library;
 pub mod model;
 pub mod reference;
+#[cfg(feature = "gui")]
 pub mod render;
+#[cfg(feature = "gui")]
 pub mod sweep_ui;
+#[cfg(feature = "gui")]
 pub mod view;
 
+#[cfg(feature = "gui")]
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "gui")]
 use egui::{Id, Pos2, Rect, Ui};
 
 pub use model::{GRID, Layout, Line, OpticComponentKind, PlacedComponent};
 
+#[cfg(feature = "gui")]
 use super::chips::ChipBrowser;
+#[cfg(feature = "gui")]
 use super::circuit::sim::{self, Machine, NoDocuments, Options, Outcome};
+#[cfg(feature = "gui")]
 use super::prefs::Preferences;
+#[cfg(feature = "gui")]
 use super::project::{Catalog, DocId};
+#[cfg(feature = "gui")]
 use super::ui_kit;
+#[cfg(feature = "gui")]
 use editor::{Axis, Editor};
+#[cfg(feature = "gui")]
 use input::{Action, SHORTCUTS, shortcut};
+#[cfg(feature = "gui")]
 use model::{BlockRef, Builtin, Item, PortCounts, Terminal, box_geometry};
+#[cfg(feature = "gui")]
 use view::View;
 
+#[cfg(feature = "gui")]
 pub use crate::panels::Request;
+#[cfg(feature = "gui")]
 pub use canvas::Hit;
+#[cfg(feature = "gui")]
 pub use library::Placeable;
 
+#[cfg(feature = "gui")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tool {
     Place(Placeable),
     DrawLine,
 }
 
+#[cfg(feature = "gui")]
 /// Last simulation and what it was computed from.
 #[derive(Clone, Debug)]
 pub struct SimCache {
@@ -56,6 +80,7 @@ pub struct SimCache {
     pub outcome: Outcome,
 }
 
+#[cfg(feature = "gui")]
 /// Context menu (right click) or add menu (Shift+A).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Menu {
@@ -68,6 +93,7 @@ pub struct Menu {
     opened_at: f64,
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuChoice {
     Rotate(i32),
@@ -80,6 +106,7 @@ pub enum MenuChoice {
     DeleteWire(WireRef),
 }
 
+#[cfg(feature = "gui")]
 /// A selected or hovered connection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WireRef {
@@ -89,6 +116,7 @@ pub enum WireRef {
     Signal(usize),
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Drag {
     None,
@@ -98,6 +126,7 @@ enum Drag {
     Connect(Hit),
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExamplesTab {
     Layouts,
@@ -105,6 +134,7 @@ pub enum ExamplesTab {
 }
 
 
+#[cfg(feature = "gui")]
 pub struct OpticsPanel {
     pub layout: Layout,
     pub editor: Editor,
@@ -169,6 +199,7 @@ pub struct OpticsPanel {
     time: f64,
 }
 
+#[cfg(feature = "gui")]
 impl Default for OpticsPanel {
     fn default() -> Self {
         let layout = Layout::default();
@@ -219,6 +250,7 @@ impl Default for OpticsPanel {
     }
 }
 
+#[cfg(feature = "gui")]
 /// Order-independent hash of register contents and the clock.
 fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
     machine.tick.hash(hasher);
@@ -238,6 +270,7 @@ fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
     entries.hash(hasher);
 }
 
+#[cfg(feature = "gui")]
 impl OpticsPanel {
     /// An embedded editor for an existing layout.
     pub fn with_layout(layout: Layout, cell_um: f64) -> Self {
@@ -1091,17 +1124,19 @@ impl OpticsPanel {
 }
 
 /// Number on a box's first `bits` signal inputs (MSB first).
-pub fn input_number(layout: &Layout, outcome: &Outcome, id: model::InstanceId, bits: usize) -> u64 {
-    let values: Vec<f64> = (0..bits).map(|k| outcome.input(layout, Terminal { item: Item::Box(id), port: k })).collect();
-    sim::bits_to_number(&values)
+pub fn input_number(layout: &Layout, outcome: &super::circuit::sim::Outcome, id: model::InstanceId, bits: usize) -> u64 {
+    let values: Vec<f64> =
+        (0..bits).map(|k| outcome.input(layout, model::Terminal { item: model::Item::Box(id), port: k })).collect();
+    super::circuit::sim::bits_to_number(&values)
 }
 
 /// Number on a box's first `bits` signal outputs (MSB first).
-pub fn output_number(outcome: &Outcome, id: model::InstanceId, bits: usize) -> u64 {
-    let values: Vec<f64> = (0..bits).map(|k| outcome.signal(Item::Box(id), k)).collect();
-    sim::bits_to_number(&values)
+pub fn output_number(outcome: &super::circuit::sim::Outcome, id: model::InstanceId, bits: usize) -> u64 {
+    let values: Vec<f64> = (0..bits).map(|k| outcome.signal(model::Item::Box(id), k)).collect();
+    super::circuit::sim::bits_to_number(&values)
 }
 
+#[cfg(feature = "gui")]
 /// Whether a block is one of the electronics blocks that show a number.
 pub fn shows_number(block: &BlockRef) -> bool {
     matches!(
@@ -1110,5 +1145,6 @@ pub fn shows_number(block: &BlockRef) -> bool {
     )
 }
 
+#[cfg(feature = "gui")]
 #[cfg(test)]
 mod tests;

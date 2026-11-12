@@ -1,6 +1,6 @@
 //! Tests for the mixed-signal simulator.
 
-use egui::Vec2;
+use emath::Vec2;
 
 use super::*;
 use crate::panels::optics::examples;

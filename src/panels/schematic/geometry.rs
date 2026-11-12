@@ -1,6 +1,6 @@
 //! Where boxes, ports and wires are, in world units.
 
-use egui::{Pos2, Rect, Vec2};
+use emath::{Pos2, Rect, Vec2};
 
 use super::model::{BlockRef, Builtin};
 
@@ -106,8 +106,19 @@ pub fn wire_length(from: Pos2, to: Pos2) -> f32 {
 pub fn distance_to_wire(p: Pos2, from: Pos2, to: Pos2) -> f32 {
     wire_polyline(from, to, 24)
         .windows(2)
-        .map(|w| crate::panels::optics::render::distance_to_segment(p, w[0], w[1]))
+        .map(|w| distance_to_segment(p, w[0], w[1]))
         .fold(f32::INFINITY, f32::min)
+}
+
+/// Distance from `p` to the segment `a`-`b`.
+pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let v = b - a;
+    let len_sq = v.length_sq();
+    if len_sq == 0.0 {
+        return p.distance(a);
+    }
+    let t = ((p - a).dot(v) / len_sq).clamp(0.0, 1.0);
+    p.distance(a + v * t)
 }
 
 #[cfg(test)]

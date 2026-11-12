@@ -283,7 +283,7 @@ pub fn component(model: ModelSpec) -> crate::panels::project::Project {
     let description = model.summary();
     let layout = component_layout(model);
     let mut project = crate::panels::project::Project::new();
-    project.add_component(&name, &crate::panels::ui_kit::initials(&name), &description, layout, 10.0);
+    project.add_component(&name, &crate::panels::names::initials(&name), &description, layout, 10.0);
     project
 }
 

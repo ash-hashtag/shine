@@ -1,4 +1,4 @@
-use egui::{Pos2, Vec2};
+use emath::{Pos2, Vec2};
 
 use super::*;
 use crate::panels::optics::examples;
