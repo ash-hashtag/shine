@@ -64,7 +64,7 @@ fn measure(n: usize, editor_only: bool) {
     };
     let mesh_doc = project.documents.iter().find(|d| d.name.contains("mesh")).unwrap();
     tracing::info!(
-        "\n{n}×{n} processor: {} MZI cells and {n} modulators, {} parts when opened up; the mesh document has {} boxes and {} waveguides",
+        "\n{n}×{n} processor: {} MZIs and {n} modulators, {} parts when opened up; the mesh document has {} boxes and {} waveguides",
         n * (n - 1) / 2,
         leaf(&project),
         mesh_doc.layout().instances.len(),

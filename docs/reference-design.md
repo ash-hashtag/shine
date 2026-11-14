@@ -90,34 +90,35 @@ in November 2026:
 
 | | 16×16 | 64×64 | 128×128 |
 |---|---|---|---|
-| MZI cells / parts opened up | 120 / 1 410 | 2 016 / 20 994 | 8 128 / 82 946 |
+| MZIs / parts opened up | 120 / 330 | 2 016 / 2 850 | 8 128 / 9 794 |
 | Boxes / waveguides in the mesh document | 184 / 288 | 2 272 / 4 224 | 8 640 / 16 640 |
-| File size; save; open | 8 kB; 0.1 ms; 0.1 ms | 96 kB; 0.4 ms; 0.7 ms | 373 kB; 1.5 ms; 1.8 ms |
-| One simulation | 4 ms | 63 ms | 0.27 s |
-| Wavelength sweep, 201 points | 0.16 s | 2.6 s | 11 s |
-| Mesh S-parameters, 201 wavelengths | 0.06 s (32 ports) | 1.8 s (128 ports) | 10.7 s (256 ports) |
-| SAX netlist; gdsfactory layout | 4 ms; 3 ms | 62 ms; 44 ms | 0.28 s; 0.26 s |
-| Editor frame, idle or zooming: processor | 0.3 ms | 0.9 ms | 2.5 ms |
-| Editor frame, idle or zooming: inside the mesh | 0.4 ms | 2.7 ms | 8.4 ms |
-| Editor frame after setting an input | 4 ms | 1.4 ms | 3.2 ms |
-| Result shown after setting an input | same frame | 65 ms | 0.3 s |
+| File size; save; open | 17 kB; 0.2 ms; 0.1 ms | 68 kB; 4.8 ms; 1.1 ms | 256 kB; 13 ms; 3.9 ms |
+| One simulation | 0.7 ms | 6.4 ms | 22 ms |
+| Wavelength sweep, 201 points | 26 ms | 0.33 s | 1.9 s |
+| Mesh S-parameters, 201 wavelengths | 0.06 s (32 ports) | 0.89 s (128 ports) | 4.1 s (256 ports) |
+| SAX netlist; gdsfactory layout | 0.7 ms; 1.1 ms | 8.7 ms; 10 ms | 39 ms; 41 ms |
+| Editor frame, idle or zooming: processor | 0.3 ms | 0.3 ms | 0.4 ms |
+| Editor frame, idle or zooming: inside the mesh | 0.4 ms | 1.1 ms | 0.4 ms |
+| Editor frame after setting an input | 1.6 ms | 1.8 ms | 3.6 ms |
+| Result shown after setting an input | same frame | same frame | same frame |
 
 ## What it tells us
 
 - **Looking at and navigating a large design is quick.** Even inside the 128×128 mesh,
-  8 640 boxes and 16 640 waveguides, a frame takes 7 ms. (Before this design existed it
+  8 640 boxes and 16 640 waveguides, a frame takes under a millisecond. (Before this design existed it
   took 160 ms: every waveguide looked its boxes up one by one, and off-screen waveguides
   were drawn. The reference design found that.)
 - **Simulation scales about linearly** with the number of parts, and stays exact: the
-  128×128 processor is 83 000 parts and simulates in a quarter of a second.
+  128×128 processor is 8 128 MZIs and simulates in 22 ms. (Its MZIs are built in, so
+  each is one part; built from couplers, heaters and arms, as before 0.2, it was 83 000
+  parts and took a quarter of a second.)
 - **Sweeps and S-parameters are runs, not live updates**: seconds for a large design, as
   in other circuit simulators. They use every core.
 - **Editing never waits for the simulation.** A design that takes longer than about 12 ms
   to simulate does so in the background (desktop app): edits take a few milliseconds and
-  the new result appears when it's ready. (Before, each edit held the editor for a whole
-  simulation: a quarter of a second at 128×128.)
-- **Limit: opening a large design waits for its first simulation** (a quarter of a second
-  at 128×128), and in the browser, which has no threads, every simulation does.
+  the new result appears when it's ready.
+- **Limit: opening a large design waits for its first simulation**, and in the browser,
+  which has no threads, every simulation does.
 - **Limit: the splitter tree needs a power of two inputs**, and the generic models are
   ideal (lossless couplers, a fixed group index). For a real chip, swap in your foundry
   kit's models ([Other tools and tapeout](interop.md)).
