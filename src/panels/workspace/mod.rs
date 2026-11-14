@@ -122,6 +122,10 @@ pub struct Workspace {
     pub files_hovering: bool,
     /// The asset library window.
     pub library_window: LibraryWindow,
+    /// Library assets copied into the project (opened or placed): the copy,
+    /// and its fingerprint then. While the copy is unchanged, the library
+    /// window shows the two once.
+    pub imported: std::collections::HashMap<AssetRef, (DocId, u64)>,
     /// File → Export for other tools….
     pub export_window: ExportWindow,
     pub matrix_window: MatrixWindow,
@@ -193,6 +197,7 @@ impl Default for Workspace {
             files_hovering: false,
             moving_asset: None,
             library_window: LibraryWindow::default(),
+            imported: std::collections::HashMap::new(),
             export_window: ExportWindow::default(),
             matrix_window: MatrixWindow::default(),
             transmission_window: TransmissionWindow::default(),
@@ -921,13 +926,17 @@ impl Workspace {
 
     /// The project's copy of an asset, made on first use.
     pub fn import_asset(&mut self, asset: AssetRef) -> Option<DocId> {
-        match asset {
+        let id = match asset {
             AssetRef::Example(i) => examples::import_component(&mut self.project, i),
             AssetRef::Saved(_) => {
                 let bundle = self.library.bundle(asset)?;
                 self.project.import(&bundle)
             }
+        }?;
+        if let Some(doc) = self.project.doc(id) {
+            self.imported.insert(asset, (id, doc.fingerprint()));
         }
+        Some(id)
     }
 
     /// Copy an asset into the project (once) and place it in the active document.

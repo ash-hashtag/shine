@@ -1087,6 +1087,18 @@ fn the_library_window_browses_thousands_in_a_grid() {
     double_click(&mut h, at);
     let ws = h.state();
     assert_eq!(ws.project.doc(ws.active.unwrap()).unwrap().name, "Part 0003");
+
+    // Under All, the copy and the library's are one card while the copy is
+    // unchanged; both once it's edited.
+    h.get_by_label_contains("All  (").click();
+    h.run_steps(2);
+    assert!(h.query_by_label("1 component").is_some(), "shown once");
+    let id = h.state().active.unwrap();
+    let doc = h.state_mut().project.doc_mut(id).unwrap();
+    doc.name = "Part 0003 edited".into();
+    doc.touch();
+    h.run_steps(2);
+    assert!(h.query_by_label("2 components").is_some(), "the edited copy and the library's");
 }
 
 #[test]

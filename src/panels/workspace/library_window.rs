@@ -296,10 +296,23 @@ impl Workspace {
             cards.extend(mine.into_iter().map(|e| Card { item: Item::Project(e.id), entry: e, folder: "This project" }));
         }
         let shown = w.shown(generation, summaries).to_vec();
-        cards.extend(shown.iter().map(|&i| {
-            let a = &summaries[i];
-            Card { item: Item::Asset(a.asset.into()), entry: &a.entry, folder: a.folder.as_str() }
+        // Opening or placing an asset copies it into the project: where both
+        // are listed, one card for the two while the copy is unchanged.
+        let listed_mine = matches!(w.folder, Folder::All);
+        let imported = std::mem::take(&mut self.imported);
+        let copied = |a: &AssetSummary| {
+            listed_mine
+                && imported.get(&a.asset).is_some_and(|&(id, fingerprint)| {
+                    catalog.get(id).is_some_and(|e| entry_matches(e, &search)) && self.project.doc(id).is_some_and(|d| d.fingerprint() == fingerprint)
+                })
+        };
+        cards.extend(shown.iter().map(|&i| &summaries[i]).filter(|a| !copied(a)).map(|a| Card {
+            item: Item::Asset(a.asset.into()),
+            entry: &a.entry,
+            folder: a.folder.as_str(),
         }));
+        self.imported = imported;
+        let w = &mut self.library_window;
 
         ui.label(RichText::new(match cards.len() {
             0 => "Nothing here".to_owned(),
