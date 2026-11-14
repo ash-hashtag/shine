@@ -102,8 +102,11 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy
       - uses: Swatinem/rust-cache@v2.9.3
-      - name: BoltFFI
-        run: cargo install boltffi_cli --version 0.32.1 --locked
+      # wasm-opt as the release has it, so its options are checked here too.
+      - name: BoltFFI and wasm-opt
+        run: |
+          cargo install boltffi_cli --version 0.32.1 --locked
+          scripts/install-wasm-opt.sh
       - uses: actions/setup-python@v5.6.0
         with:
           python-version: "3.12"

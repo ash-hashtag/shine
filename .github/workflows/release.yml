@@ -229,7 +229,7 @@ jobs:
       - name: BoltFFI and wasm-opt
         run: |
           cargo install boltffi_cli --version 0.32.1 --locked
-          sudo apt-get update && sudo apt-get install -y binaryen
+          scripts/install-wasm-opt.sh
       - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: bindings/package.json
