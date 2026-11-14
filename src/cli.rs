@@ -468,6 +468,9 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
 /// the sample's number then every reading.
 fn simulate_samples(project: &mut Project, id: DocId, args: &Args, samples: &[Vec<f64>]) -> Result<String, Failure> {
     let inputs = design_inputs(project.doc(id).expect("chosen").layout());
+    // What readings are called doesn't change with the inputs: worked out
+    // once (it reads every document, a big mesh's included).
+    let catalog = project.catalog();
     let mut out = String::new();
     for (k, sample) in samples.iter().enumerate() {
         let layout = project.doc_mut(id).expect("chosen").layout_mut();
@@ -480,7 +483,6 @@ fn simulate_samples(project: &mut Project, id: DocId, args: &Args, samples: &[Ve
         if let Some(e) = &o.error {
             return Err(Failure::Simulation(format!("sample {}: {e}", k + 1)));
         }
-        let catalog = project.catalog();
         let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
         let rows: Vec<readings::Reading> =
             readings::readings(layout, &o, &names).into_iter().filter(|r| wanted(args, r)).collect();

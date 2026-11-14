@@ -7,10 +7,13 @@ The full-size version of Shine's optical neural network
 | File | What it is |
 |---|---|
 | `fashion-mnist-chip.shine` | The chip trained on Fashion-MNIST, ready to simulate: `shine simulate fashion-mnist-chip.shine --input -` with 784 pixel values, or `python examples/mnist.py --image shoe.png` |
+| `fashion-mnist-weights.json` | Its trained weights (W1 64×784, W2 10×64, the hidden scale H): `shine network fashion-mnist-weights.json --out chip.shine` builds the chip from them |
+| `benchmark.py` | Runs the test pictures through the chip with the `shine` program: time per picture, memory, accuracy, and agreement with the network (NumPy) |
 | `train.py` | Trains the network on what the chip computes (JAX), on Fashion-MNIST or MNIST, downloading the data into a cache folder |
 
 The chip reads 87.96% of Fashion-MNIST's 10 000 test pictures, as the trained network
-does. Its classes, in the order of its display: 0 T-shirt/top, 1 trouser, 2 pullover,
+does, giving the network's class for every one
+([benchmarks](../../docs/neural-network.md#benchmarks)). Its classes, in the order of its display: 0 T-shirt/top, 1 trouser, 2 pullover,
 3 dress, 4 coat, 5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot.
 
 To make it again (the data isn't kept here):

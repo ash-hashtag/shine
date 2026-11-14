@@ -156,19 +156,45 @@ python examples/mnist.py --image shoe.png --print-inputs | shine simulate refere
 
 The chip opens in the app as any project does (`shine reference/mnist/fashion-mnist-chip.shine`).
 
-### How fast
+### Benchmarks
 
-On a 12-thread desktop:
+The chip in the repository, run with the `shine` program on a laptop CPU (AMD Ryzen 5
+7430U: 6 cores, 12 threads, 14 GB), every picture simulated whole: light through 3.1
+million parts, the 64 photodetector neurons and their electronics, the second layer, the
+readout. From `python reference/mnist/benchmark.py --images 1000`:
 
 | | |
 |---|---|
-| Building the chip (decomposing the meshes, placing every part) | 1.7 s |
-| Saving it / opening it | 0.04 s / 0.04 s (15.6 MB) |
-| Simulating the whole chip, the first picture | 3.4 s |
-| … each picture after | 0.07 s |
+| One picture (opening the 15.6 MB chip, solving its meshes, simulating) | 3.5 s |
+| … each picture after that, in the same run | **112 ms** (9 a second) |
+| 1 000 pictures in one run | 116 s |
+| Peak memory | 689 MB |
+| The same network computed directly (NumPy, for scale) | 4 µs a picture |
+
+Against the trained network (its weights are in the repository too,
+`reference/mnist/fashion-mnist-weights.json`), on all 10 000 test pictures
+(`--images 10000`):
+
+| | |
+|---|---|
+| Accuracy | **87.96%**, the trained network's |
+| The network's class | **10 000 of 10 000** pictures |
+| Scores, the largest difference from the network's | 8.4·10⁻¹⁵ of the largest (rounding) |
+
+Building and editing it (from Shine's source: `cargo run --release --example mnist`):
+
+| | |
+|---|---|
+| Building the chip from its weights (`shine network`) | 1.6 s |
 | Layer 1's 64 × 784 matrix | 0.5 s |
-| The editor, on the chip / inside the 784-mode mesh | 2.3 ms / 20 ms a frame |
-| Memory at the most | 0.82 GB |
+| The editor on the chip, a frame (drawn and tessellated) | 3 ms |
+| … inside the 784-mode mesh, seen whole / at 15% | 17 ms / 21 ms (panning 9 / 12 ms) |
+
+A simulated picture takes 112 ms where NumPy computes the same answer in 4 µs: the
+simulator works out what every waveguide, detector and electronic block does, which is
+what lets the same design be checked against the physics, exported to SAX or a layout,
+and taped out. On the chip itself, the answer would take as long as light takes to cross
+it.
 
 What makes that possible, rather than minutes and tens of gigabytes:
 

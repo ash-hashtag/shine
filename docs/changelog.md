@@ -32,6 +32,10 @@ released: its changes are here.)
   trained network does, in `reference/mnist/fashion-mnist-chip.shine`; or on MNIST
   (97.40%). `examples/mnist.py --image PICTURE` classifies your own pictures through the
   `shine` program ([Optical neural network](neural-network.md#at-full-size)).
+- Benchmarks of the Fashion-MNIST chip on a CPU (`reference/mnist/benchmark.py`, with the
+  trained weights in `reference/mnist/fashion-mnist-weights.json`): 112 ms a picture through
+  the whole chip, and the network's class on all 10 000 test pictures
+  ([Optical neural network](neural-network.md#benchmarks)).
 - `shine simulate --input FILE|-` sets a design's inputs from a stream of numbers, several
   samples at a time; `--inputs` lists them and `--only TEXT` picks readings.
 - A how-to guide: [your neural network on a photonic chip](photonic-neural-networks.md),
