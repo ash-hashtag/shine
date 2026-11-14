@@ -78,12 +78,14 @@ and `test_accuracy` are optional.
 ## 3. Build the chip
 
 ```sh
-cargo run --release --example mnist -- FOLDER --write-chip chip.shine
+$ shine network FOLDER/weights.json --out chip.shine
+Wrote “Optical neural network” to chip.shine: a 5 → 3 → 2 network on 17 MZIs. Its 5 inputs, in order: shine simulate chip.shine --inputs
 ```
 
-Despite the example's name, this builds any two-layer network of this kind, of any size:
-here, a 5 → 3 → 2 network takes a few milliseconds, a 784 → 64 → 10 one (3.1 million
-parts) under two seconds. The chip has the value inputs in a square grid (for pictures,
+It builds any two-layer network of this kind, of any size (layers may widen or narrow): a
+5 → 3 → 2 network takes a few milliseconds, a 784 → 64 → 10 one (3.1 million parts)
+under two seconds. `--name` names the chip; `shine network --help` has the details. The
+chip has the value inputs in a square grid (for pictures,
 row by row), the laser, splitter trees and modulators, the two weight layers as components
 (their meshes components of their own), a function cell per neuron, and a display showing
 the class.
@@ -154,8 +156,9 @@ Each layer computes W x / σmax (`layer_scale` gives σmax), with inputs `in1`�
 `out1`…. Between layers, a neuron is a function cell with one light input, whose
 expression is the activation on the detected power `p1` (for example
 `clamp(p1 * 2.5, 0, 1)`), driving a modulator on fresh light for the next layer
-([Electronics](electronics.md)). `examples/mnist.rs`, `src/panels/optics/digits.rs` and
-`src/panels/optics/layers.rs` are the complete code for the two-layer chip to follow.
+([Electronics](electronics.md)). `shine network` builds the two-layer chip with the same blocks; its code, in Shine's
+repository (`src/panels/optics/digits.rs` and `src/panels/optics/layers.rs`), is the
+complete example to follow.
 
 ## Towards hardware
 

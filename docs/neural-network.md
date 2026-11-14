@@ -115,9 +115,12 @@ the 10 000 test pictures. The same tools train it on MNIST's handwritten digits 
 ```sh
 pip install numpy jax
 python reference/mnist/train.py CACHE [--dataset fashion|mnist]   # downloads the data into CACHE, trains, writes the weights there
-cargo run --release --example mnist -- CACHE [--images N] [--save chip.shine] [--editor]
-cargo run --release --example mnist -- CACHE --write-chip reference/mnist/fashion-mnist-chip.shine
+shine network CACHE/weights.json --out chip.shine                 # the chip, from the weights
 ```
+
+From a checkout of Shine's source, `cargo run --release --example mnist -- CACHE
+[--images N] [--editor]` also simulates the whole chip for test pictures, runs the whole
+test set through its layers and times the editor on it: Shine's stress test.
 
 Simulated whole (light, detectors and electronics), the chip reads each picture as the
 network does, its scores within 10⁻¹⁰ of the network's; through its layers' matrices,

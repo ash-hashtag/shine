@@ -117,15 +117,6 @@ fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
     out
 }
 
-/// The chip's name, from what the network was trained on.
-fn chip_name(w: &Weights) -> String {
-    match w.dataset.as_str() {
-        "" => "Optical neural network".into(),
-        "MNIST" => "MNIST digit recognizer".into(),
-        d => format!("{d} classifier"),
-    }
-}
-
 fn parts(p: &Project, id: DocId) -> usize {
     p.doc(id).unwrap().layout().instances.iter().map(|i| match i.block {
         BlockRef::Component(d) => parts(p, d),
@@ -149,7 +140,7 @@ fn main() {
     if let Some(file) = value("--write-chip") {
         let mut p = Project::new();
         let blank = vec![0.0; w.sizes().0];
-        step("Build the chip", || digits::chip_named(&mut p, &chip_name(&w), &w, &blank).expect("the chip"));
+        step("Build the chip", || digits::chip_named(&mut p, &digits::chip_name(&w), &w, &blank).expect("the chip"));
         std::fs::write(&file, p.to_bytes()).unwrap_or_else(|e| panic!("can't write {file}: {e}"));
         tracing::info!("Wrote {file}: shine simulate {file} --input DIGIT.txt, or python examples/mnist.py --image DIGIT.png");
         return;
@@ -162,7 +153,7 @@ fn main() {
 
     let mut p = Project::new();
     let chip = step("Build the chip (decompose the meshes, place every part)", || {
-        digits::chip_named(&mut p, &chip_name(&w), &w, &test[0]).expect("the chip")
+        digits::chip_named(&mut p, &digits::chip_name(&w), &w, &test[0]).expect("the chip")
     });
     let mzis = |d: &str| p.find(d).map_or(0, |id| p.doc(id).unwrap().layout().instances.len());
     tracing::info!(

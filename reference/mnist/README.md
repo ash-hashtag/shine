@@ -18,7 +18,7 @@ To make it again (the data isn't kept here):
 ```sh
 pip install numpy jax
 python reference/mnist/train.py CACHE --dataset fashion
-cargo run --release --example mnist -- CACHE --write-chip reference/mnist/fashion-mnist-chip.shine
+shine network CACHE/weights.json --out reference/mnist/fashion-mnist-chip.shine
 ```
 
 `--dataset mnist` trains it on MNIST's handwritten digits instead (97.40%).

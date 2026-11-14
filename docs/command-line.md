@@ -133,6 +133,19 @@ singular value σmax since light can't be amplified; it says σmax and how many 
 `--unitary` builds a unitary matrix as one mesh. The same is in the editor (**Component →
 New layer from a matrix…**) and the [libraries](python.md#matrices-as-light).
 
+## Neural networks as chips
+
+`shine network` builds a trained two-layer neural network as a photonic chip, from its
+weights as JSON, and saves it as a project:
+
+```sh
+shine network weights.json --out chip.shine [--name NAME]
+```
+
+The guide [Your neural network on a photonic chip](photonic-neural-networks.md) explains
+what the chip computes, how to train for it and the weights' format; `shine simulate
+chip.shine --input -` runs it.
+
 ## In scripts and CI
 
 The exit status is 0 on success, 1 when the design doesn't simulate (for example an

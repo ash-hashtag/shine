@@ -545,6 +545,7 @@ pub fn main(args: &[String]) -> i32 {
 
 pub mod export;
 pub mod layer;
+pub mod network;
 
 #[cfg(test)]
 mod tests;

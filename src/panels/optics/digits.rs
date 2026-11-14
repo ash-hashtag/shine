@@ -202,6 +202,15 @@ fn tree_for(n: usize) -> (u32, f64) {
 
 /// The chip for `w` of any size (its inputs a square image, row by row),
 /// named `name`, showing `pixels`.
+/// A chip's name from what its network was trained on.
+pub fn chip_name(w: &Weights) -> String {
+    match w.dataset.as_str() {
+        "" => "Optical neural network".into(),
+        "MNIST" => "MNIST digit recognizer".into(),
+        d => format!("{d} classifier"),
+    }
+}
+
 pub fn chip_named(project: &mut Project, name: &str, w: &Weights, pixels: &[f64]) -> Result<Chip, String> {
     let (inputs, hidden, classes) = w.sizes();
     let modulator = linear_modulator(project);

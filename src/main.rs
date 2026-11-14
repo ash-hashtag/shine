@@ -19,13 +19,14 @@ fn main() -> eframe::Result {
         Some("simulate") => std::process::exit(shine::cli::main(&args[1..])),
         Some("export") => std::process::exit(shine::cli::export::main(&args[1..])),
         Some("layer") => std::process::exit(shine::cli::layer::main(&args[1..])),
+        Some("network") => std::process::exit(shine::cli::network::main(&args[1..])),
         Some("--version" | "-V") => {
             println!("shine {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Some("--help" | "-h") => {
             println!(
-                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [PROJECT.shine [--doc NAME]] [--log-file PATH] [--log-level FILTER]\n                                                 open the editor, on a project (and one of its designs)\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine export PROJECT.shine [options]          S-parameters or a gdsfactory layout (--help for options)\n  shine layer MATRIX --out PROJECT.shine        a matrix as a component of MZI meshes (--help for options)\n  shine --version",
+                "Shine {} - Photonic Circuit Simulator\n\nUsage:\n  shine [PROJECT.shine [--doc NAME]] [--log-file PATH] [--log-level FILTER]\n                                                 open the editor, on a project (and one of its designs)\n  shine simulate PROJECT.shine [options]        simulate from the command line (--help for options)\n  shine export PROJECT.shine [options]          S-parameters or a gdsfactory layout (--help for options)\n  shine layer MATRIX --out PROJECT.shine        a matrix as a component of MZI meshes (--help for options)\n  shine network WEIGHTS.json --out CHIP.shine   a trained two-layer neural network as a chip (--help for options)\n  shine --version",
                 env!("CARGO_PKG_VERSION")
             );
             return Ok(());
