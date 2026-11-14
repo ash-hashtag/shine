@@ -155,8 +155,8 @@ fn version_1_files_are_upgraded() {
     assert!((o.wire_power(0) - 1.0).abs() < 1e-12);
     assert_eq!(p.simulate(DocId(3), &Machine::default()).reading(1), Some(1.0));
     assert!(p.simulate(DocId(42), &Machine::default()).error.is_some());
-    // Saving writes the current version.
-    assert_eq!(file_format::version(&p.to_bytes()), Ok(file_format::VERSION));
+    // Saving writes the current format.
+    assert!(shine_format::is_file(&p.to_bytes()));
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn version_2_lasers_keep_interfering() {
     assert!(matches!(l.components[0].kind, OpticComponentKind::Laser { source: 1, color: None, .. }), "on shared source A");
     assert_eq!(l.components[1].kind, OpticComponentKind::Detector { threshold: 0.5 });
     assert_eq!(l.label(2), Some("q"));
-    assert_eq!(file_format::version(&p.to_bytes()), Ok(file_format::VERSION));
+    assert!(shine_format::is_file(&p.to_bytes()));
 }
 
 #[test]
@@ -418,4 +418,113 @@ fn a_waveguide_component_with_pins_works_inside_another_design() {
     let o = p.simulate(id, &Default::default());
     assert!(o.error.is_none(), "{:?}", o.error);
     assert!((o.port_power[&(tap, 0)] - 0.75).abs() < 1e-9 && (o.port_power[&(tap, 1)] - 0.25).abs() < 1e-9, "{:?}", o.port_power);
+}
+
+/// Every document of `p` is the same in `q`.
+fn assert_same_documents(p: &Project, q: &Project) {
+    assert_eq!(p.documents.len(), q.documents.len());
+    for (a, b) in p.documents.iter().zip(&q.documents) {
+        assert_eq!((a.id, &a.name, &a.component, a.cell_um()), (b.id, &b.name, &b.component, b.cell_um()));
+        assert!(a.layout() == b.layout(), "{}: the layout differs after the round trip", a.name);
+    }
+}
+
+#[test]
+fn every_kind_of_thing_survives_the_protobuf_format() {
+    use crate::panels::appearance::{Appearance, BoxShape, Icon, IconFormat};
+    use crate::panels::models::{ModelSource, ModelSpec};
+    use crate::panels::optics::model::{Export, Feed, Item, Line, SignalWire, Terminal, Wire};
+    use std::sync::Arc;
+
+    let mut p = Project::new();
+    let mut inner = Layout::default();
+    inner.add_instance(BlockRef::Builtin(Builtin::InputPin { name: "a".into() }), (0, 0));
+    let inner = p.add_layout("Inner part", inner, 5.0);
+    p.doc_mut(inner).unwrap().component = Some(ComponentMeta {
+        initials: "IP".into(),
+        description: "Used by the design".into(),
+        appearance: Appearance { color: Some([200, 10, 30]), shape: BoxShape::Chamfered, icon: Some(Icon::new(IconFormat::Svg, b"<svg/>".to_vec())) },
+    });
+
+    let d = Vec2::new(0.6, -0.8);
+    let parts = vec![
+        OpticComponentKind::Laser { amplitude: 0.5, phase: 1.5, wavelength: 1310.0, dir: d, source: 3, color: Some([1, 2, 3]) },
+        OpticComponentKind::BeamSplitter { reflectivity: 0.3, transparency: 0.7, normal: d },
+        OpticComponentKind::Mirror { normal: d },
+        OpticComponentKind::Lens,
+        OpticComponentKind::PhaseShifter { phase: -0.25 },
+        OpticComponentKind::Attenuator { transmission: 0.125 },
+        OpticComponentKind::Detector { threshold: 0.5 },
+        OpticComponentKind::InputPort { dir: d },
+        OpticComponentKind::OutputPort,
+        OpticComponentKind::SignalIn,
+        OpticComponentKind::SignalOut,
+    ];
+    let mut l = Layout::with_components(parts.into_iter().enumerate().map(|(k, kind)| part(k as i32, -3, kind)).collect());
+    l.lines.push(Line { start: Pos2::new(1.5, -2.0), end: Pos2::new(40.0, 80.25) });
+    l.set_label(7, "in");
+    let table = ModelSource::Table { origin: "ring.s2p".into(), wavelengths_nm: vec![1540.0, 1560.0], values: vec![vec![[0.5, -0.5]; 4]; 2] };
+    let mut scripted = ModelSpec::new("Scripted", vec!["a".into()], vec!["b".into()], ModelSource::Script { code: "return 1".into() });
+    scripted.signal_inputs = vec!["v".into()];
+    scripted.signal_outputs = vec!["w".into()];
+    let builtins = vec![
+        Builtin::Laser { amplitude: 1.0, phase: 0.5, wavelength_nm: 1550.0 },
+        Builtin::Detector,
+        Builtin::InputPin { name: "x".into() },
+        Builtin::OutputPin { name: "y".into() },
+        Builtin::Coupler { coupling: 0.25 },
+        Builtin::PhaseShifter { phase: 3.0 },
+        Builtin::Attenuator { loss_db: 2.0 },
+        Builtin::DelayLine { length_um: 100.0, n_eff: 2.4, n_g: 4.2, reference_nm: 1550.0, loss_db_per_cm: 2.0 },
+        Builtin::Mzi { theta: 0.1, phi: 0.2 },
+        Builtin::YSplitter,
+        Builtin::YCombiner,
+        Builtin::Crossing,
+        Builtin::Ring { coupling: 0.1, length_um: 50.0, n_eff: 2.3, loss_db_per_cm: 1.0, n_g: 4.0, reference_nm: 1550.0 },
+        Builtin::AddDropRing { coupling: 0.2, length_um: 60.0, n_eff: 2.2, loss_db_per_cm: 1.5, n_g: 4.1, reference_nm: 1551.0 },
+        Builtin::SplitterTree { levels: 3 },
+        Builtin::SwitchTree { levels: 2, address: 1 },
+        Builtin::Dft { n: 4 },
+        Builtin::NumberInput { bits: 8, value: 200 },
+        Builtin::Display { bits: 4 },
+        Builtin::Register { bits: 2 },
+        Builtin::FunctionCell {
+            name: "f".into(),
+            inputs: 1,
+            light_inputs: 2,
+            outputs: vec!["in1 + p1".into()],
+            light_outputs: vec!["p2".into()],
+            wavelength_nm: 1500.0,
+        },
+        Builtin::Model(Arc::new(ModelSpec::new("Table", vec!["i1".into(), "i2".into()], vec!["o1".into(), "o2".into()], table))),
+        Builtin::Model(Arc::new(scripted)),
+        Builtin::Value { name: "drive".into(), value: 0.75 },
+    ];
+    let ids: Vec<InstanceId> = builtins.into_iter().enumerate().map(|(k, b)| l.add_instance(BlockRef::Builtin(b), (k as i32 * 3, -(k as i32)))).collect();
+    let boxed = l.add_instance(BlockRef::Component(inner), (5, 9));
+    l.instances.last_mut().unwrap().set_param("phase", Some(0.5));
+    l.wires.push(Wire { from: PortRef { instance: ids[0], port: 0 }, to: PortRef { instance: ids[1], port: 0 }, length_um: Some(12.5) });
+    l.wires.push(Wire { from: PortRef { instance: ids[4], port: 1 }, to: PortRef { instance: boxed, port: 0 }, length_um: None });
+    l.signals.push(SignalWire { from: Terminal { item: Item::Part(6), port: 0 }, to: Terminal { item: Item::Box(ids[23]), port: 0 } });
+    l.feeds.push(Feed { laser: 0, to: PortRef { instance: ids[8], port: 1 } });
+    l.exports.push(Export { name: "phase".into(), item: Item::Box(ids[5]), param: "phase".into() });
+    p.add_layout("Everything", l, 2.5);
+
+    let bytes = p.to_bytes();
+    assert!(shine_format::is_file(&bytes));
+    let q = Project::from_bytes(&bytes).unwrap();
+    assert_same_documents(&p, &q);
+    assert_eq!(q.to_bytes(), bytes, "writes the same bytes again");
+}
+
+#[test]
+fn the_saved_reference_designs_survive_the_protobuf_format() {
+    // Saved in the earlier (postcard) format: they open, and come back the
+    // same from the new one.
+    for file in ["reference/photonic-matrix-processor.shine", "reference/digits/digit-recognizer.shine"] {
+        let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file)).unwrap();
+        let p = Project::from_bytes(&bytes).unwrap();
+        let q = Project::from_bytes(&p.to_bytes()).unwrap();
+        assert_same_documents(&p, &q);
+    }
 }

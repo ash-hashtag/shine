@@ -32,6 +32,10 @@ Shine is becoming a workspace of crates, each with one job (the plan is
   circuits solved exactly in the frequency domain, compiled for SIMD and threads, and MZI
   mesh decompositions. `shine::photonics` re-exports it. `cargo test -p shine-solver`
   runs its tests in seconds.
+- `crates/shine-format`: the file format, a Protocol Buffers schema
+  (`proto/shine.proto`) and its Rust types, generated when it builds (pb-rs), behind a
+  small header. Change the format by adding fields to the schema, never by renumbering
+  or reusing them (`design/projects.md`).
 - `shine` (the root): everything else, the design model, simulation, the library, the
   editor and the binaries.
 - `bindings`: the Python and TypeScript packages, `shine-photonics`.

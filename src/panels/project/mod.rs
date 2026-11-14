@@ -235,6 +235,7 @@ pub(crate) struct DocumentFile {
     layout: Layout,
 }
 
+pub mod protobuf;
 pub(crate) mod v4;
 pub(crate) mod v5;
 pub(crate) mod v6;
@@ -913,15 +914,22 @@ impl Project {
         written
     }
 
-    /// Encode the project in Shine's binary file format.
+    /// Encode the project as a `.shine` file: a bundle of its documents in
+    /// Shine's protobuf format (`crates/shine-format`).
     pub fn to_bytes(&self) -> Vec<u8> {
-        file_format::encode(&ProjectFile {
-            next_id: self.next_id,
-            documents: self.documents.iter().map(Document::to_file).collect(),
-        })
+        let documents: Vec<DocumentFile> = self.documents.iter().map(Document::to_file).collect();
+        shine_format::encode(&shine_format::ShineFile { content: shine_format::mod_ShineFile::OneOfcontent::bundle(protobuf::bundle(&documents)) })
     }
 
+    /// Read a `.shine` file: the protobuf format, or the earlier postcard one.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if shine_format::is_file(bytes) {
+            let documents = match shine_format::decode(bytes)?.content {
+                shine_format::mod_ShineFile::OneOfcontent::bundle(b) => protobuf::documents(b)?,
+                _ => return Err("this Shine file is a single design or component, not a project".into()),
+            };
+            return Ok(Self::from_files(documents, 1));
+        }
         let file: ProjectFile = match file_format::version(bytes)? {
             1 => {
                 let old: v1::Project = file_format::decode_body(bytes)?;
@@ -969,14 +977,18 @@ impl Project {
             }
             _ => file_format::decode(bytes)?,
         };
-        let documents: Vec<Document> = file.documents.into_iter().map(Document::from_file).collect();
-        let next_id = documents.iter().map(|d| d.id.0 + 1).max().unwrap_or(1).max(file.next_id);
-        Ok(Self::with_documents(documents, next_id))
+        Ok(Self::from_files(file.documents, file.next_id))
+    }
+
+    fn from_files(files: Vec<DocumentFile>, next_id: u64) -> Self {
+        let documents: Vec<Document> = files.into_iter().map(Document::from_file).collect();
+        let next_id = documents.iter().map(|d| d.id.0 + 1).max().unwrap_or(1).max(next_id);
+        Self::with_documents(documents, next_id)
     }
 
     /// Whether `bytes` are a Shine project file.
     pub fn is_project(bytes: &[u8]) -> bool {
-        file_format::is_shine(bytes)
+        shine_format::is_file(bytes) || file_format::is_shine(bytes)
     }
 }
 

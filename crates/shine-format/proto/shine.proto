@@ -1,0 +1,413 @@
+// Shine's file format: projects, designs and components.
+//
+// A file is the 4 bytes "SHPB", a 2-byte format version (little-endian, 1),
+// then one `ShineFile` message. The version changes only if a change can't
+// be made the protobuf way; otherwise the schema grows by adding fields, and
+// field numbers are never reused or renumbered, so old files keep reading and
+// old versions of Shine skip what they don't know.
+//
+// Every number a newer field adds reads as 0 in an older file, so new fields
+// are chosen so that 0 means "as before" (an MZI's arm length of 0 is the
+// ideal MZI, for example).
+//
+// Lengths are in µm, wavelengths in nm, phases in radians, losses in dB,
+// unless a field says otherwise.
+
+syntax = "proto3";
+
+package shine.v1;
+
+message ShineFile {
+  oneof content {
+    // A `.shine` file: a whole project in one file.
+    Bundle bundle = 1;
+    // A `.shinedesign` or `.shinecomp` file in a project folder.
+    Document document = 2;
+    // A project folder's `shine-project.pb`.
+    Manifest manifest = 3;
+  }
+}
+
+// A project's documents, in the order it shows them.
+message Manifest {
+  // Paths of its documents, relative to the folder, with "/" separators.
+  repeated string documents = 1;
+}
+
+// A project in one file: its documents, each under the path it has (or would
+// have) in a project folder.
+message Bundle {
+  repeated BundledFile files = 1;
+}
+
+message BundledFile {
+  // Relative to the project's folder, "/" separators. Component references
+  // in `document` are relative to this file's folder.
+  string path = 1;
+  Document document = 2;
+  // The editor's number for this document, so a restored session finds its
+  // tabs. Other tools can ignore it.
+  uint64 id = 3;
+}
+
+// A design, or a component (a design others place as a box).
+message Document {
+  string name = 1;
+  // Set when it is a component.
+  ComponentInfo component = 2;
+  // The size of a grid cell, µm.
+  double cell_um = 3;
+  Layout layout = 4;
+}
+
+message ComponentInfo {
+  string initials = 1;
+  string description = 2;
+  Appearance appearance = 3;
+}
+
+message Appearance {
+  // 0xRRGGBB, when it has a colour of its own.
+  Color color = 1;
+  BoxShape shape = 2;
+  Icon icon = 3;
+}
+
+message Color {
+  uint32 rgb = 1;
+}
+
+enum BoxShape {
+  RECTANGLE = 0;
+  ROUNDED = 1;
+  CAPSULE = 2;
+  CHAMFERED = 3;
+}
+
+message Icon {
+  IconFormat format = 1;
+  bytes data = 2;
+}
+
+enum IconFormat {
+  WEBP = 0;
+  SVG = 1;
+}
+
+// A design: free-space parts anywhere, and boxes (built-in blocks and
+// components) on a grid of cells, joined by waveguides and signal wires.
+message Layout {
+  repeated Part parts = 1;
+  repeated Line lines = 2;
+  repeated Instance boxes = 3;
+  repeated Waveguide waveguides = 4;
+  repeated SignalWire signals = 5;
+  // The number the next new box gets.
+  uint32 next_box = 6;
+  // Names of port and pin parts, shown on the component's box.
+  repeated Label labels = 7;
+  repeated Feed feeds = 8;
+  // Parameters it exports when used as a component.
+  repeated Export exports = 9;
+}
+
+message Point {
+  float x = 1;
+  float y = 2;
+}
+
+// ---- free-space parts --------------------------------------------------------
+
+message Part {
+  // Its centre, in world units (40 to a grid cell).
+  Point position = 1;
+  oneof kind {
+    FreeLaser laser = 2;
+    BeamSplitter beam_splitter = 3;
+    Mirror mirror = 4;
+    Empty lens = 5;
+    FreePhaseShifter phase_shifter = 6;
+    FreeAttenuator attenuator = 7;
+    FreeDetector detector = 8;
+    InputPort input_port = 9;
+    Empty output_port = 10;
+    Empty signal_in = 11;
+    Empty signal_out = 12;
+  }
+}
+
+message Empty {}
+
+message FreeLaser {
+  float amplitude = 1;
+  float phase = 2;
+  float wavelength_nm = 3;
+  Point direction = 4;
+  // 0: its own source; 1–8 (A–H): lasers sharing a source interfere.
+  uint32 source = 5;
+  // The colour its light is drawn in, instead of its wavelength's.
+  Color color = 6;
+}
+
+message BeamSplitter {
+  float reflectivity = 1;
+  float transparency = 2;
+  Point normal = 3;
+}
+
+message Mirror {
+  Point normal = 1;
+}
+
+message FreePhaseShifter {
+  float phase = 1;
+}
+
+message FreeAttenuator {
+  // Power transmission, 0 to 1.
+  float transmission = 1;
+}
+
+message FreeDetector {
+  // Above 0, its output is a bit: power ≥ threshold.
+  float threshold = 1;
+}
+
+message InputPort {
+  Point direction = 1;
+}
+
+message Line {
+  Point start = 1;
+  Point end = 2;
+}
+
+message Label {
+  // The part (index into `Layout.parts`) it names.
+  uint32 part = 1;
+  string text = 2;
+}
+
+// ---- boxes (instances) ------------------------------------------------------------------------
+
+message Instance {
+  // Unique within the layout; waveguides and wires refer to boxes by it.
+  uint32 id = 1;
+  // Its top-left cell.
+  sint32 column = 2;
+  sint32 row = 3;
+  oneof block {
+    Builtin builtin = 4;
+    // A component's file, relative to the folder of the file this box is
+    // in, "/" separators.
+    string component = 5;
+  }
+  // Values for the component's exported parameters (unset ones keep the
+  // value inside the component).
+  repeated Parameter parameters = 6;
+}
+
+message Parameter {
+  string name = 1;
+  double value = 2;
+}
+
+message Builtin {
+  oneof kind {
+    Laser laser = 1;
+    Empty detector = 2;
+    Pin input_pin = 3;
+    Pin output_pin = 4;
+    Coupler coupler = 5;
+    PhaseShifter phase_shifter = 6;
+    Attenuator attenuator = 7;
+    DelayLine delay_line = 8;
+    Mzi mzi = 9;
+    Empty y_splitter = 10;
+    Empty y_combiner = 11;
+    Empty crossing = 12;
+    Ring ring = 13;
+    Ring add_drop_ring = 14;
+    Tree splitter_tree = 15;
+    SwitchTree switch_tree = 16;
+    Dft dft = 17;
+    NumberInput number_input = 18;
+    Bits display = 19;
+    Bits register = 20;
+    FunctionCell function_cell = 21;
+    Model model = 22;
+    Value value = 23;
+  }
+}
+
+message Laser {
+  double amplitude = 1;
+  double phase = 2;
+  double wavelength_nm = 3;
+}
+
+message Pin {
+  string name = 1;
+}
+
+message Coupler {
+  // Power coupled across, 0 to 1.
+  double coupling = 1;
+}
+
+message PhaseShifter {
+  double phase = 1;
+}
+
+message Attenuator {
+  double loss_db = 1;
+}
+
+// A length of waveguide: `n_eff` holds at `reference_nm`, `n_g` (the group
+// index) sets how its phase changes with wavelength.
+message DelayLine {
+  double length_um = 1;
+  double n_eff = 2;
+  double n_g = 3;
+  double reference_nm = 4;
+  double loss_db_per_cm = 5;
+}
+
+message Mzi {
+  double theta = 1;
+  double phi = 2;
+}
+
+message Ring {
+  double coupling = 1;
+  double length_um = 2;
+  double n_eff = 3;
+  double loss_db_per_cm = 4;
+  double n_g = 5;
+  double reference_nm = 6;
+}
+
+message Tree {
+  uint32 levels = 1;
+}
+
+message SwitchTree {
+  uint32 levels = 1;
+  uint32 address = 2;
+}
+
+message Dft {
+  uint32 n = 1;
+}
+
+message NumberInput {
+  uint32 bits = 1;
+  uint64 value = 2;
+}
+
+message Bits {
+  uint32 bits = 1;
+}
+
+// Outputs computed from expressions over its inputs.
+message FunctionCell {
+  string name = 1;
+  uint32 inputs = 2;
+  uint32 light_inputs = 3;
+  repeated string outputs = 4;
+  repeated string light_outputs = 5;
+  double wavelength_nm = 6;
+}
+
+// A block defined by data (S-parameters) or a script.
+message Model {
+  string name = 1;
+  repeated string inputs = 2;
+  repeated string outputs = 3;
+  repeated string signal_inputs = 4;
+  repeated string signal_outputs = 5;
+  oneof source {
+    Table table = 6;
+    Script script = 7;
+  }
+}
+
+message Table {
+  // Where the data came from (a file name, a tool).
+  string origin = 1;
+  // Ascending (unpacked, as `Matrix.re_im`).
+  repeated double wavelengths_nm = 2 [packed = false];
+  // One per wavelength: the outputs × inputs matrix of fields, row by row,
+  // as real and imaginary parts in turn.
+  repeated Matrix matrices = 3;
+}
+
+message Matrix {
+  // Unpacked: pb-rs 0.10 makes packed doubles borrow the buffer. Readers
+  // accept either.
+  repeated double re_im = 1 [packed = false];
+}
+
+message Script {
+  // JavaScript, run in a sandbox.
+  string code = 1;
+}
+
+message Value {
+  string name = 1;
+  double value = 2;
+}
+
+// ---- connections ----------------------------------------------------------------
+
+message PortRef {
+  uint32 box = 1;
+  uint32 port = 2;
+}
+
+// A waveguide from a box's light output to a box's light input.
+message Waveguide {
+  PortRef from = 1;
+  PortRef to = 2;
+  // A fixed length, µm; unset follows the drawing.
+  Length length = 3;
+}
+
+message Length {
+  double um = 1;
+}
+
+// A part or a box: what a signal wire or an export refers to.
+message Item {
+  oneof item {
+    // An index into `Layout.parts`.
+    uint32 part = 1;
+    // A box's id.
+    uint32 box = 2;
+  }
+}
+
+message Terminal {
+  Item item = 1;
+  uint32 port = 2;
+}
+
+// From a signal output to a signal input.
+message SignalWire {
+  Terminal from = 1;
+  Terminal to = 2;
+}
+
+// A free-space laser's light, by waveguide into a box's light input.
+message Feed {
+  // An index into `Layout.parts`.
+  uint32 laser = 1;
+  PortRef to = 2;
+}
+
+message Export {
+  string name = 1;
+  Item item = 2;
+  // The parameter's name, as in sweeps ("phase", "coupling", "power"…).
+  string parameter = 3;
+}

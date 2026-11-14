@@ -390,7 +390,7 @@ fn project_files_round_trip_and_layouts_import() {
     demo(&mut ws, ADDER);
     ws.save_project_to(&path).unwrap();
     assert_eq!(ws.project.path.as_deref(), Some(path.as_path()));
-    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHNE", "binary, not JSON");
+    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHPB", "binary, not JSON");
 
     let mut other = live();
     other.open_path(&path).unwrap();
@@ -892,7 +892,7 @@ fn unsaved_changes_are_tracked_and_saves_are_atomic() {
     std::fs::write(&path, b"old contents").unwrap();
     ws.save_project_to(&path).unwrap();
     assert!(!ws.has_unsaved_changes());
-    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHNE");
+    assert_eq!(&std::fs::read(&path).unwrap()[..4], b"SHPB");
     let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
     assert_eq!(leftovers.len(), 1, "{leftovers:?}");
     assert_eq!(ws.file_name(), "work.shine");

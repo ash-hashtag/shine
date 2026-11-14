@@ -37,16 +37,20 @@ files.
 
 ## The `.shine` format
 
-A compact binary file: the 4 bytes `SHNE`, a 2-byte format version (little-endian), then
-the project encoded with [postcard](https://docs.rs/postcard). It is about five times
-smaller than the same project as JSON. Files from older versions are converted when
-opened: format 1's separate schematics become layouts of boxes, and format 2's lasers
-(which all interfered with each other) go onto shared source A so they simulate as before.
-Format 4 added waveguides from lasers into boxes; format 5 added group indices to
-delay lines and rings (older ones keep a constant index, so they simulate as before);
-format 6 added components' exported parameters; format 7 added how components look
-(colour, shape and picture); the current format, 8, added components defined by
-S-parameter data or a script.
+A `.shine` file is the 4 bytes `SHPB`, a 2-byte format version (little-endian), then the
+project as [Protocol Buffers](https://protobuf.dev): its designs and components, each under
+the path it would have in a project folder (designs at the top, components in
+`components/`), with boxes referring to the components they place by those paths. The
+schema is [`crates/shine-format/proto/shine.proto`](https://github.com/ash-hashtag/shine/blob/main/crates/shine-format/proto/shine.proto),
+so any language with a protobuf library can read and write Shine's files. It grows by
+adding fields, never renumbering them: newer files open in older versions of Shine (which
+skip what they don't know), and older files open in newer ones.
+
+Files saved by Shine 0.1 (which start with `SHNE`, in the earlier
+[postcard](https://docs.rs/postcard) format) still open, and are saved in the new format.
+Those from the earliest versions are converted as they open: format 1's separate
+schematics become layouts of boxes, and format 2's lasers (which all interfered with each
+other) go onto shared source A so they simulate as before.
 
 A **component file** (`.shinecomp`) is the same format holding one component first and
 then the components it uses. The **asset library** is a file of its own,

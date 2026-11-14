@@ -43,12 +43,12 @@ jobs:
       # Includes the headless UI tests and the docs coverage tests.
       - name: Test
         run: cargo test --locked
-      # The solver crate (crates/shine-solver), on its own.
-      - name: The solver
+      # The solver and file format crates (crates/), on their own.
+      - name: The solver and the file format
         if: runner.os == 'Linux'
         run: |
-          cargo clippy --locked -p shine-solver --all-targets -- -D warnings
-          cargo test --locked -p shine-solver
+          cargo clippy --locked -p shine-solver -p shine-format --all-targets -- -D warnings
+          cargo test --locked -p shine-solver -p shine-format
           cargo test --locked --no-default-features --lib
       # Designs, simulation and files without the editor: what the library and
       # the Python and TypeScript packages are built on.
