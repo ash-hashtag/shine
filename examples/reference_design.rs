@@ -118,6 +118,8 @@ fn editor(project: &Project, bytes: &[u8]) {
     // The editor, on the processor and then inside the mesh.
     let mut ws = Workspace::default();
     let (_, open_ws) = timed(|| ws.open_bytes("reference.shine", bytes).unwrap());
+    // Designs open paused; simulate it, as pressing Space does.
+    ws.simulate_active(true);
     let ctx = egui::Context::default();
     let mut t = 0.0;
     let first = frame(&ctx, &mut ws, &mut t, Vec::new());
