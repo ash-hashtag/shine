@@ -48,7 +48,8 @@ pub enum Kind<'a> {
     PhaseShifter { phase: f64 },
     Attenuator { amplitude: f64 },
     Coupler { coupling: f64 },
-    Mzi { theta: f64, phi: f64 },
+    /// `arms`: the waveguide each arm is, if not ideal.
+    Mzi { theta: f64, phi: f64, arms: Option<&'a Waveguide> },
     YSplitter,
     YCombiner,
     Crossing,
@@ -326,10 +327,7 @@ impl Mzi {
 
 impl Component for Mzi {
     fn kind(&self) -> Kind<'_> {
-        match self.arms {
-            None => Kind::Mzi { theta: self.theta, phi: self.phi },
-            Some(_) => Kind::Other,
-        }
+        Kind::Mzi { theta: self.theta, phi: self.phi, arms: self.arms.as_ref() }
     }
     fn name(&self) -> &str {
         "Mzi"

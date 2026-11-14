@@ -63,10 +63,15 @@ def attenuator(wl=1.55, amplitude=1.0):
     return _sdict({("in0", "out0"): amplitude}, wl)
 
 
-def mzi(wl=1.55, theta=0.0, phi=0.0):
+def mzi(wl=1.55, theta=0.0, phi=0.0, length=0.0, n_eff=2.4, n_g=2.4, wl0=1.55, loss_db_cm=0.0):
     """A Mach–Zehnder switch: phase phi on input 0, then θ between two 50:50
-    couplers (θ = 0 crosses, θ = π is the bar state)."""
-    g, e = 1j * jnp.exp(0.5j * theta), jnp.exp(1j * phi)
+    couplers (θ = 0 crosses, θ = π is the bar state). Its two arms are
+    waveguides as `waveguide`'s (length 0: ideal), adding the same phase and
+    loss to both paths."""
+    wl = jnp.asarray(wl, dtype=float)
+    n = n_eff - (n_g - n_eff) * (wl - wl0) / wl0
+    arms = 10 ** (-loss_db_cm * length * 1e-4 / 20) * jnp.exp(2j * jnp.pi * n * length / wl)
+    g, e = 1j * jnp.exp(0.5j * theta) * arms, jnp.exp(1j * phi)
     s, c = jnp.sin(theta / 2), jnp.cos(theta / 2)
     return _sdict({("in0", "out0"): g * e * s, ("in1", "out0"): g * c, ("in0", "out1"): g * e * c, ("in1", "out1"): -g * s}, wl)
 
@@ -232,7 +237,19 @@ pub fn export(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &st
             Kind::PhaseShifter { phase } => ("phase_shifter".into(), vec![("phase", phase)]),
             Kind::Attenuator { amplitude } => ("attenuator".into(), vec![("amplitude", amplitude)]),
             Kind::Coupler { coupling } => ("coupler".into(), vec![("coupling", coupling.clamp(0.0, 1.0))]),
-            Kind::Mzi { theta, phi } => ("mzi".into(), vec![("theta", theta), ("phi", phi)]),
+            Kind::Mzi { theta, phi, arms: None } => ("mzi".into(), vec![("theta", theta), ("phi", phi)]),
+            Kind::Mzi { theta, phi, arms: Some(w) } => (
+                "mzi".into(),
+                vec![
+                    ("theta", theta),
+                    ("phi", phi),
+                    ("length", w.length_um),
+                    ("n_eff", w.n_eff),
+                    ("n_g", w.n_g),
+                    ("wl0", w.reference_nm / 1000.0),
+                    ("loss_db_cm", w.loss_db_per_cm),
+                ],
+            ),
             Kind::YSplitter => ("y_splitter".into(), Vec::new()),
             Kind::YCombiner => ("y_combiner".into(), Vec::new()),
             Kind::Crossing => ("crossing".into(), Vec::new()),
