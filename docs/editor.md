@@ -77,6 +77,9 @@ a [component](components.md).
   pan; **Ctrl+wheel** / **Shift+wheel** pan sideways / up and down; **Ctrl+middle-drag**
   zooms.
 - **Home** frames everything; **.** (period) frames the selection.
+- The canvas zooms from 1% to 800%. Far out, it draws less so big designs stay quick:
+  under 25% boxes are plain outlines, and under 10% areas of boxes become tiles, darker
+  where there are more and tinted where light passes; zoom in to see each part again.
 
 ## Exporting
 

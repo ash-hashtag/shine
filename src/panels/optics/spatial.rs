@@ -10,7 +10,7 @@ use egui::{Pos2, Rect};
 use super::model::GRID;
 
 /// World units per bucket side: 16 grid cells.
-const BUCKET: f32 = 16.0 * GRID;
+pub const BUCKET: f32 = 16.0 * GRID;
 
 /// An item covering more buckets than this is listed once, as everywhere.
 const MAX_BUCKETS: i64 = 256;
@@ -33,7 +33,8 @@ struct Buckets {
     everywhere: Vec<u32>,
 }
 
-fn bucket_of(p: Pos2) -> (i32, i32) {
+/// The bucket holding world point `p`.
+pub fn bucket_of(p: Pos2) -> (i32, i32) {
     ((p.x / BUCKET).floor() as i32, (p.y / BUCKET).floor() as i32)
 }
 
@@ -114,6 +115,19 @@ impl SpatialIndex {
     pub fn waveguides_in(&self, area: Rect) -> Vec<usize> {
         self.waveguides.query(area)
     }
+
+    /// The buckets touching `area` that hold boxes, as world rectangles,
+    /// with how many: the summary drawn when the canvas is far out.
+    pub fn box_buckets(&self, area: Rect) -> Vec<(Rect, usize)> {
+        let (lo, hi) = (bucket_of(area.min), bucket_of(area.max));
+        self.boxes
+            .map
+            .iter()
+            .filter(|(b, _)| (lo.0..=hi.0).contains(&b.0) && (lo.1..=hi.1).contains(&b.1))
+            .map(|(&(bx, by), items)| (Rect::from_min_size(Pos2::new(bx as f32 * BUCKET, by as f32 * BUCKET), egui::Vec2::splat(BUCKET)), items.len()))
+            .collect()
+    }
+
 }
 
 #[cfg(test)]

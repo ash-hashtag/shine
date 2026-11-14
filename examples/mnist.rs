@@ -252,7 +252,12 @@ fn editor(bytes: &[u8]) {
         t += 1.0 / 60.0;
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 1000.0))), time: Some(t), events, ..Default::default() };
         let started = Instant::now();
-        ctx.run_ui(input, |ui| ws.ui(ui)).textures_delta.clear();
+        // The frame as the app draws it: run, then tessellated into
+        // triangles for the GPU (the shapes on screen are most of the cost
+        // when far out on a big design).
+        let out = ctx.run_ui(input, |ui| ws.ui(ui));
+        let meshes = ctx.tessellate(out.shapes, out.pixels_per_point);
+        std::hint::black_box(meshes);
         started.elapsed().as_secs_f64() * 1e3
     };
     let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
@@ -281,7 +286,11 @@ fn editor(bytes: &[u8]) {
     }
     let biggest = ws.project.documents.iter().max_by_key(|d| d.layout().instances.len()).unwrap().id;
     ws.open_tab(biggest);
-    view(&mut ws, "the biggest mesh");
+    view(&mut ws, "the biggest mesh, whole");
+    // Closer, where boxes are drawn plain (cells 6 pixels across).
+    let close = shine::panels::optics::view::View { pan: egui::Vec2::new(0.0, 0.0), zoom: 0.15 };
+    ws.project.doc_mut(biggest).unwrap().panel_mut().set_view(close);
+    view(&mut ws, "the biggest mesh at 15%");
 }
 
 #[cfg(not(feature = "gui"))]

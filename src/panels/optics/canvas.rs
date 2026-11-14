@@ -512,8 +512,32 @@ impl OpticsPanel {
             Default::default()
         };
 
+        // Far out (a cell a few pixels across), boxes and waveguides are
+        // summarised: a tile per area that holds boxes, darker where there
+        // are more, tinted where light passes. Drawing each of hundreds of
+        // thousands of sub-pixel boxes would cost frames and show nothing.
+        let summary = GRID * zoom < SUMMARY_BELOW_CELL_PX && self.spatial.is_some();
+        if summary && let Some(s) = &self.spatial {
+            let dark = theme.background.r() < 100;
+            let shade = if dark { Color32::from_rgb(120, 126, 138) } else { Color32::from_rgb(140, 146, 158) };
+            let buckets = s.box_buckets(visible);
+            let most = buckets.iter().map(|b| b.1).max().unwrap_or(1) as f32;
+            for (area, n) in buckets {
+                let tile = Rect::from_min_max(to_screen(area.min), to_screen(area.max));
+                painter.rect_filled(tile, 0.0, shade.gamma_multiply(0.3 + 0.7 * (n as f32 / most).sqrt()));
+            }
+            // What's selected still shows.
+            for b in self.editor.boxes.iter() {
+                if let Some(inst) = self.layout.instances.get(b) {
+                    let g = self.geometry(inst);
+                    let r = Rect::from_min_max(to_screen(g.rect.min), to_screen(g.rect.max));
+                    painter.rect_stroke(r.expand(2.0), 2.0, Stroke::new(1.5, theme.selection), egui::StrokeKind::Outside);
+                }
+            }
+        }
+
         // Boxes.
-        for b in self.boxes_in(visible) {
+        for b in if summary { Vec::new() } else { self.boxes_in(visible) } {
             let Some(inst) = self.layout.instances.get(b) else { continue };
             let g = self.geometry(inst);
             let r = Rect::from_min_max(to_screen(g.rect.min), to_screen(g.rect.max));
@@ -528,7 +552,21 @@ impl OpticsPanel {
                 unit: self.prefs.power_unit,
                 test_light: lit.get(&Item::Box(inst.id)).copied(),
             };
-            draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, style);
+            if GRID * zoom < PLAIN_BELOW_CELL_PX {
+                // Small: its outline only, as text and details wouldn't show.
+                let dark = theme.background.r() < 100;
+                let body = if dark { Color32::from_rgb(50, 53, 60) } else { Color32::from_rgb(232, 235, 241) };
+                let line = if matches!(inst.block, BlockRef::Builtin(Builtin::FunctionCell { .. })) {
+                    FUNCTION_CELL
+                } else if dark {
+                    Color32::from_rgb(110, 116, 128)
+                } else {
+                    Color32::from_rgb(150, 156, 168)
+                };
+                painter.rect(r, 1.0, body, Stroke::new(1.0, line), egui::StrokeKind::Inside);
+            } else {
+                draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, style);
+            }
             if self.editor.boxes.contains(b) {
                 let active = self.editor.boxes.active() == Some(b);
                 painter.rect_stroke(
@@ -550,8 +588,34 @@ impl OpticsPanel {
             outcome.iter().flat_map(|o| o.wavelengths.iter().copied()).chain(laser_wavelengths),
         );
 
+        // Far out, light shows as a tint on the areas it passes through:
+        // each lit waveguide's strongest channel, at its start.
+        if summary
+            && let (Some(o), Some(s)) = (&outcome, &self.spatial)
+        {
+            let mut tint: std::collections::HashMap<(i32, i32), (f64, Color32)> = Default::default();
+            for w in s.waveguides_in(visible) {
+                let Some(fields) = o.wire_fields.get(w) else { continue };
+                let Some((k, p)) = fields.iter().map(|f| f.norm_sqr()).enumerate().filter(|(_, p)| *p > 1e-9).max_by(|a, b| a.1.total_cmp(&b.1))
+                else {
+                    continue;
+                };
+                let Some((start, _)) = self.waveguide_ends(w) else { continue };
+                let color = palette.color(o.wavelengths[k], o.channel_colors.get(k).copied().flatten());
+                let e = tint.entry(super::spatial::bucket_of(start)).or_insert((0.0, color));
+                if p > e.0 {
+                    *e = (p, color);
+                }
+            }
+            for ((bx, by), (_, color)) in tint {
+                let min = Pos2::new(bx as f32 * super::spatial::BUCKET, by as f32 * super::spatial::BUCKET);
+                let tile = Rect::from_min_max(to_screen(min), to_screen(min + Vec2::splat(super::spatial::BUCKET)));
+                painter.rect_filled(tile, 0.0, color.gamma_multiply(0.6));
+            }
+        }
+
         // Waveguides, one coloured strand per lit channel.
-        for w in self.waveguides_in(visible) {
+        for w in if summary { Vec::new() } else { self.waveguides_in(visible) } {
             // A waveguide's curve stays within its ends' box, widened by
             // its control points' reach (at most half its length, and a cell).
             if let Some((a, b)) = self.waveguide_ends(w) {
@@ -580,7 +644,9 @@ impl OpticsPanel {
             lit.sort_by(|a, b| b.0.total_cmp(&a.0));
             let selected = self.selected_wire == Some(WireRef::Waveguide(w));
             let width = (if selected || hovered == Hit::Waveguide(w) { 4.5 } else { 3.0 }) * zoom.clamp(0.5, 1.5);
-            let points: Vec<Pos2> = path.into_iter().map(to_screen).collect();
+            // A few pixels long, a waveguide's curve needs only a few points.
+            let step = if GRID * zoom < PLAIN_BELOW_CELL_PX { 6 } else { 1 };
+            let points: Vec<Pos2> = path.iter().step_by(step).chain(path.last().filter(|_| step > 1)).copied().map(to_screen).collect();
             if selected {
                 painter.add(Shape::line(points.clone(), Stroke::new(width + 3.0, theme.active.gamma_multiply(0.5))));
             }
@@ -1083,6 +1149,14 @@ fn power_into(layout: &model::Layout, outcome: &Outcome, inst: model::InstanceId
     let wire = layout.wires.iter().find(|w| w.to == to)?;
     outcome.port_power.get(&(wire.from.instance, wire.from.port)).copied()
 }
+
+/// Below this many pixels a grid cell, the canvas draws a summary (see
+/// `canvas_contents`) rather than every box and waveguide.
+const SUMMARY_BELOW_CELL_PX: f32 = 4.0;
+
+/// Below this many pixels a grid cell, boxes are drawn as plain outlines
+/// and waveguides with fewer points: their text and details wouldn't show.
+const PLAIN_BELOW_CELL_PX: f32 = 10.0;
 
 /// Below this zoom, inputs' labels are left out: they'd overlap.
 const INPUT_LABELS_FROM_ZOOM: f32 = 0.45;

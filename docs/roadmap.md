@@ -123,8 +123,9 @@ want them.
       its inputs evaluated as one compiled function, recursively, then simplified, so a
       thousand gates that add two 8-bit numbers run as an adder. Combinational logic
       first; registers and feedback as state machines after
-- [ ] **Drawing at any zoom**: far out, dense areas drawn as summaries rather than box by
-      box
+- [x] **Drawing at any zoom**: zoom out to 1%; boxes are drawn plain when small, and far
+      out as a summary (tiles shaded by how many boxes they hold, tinted where light passes),
+      so a 310 000-box mesh seen whole takes 17 ms a frame
 
 - [x] **Python and TypeScript libraries** (`shine-photonics`): build, simulate, analyse
       and export designs in code, and open them in the app ([Python](python.md),

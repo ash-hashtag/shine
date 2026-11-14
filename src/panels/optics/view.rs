@@ -4,7 +4,9 @@ use egui::{Event, MouseWheelSource, MouseWheelUnit, Pos2, Rect, Response, Ui, Ve
 
 use super::model::GRID;
 
-pub const MIN_ZOOM: f32 = 0.1;
+/// Far enough out to see a design of millions of parts whole (drawn as a
+/// summary below 10%, see the canvas).
+pub const MIN_ZOOM: f32 = 0.01;
 pub const MAX_ZOOM: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
