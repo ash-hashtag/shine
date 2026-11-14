@@ -10,7 +10,7 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
-## 0.1.3 (2026-11-12)
+## 0.1.3 (2026-11-14)
 
 The simulator for designs of millions of parts, and Shine as a library. (0.1.2 wasn't
 released: its changes are here.)
