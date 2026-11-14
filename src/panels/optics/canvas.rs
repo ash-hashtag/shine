@@ -1048,6 +1048,9 @@ fn power_into(layout: &model::Layout, outcome: &Outcome, inst: model::InstanceId
     outcome.port_power.get(&(wire.from.instance, wire.from.port)).copied()
 }
 
+/// Below this zoom, inputs' labels are left out: they'd overlap.
+const INPUT_LABELS_FROM_ZOOM: f32 = 0.45;
+
 /// The colour of function cells: built-in electronics, set in the inspector.
 const FUNCTION_CELL: Color32 = Color32::from_rgb(214, 150, 40);
 
@@ -1106,10 +1109,17 @@ fn draw_box(
         let font = FontId::monospace((17.0 * zoom).clamp(9.0, 40.0));
         painter.text(r.right_center() + Vec2::new(8.0 * zoom, 0.0), Align2::LEFT_CENTER, text, font, theme.text);
     };
+    // Far out, an input's label (its value, and the light it lets through)
+    // would run over its neighbours: the box's fill shows the value instead.
+    let input_label = |text: String| {
+        if zoom >= INPUT_LABELS_FROM_ZOOM {
+            value_label(text);
+        }
+    };
     match &inst.block {
         BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
             draw_leds(painter, r, zoom, (0..*bits).rev().map(|k| (value >> k) & 1 == 1), theme);
-            value_label(value.to_string());
+            input_label(value.to_string());
         }
         BlockRef::Builtin(Builtin::Value { name, value }) => {
             // A level, filled from the left.
@@ -1127,7 +1137,7 @@ fn draw_box(
                 })
                 .map(|p| format!("  → {}", crate::panels::units::format_power(*p, style.unit)));
             let label = if name.is_empty() { String::new() } else { format!("{name}  ") };
-            value_label(format!("{label}{value:.2}{}", light.unwrap_or_default()));
+            input_label(format!("{label}{value:.2}{}", light.unwrap_or_default()));
         }
         BlockRef::Builtin(Builtin::Laser { amplitude, wavelength_nm, .. }) => {
             painter.text(r.center(), Align2::CENTER_CENTER, &d.initials, big, theme.text);
