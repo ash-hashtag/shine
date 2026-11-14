@@ -77,11 +77,23 @@ to switch its light to the other output. Exported parameters can also be
 
 ## Trying a component on its own
 
-In a component's own tab nothing drives its Signal in pins, so they read 0. **Click a
-Signal in pin** to switch it between 0 and 1; a lamp next to it shows the value and the
-simulation follows. This lets you test, for example, the Full adder's truth table
-without building anything around it. These test values aren't saved and don't affect
-the component where it's used.
+In a component's own tab nothing drives its inputs: its Signal in pins read 0 and no
+light enters its light inputs. To test it as you design it, give its inputs test values:
+
+- **Signal in pins**: click one to switch it between 0 and 1 (a lamp next to it shows
+  the value), or select it and type any value under **Test value** in the inspector, for
+  an analog input such as a modulator's drive (−1 to 1 for the linear modulator).
+- **Light inputs** (input pins and input ports): click one to shine a test light into it,
+  1 mW at the default wavelength, and click again to switch it off. It's ringed in amber
+  with its power beside it. Select it to set the light's power, wavelength and phase under
+  **Test light** in the inspector. All test lights are one coherent source, as if split
+  from one laser, so light entering two inputs interferes inside the component.
+
+The simulation follows, so you can test, for example, the Full adder's truth table, or
+how much light the linear modulator passes for each drive, without building anything
+around it. Test values aren't saved and don't affect the component where it's used:
+inside a box, its inputs take what's wired to them. Transmission matrices and exports
+leave them out too.
 
 ![The Full adder component opened in its own tab](img/full-adder.webp)
 

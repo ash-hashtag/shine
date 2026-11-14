@@ -503,6 +503,15 @@ impl OpticsPanel {
         // What's in view, in world units, give or take a cell.
         let visible = Rect::from_min_max(self.view.to_world(rect, rect.min), self.view.to_world(rect, rect.max)).expand(GRID);
 
+        // Light inputs with a test light on, and its power (worked out only
+        // when some light is on: it reads the whole layout).
+        let lit: std::collections::HashMap<Item, f64> = if self.machine.light_inputs.iter().any(Option::is_some) {
+            let inputs = crate::panels::circuit::sim::interface(&self.layout).optical_in;
+            inputs.into_iter().zip(&self.machine.light_inputs).filter_map(|(item, l)| Some((item, l.as_ref()?.power_mw))).collect()
+        } else {
+            Default::default()
+        };
+
         // Boxes.
         for b in self.boxes_in(visible) {
             let Some(inst) = self.layout.instances.get(b) else { continue };
@@ -512,7 +521,13 @@ impl OpticsPanel {
                 continue;
             }
             let d = self.catalog.display(&inst.block);
-            let style = BoxStyle { hovered: hovered == Hit::Box(b), port_names: self.prefs.show_port_names, readings: self.prefs.show_readings, unit: self.prefs.power_unit };
+            let style = BoxStyle {
+                hovered: hovered == Hit::Box(b),
+                port_names: self.prefs.show_port_names,
+                readings: self.prefs.show_readings,
+                unit: self.prefs.power_unit,
+                test_light: lit.get(&Item::Box(inst.id)).copied(),
+            };
             draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, style);
             if self.editor.boxes.contains(b) {
                 let active = self.editor.boxes.active() == Some(b);
@@ -636,6 +651,19 @@ impl OpticsPanel {
                     painter.circle_filled(lamp, 4.5 * zoom, render::SIGNAL_HIGH);
                 } else {
                     painter.circle(lamp, 4.5 * zoom, theme.background, Stroke::new(1.0, render::SIGNAL_LOW));
+                }
+                // A value other than 0 or 1, written beside it.
+                if v != 0.0 && v != 1.0 && zoom >= INPUT_LABELS_FROM_ZOOM {
+                    let font = FontId::monospace((11.0 * zoom).clamp(8.0, 22.0));
+                    painter.text(lamp + Vec2::new(8.0 * zoom, 0.0), Align2::LEFT_CENTER, format!("{v:.3}"), font, theme.text);
+                }
+            }
+            if let Some(&p) = lit.get(&Item::Part(i)) {
+                // An input port's test light.
+                painter.circle_stroke(at, 12.0 * zoom, Stroke::new(2.0 * zoom.clamp(0.5, 1.5), FUNCTION_CELL));
+                if zoom >= INPUT_LABELS_FROM_ZOOM {
+                    let font = FontId::monospace((11.0 * zoom).clamp(8.0, 22.0));
+                    painter.text(at + Vec2::new(0.0, 16.0 * zoom), Align2::CENTER_TOP, crate::panels::units::format_power(p, self.prefs.power_unit), font, FUNCTION_CELL);
                 }
             }
             if let Some(label) = self.layout.label(i) {
@@ -835,6 +863,12 @@ impl OpticsPanel {
     /// Clicking a number input's bit toggles it; clicking along a value
     /// input sets it (left 0, right 1, in steps of 0.05).
     fn toggle_bit(&mut self, b: usize, world: Pos2) -> bool {
+        // A light input pin: its test light, on or off.
+        if let Some(inst) = self.layout.instances.get(b)
+            && matches!(inst.block, BlockRef::Builtin(Builtin::InputPin { .. }))
+        {
+            return self.toggle_test_light(Item::Box(inst.id));
+        }
         let Some(inst) = self.layout.instances.get_mut(b) else { return false };
         if let BlockRef::Builtin(b @ Builtin::Value { .. }) = &mut inst.block {
             let (w, _) = model::box_size(b.port_counts());
@@ -1038,6 +1072,8 @@ struct BoxStyle {
     /// Show detector boxes' readings.
     readings: bool,
     unit: crate::panels::prefs::PowerUnit,
+    /// The power of the test light shone into this input pin, if any.
+    test_light: Option<f64>,
 }
 
 /// The power arriving at a top-level box's light input `port`, from the
@@ -1096,6 +1132,15 @@ fn draw_box(
         };
         painter.rect_filled(r.shrink(4.0 * zoom), r.height() / 2.0, fill);
         painter.text(r.center(), Align2::CENTER_CENTER, name, big, Color32::WHITE);
+        // Its test light: a ring, and the power shone in.
+        if let Some(p) = style.test_light {
+            painter.rect_stroke(r.shrink(2.0 * zoom), r.height() / 2.0, Stroke::new(2.0 * zoom.clamp(0.5, 1.5), FUNCTION_CELL), egui::StrokeKind::Outside);
+            if zoom >= INPUT_LABELS_FROM_ZOOM {
+                let font = FontId::monospace((11.0 * zoom).clamp(8.0, 22.0));
+                let text = format!("{} →", crate::panels::units::format_power(p, style.unit));
+                painter.text(r.left_center() - Vec2::new(6.0 * zoom, 0.0), Align2::RIGHT_CENTER, text, font, FUNCTION_CELL);
+            }
+        }
         return;
     }
     // A component's box takes its own outline and colour.

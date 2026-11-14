@@ -263,6 +263,9 @@ fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
     for v in &machine.inputs {
         v.to_bits().hash(hasher);
     }
+    for l in &machine.light_inputs {
+        l.map(|l| (l.power_mw.to_bits(), l.wavelength_nm.to_bits(), l.phase.to_bits())).hash(hasher);
+    }
     let mut entries: u64 = 0;
     for ((path, id), bits) in &machine.registers {
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -381,9 +384,45 @@ impl OpticsPanel {
     pub fn reset_clock(&mut self) {
         self.machine = Machine {
             inputs: std::mem::take(&mut self.machine.inputs),
+            light_inputs: std::mem::take(&mut self.machine.light_inputs),
             ..Machine::default()
         };
         self.running = false;
+    }
+
+    /// Light input `item` (an input pin box or an input port part): its place
+    /// among the layout's light inputs and the test light shone into it.
+    pub fn test_light(&self, item: Item) -> Option<(usize, Option<sim::TestLight>)> {
+        let k = sim::interface(&self.layout).optical_in.iter().position(|&i| i == item)?;
+        Some((k, self.machine.light_inputs.get(k).copied().flatten()))
+    }
+
+    /// Shine `light` into light input `item`, or nothing. Returns false if
+    /// it isn't one.
+    pub fn set_test_light(&mut self, item: Item, light: Option<sim::TestLight>) -> bool {
+        let Some((k, _)) = self.test_light(item) else { return false };
+        if self.machine.light_inputs.len() <= k {
+            self.machine.light_inputs.resize(k + 1, None);
+        }
+        self.machine.light_inputs[k] = light;
+        true
+    }
+
+    /// Switch light input `item`'s test light on (1 mW at the default
+    /// wavelength) or off. Returns false if it isn't a light input.
+    pub fn toggle_test_light(&mut self, item: Item) -> bool {
+        let Some((_, light)) = self.test_light(item) else { return false };
+        let on = light.is_none().then(|| sim::TestLight::new(self.prefs.default_wavelength_nm as f64));
+        self.set_test_light(item, on)
+    }
+
+    /// Set signal-in pin part `part`'s test value. Returns false for other parts.
+    pub fn set_pin_value(&mut self, part: usize, value: f64) -> bool {
+        let pins = sim::interface(&self.layout).signal_in;
+        let Some(k) = pins.iter().position(|&i| i == part) else { return false };
+        self.machine.inputs.resize(pins.len().max(self.machine.inputs.len()), 0.0);
+        self.machine.inputs[k] = value;
+        true
     }
 
     /// Value set by hand on signal-in pin part `part`, if it is one.
@@ -394,6 +433,9 @@ impl OpticsPanel {
 
     /// Flip a signal-in pin between 0 and 1. Returns false for other parts.
     pub fn toggle_pin(&mut self, part: usize) -> bool {
+        if self.toggle_test_light(Item::Part(part)) {
+            return true;
+        }
         let pins = sim::interface(&self.layout).signal_in;
         let Some(k) = pins.iter().position(|&i| i == part) else { return false };
         self.machine.inputs.resize(pins.len().max(self.machine.inputs.len()), 0.0);

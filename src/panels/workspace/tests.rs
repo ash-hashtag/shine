@@ -998,3 +998,47 @@ fn an_example_opened_by_a_link_simulates() {
     ws.apply_url_query("simulate");
     assert_eq!(ws.simulation_flag().copied(), Some(true));
 }
+
+#[test]
+fn a_component_is_tried_on_its_own_with_test_inputs() {
+    // The linear modulator in its own tab: light into its input pin, a
+    // value on its signal pin, and the light it passes follows the value.
+    let mut ws = live();
+    let id = crate::panels::optics::digits::linear_modulator(&mut ws.project);
+    ws.open_tab(id);
+    let item = |ws: &mut Workspace, block: fn(&Builtin) -> bool| {
+        let l = &panel(ws, id).layout;
+        l.instances.iter().find(|i| matches!(&i.block, BlockRef::Builtin(b) if block(b))).unwrap().id
+    };
+    let input = item(&mut ws, |b| matches!(b, Builtin::InputPin { .. }));
+    let join = item(&mut ws, |b| matches!(b, Builtin::YCombiner));
+    let pin = panel(&mut ws, id).layout.components.iter().position(|c| c.kind == OpticComponentKind::SignalIn).unwrap();
+    let passed = |ws: &mut Workspace| {
+        ws.refresh_simulation();
+        let o = panel(ws, id).sim.as_ref().unwrap().outcome.clone();
+        assert!(o.error.is_none(), "{:?}", o.error);
+        o.port_power.get(&(join, 0)).copied().unwrap_or(0.0)
+    };
+    assert!(passed(&mut ws) < 1e-15, "no light in, none out");
+    // Clicking the input pin shines 1 mW in; the value pin at 1 passes it all
+    // (but the arms' loss).
+    assert!(panel(&mut ws, id).toggle_test_light(Item::Box(input)));
+    assert_eq!(panel(&mut ws, id).test_light(Item::Box(input)).unwrap().1.unwrap().power_mw, 1.0);
+    assert!(panel(&mut ws, id).set_pin_value(pin, 1.0));
+    let full = passed(&mut ws);
+    assert!(full > 0.9, "{full} mW");
+    // Any test value: half the field, a quarter of the power; negative the same.
+    for v in [0.5, -0.5] {
+        panel(&mut ws, id).set_pin_value(pin, v);
+        let p = passed(&mut ws);
+        assert!((p / full - 0.25).abs() < 1e-9, "{v}: {p} of {full}");
+    }
+    // A transmission matrix ignores test lights: the inputs stay free.
+    let machine = panel(&mut ws, id).machine.clone();
+    let doc = ws.project.doc(id).unwrap();
+    let t = sim::transmission(doc.layout(), doc.cell_um(), &ws.project, &machine, Some(id), &[1550.0]);
+    assert!(t.is_ok(), "{t:?}");
+    // Off again.
+    panel(&mut ws, id).toggle_test_light(Item::Box(input));
+    assert!(passed(&mut ws) < 1e-15);
+}

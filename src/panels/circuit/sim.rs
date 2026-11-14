@@ -131,7 +131,30 @@ pub struct Machine {
     pub tick: u64,
     /// By signal-in pin, in interface order; missing pins read 0.
     pub inputs: Vec<f64>,
+    /// By light input (input pin or input port), in interface order: the
+    /// light shone into it to try the layout on its own; missing or None,
+    /// none.
+    pub light_inputs: Vec<Option<TestLight>>,
 }
+
+/// Light shone into one of a layout's own light inputs, to try it on its
+/// own. All of them are one coherent source (as if split from one laser),
+/// so they interfere.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TestLight {
+    pub power_mw: f64,
+    pub wavelength_nm: f64,
+    pub phase: f64,
+}
+
+impl TestLight {
+    pub fn new(wavelength_nm: f64) -> Self {
+        Self { power_mw: 1.0, wavelength_nm, phase: 0.0 }
+    }
+}
+
+/// The photonics source id of the test lights: one coherent source.
+const TEST_SOURCE: u32 = 900;
 
 /// The boundary of a layout used as a component, in the order its box shows them.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1209,7 +1232,7 @@ pub fn simulate(
     root: Option<DocId>,
     options: &Options,
 ) -> Outcome {
-    let settled = match settle(layout, cell_um, docs, machine, root, options, &[]) {
+    let settled = match settle(layout, cell_um, docs, machine, root, options, &[], true) {
         Ok(s) => s,
         Err(e) => return Outcome::failed(e),
     };
@@ -1236,7 +1259,7 @@ pub fn transmission(
     root: Option<DocId>,
     wavelengths_nm: &[f64],
 ) -> Result<Transmission, String> {
-    let settled = settle(layout, cell_um, docs, machine, root, &Options::default(), wavelengths_nm)?;
+    let settled = settle(layout, cell_um, docs, machine, root, &Options::default(), wavelengths_nm, false)?;
     if !settled.stable {
         return Err("The circuit did not settle; a feedback loop may be oscillating".into());
     }
@@ -1262,7 +1285,7 @@ pub fn circuit(
 ) -> Result<(Circuit, crate::photonics::Ports), String> {
     // Every part kept: netlists are written from it.
     let options = Options { reduce: false, ..Options::default() };
-    let settled = settle(layout, cell_um, docs, machine, root, &options, &[])?;
+    let settled = settle(layout, cell_um, docs, machine, root, &options, &[], false)?;
     if !settled.stable {
         return Err("The circuit did not settle; a feedback loop may be oscillating".into());
     }
@@ -1281,6 +1304,10 @@ struct Settled {
     signals: HashMap<Key, f64>,
 }
 
+/// Settle `layout`, solving at `wavelengths` besides the lasers', and with
+/// `test_lights` the machine's test lights shone into its own light inputs
+/// (not for matrices and netlists, whose inputs must stay free).
+#[allow(clippy::too_many_arguments)]
 fn settle(
     layout: &Layout,
     cell_um: f64,
@@ -1289,9 +1316,16 @@ fn settle(
     root: Option<DocId>,
     options: &Options,
     wavelengths: &[f64],
+    test_lights: bool,
 ) -> Result<Settled, String> {
+    let lights: Vec<(usize, TestLight)> = if test_lights {
+        machine.light_inputs.iter().enumerate().filter_map(|(k, l)| Some((k, (*l)?))).collect()
+    } else {
+        Vec::new()
+    };
     let mut reducer = options.reduce.then(|| {
         let mut lasers = wavelengths.to_vec();
+        lasers.extend(lights.iter().map(|(_, l)| l.wavelength_nm));
         laser_wavelengths(layout, docs, &mut Vec::new(), &mut lasers);
         let mut r = Reducer::new(Vec::new());
         r.covers(&lasers);
@@ -1337,6 +1371,15 @@ fn settle(
             };
             let mut circuit = Circuit::new();
             let built = optics.build(&mut circuit, layout, &[], cell_um)?;
+            // Test lights into the layout's own light inputs, open at the top.
+            for &(k, light) in &lights {
+                if let Some(&port) = built.ports.inputs.get(k) {
+                    let laser = circuit.add(
+                        Laser::new(light.power_mw.max(0.0).sqrt(), light.wavelength_nm).with_phase(light.phase).with_source(TEST_SOURCE),
+                    );
+                    circuit.connect(laser.output(0), port).map_err(|e| e.to_string())?;
+                }
+            }
             let emitted: Vec<f64> = wavelengths.iter().copied().chain(circuit.emission_wavelengths()).collect();
             if optics.reduce.as_deref_mut().is_none_or(|r| r.covers(&emitted)) {
                 break (optics, circuit, built);

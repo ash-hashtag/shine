@@ -75,7 +75,7 @@ pub fn part_description(kind: &OpticComponentKind) -> &'static str {
         OpticComponentKind::Attenuator { .. } => "Absorbs part of the light. A signal on top scales its transmission.",
         OpticComponentKind::InputPort { .. } => "Where light enters when this layout is used as a component box (left edge, top to bottom).",
         OpticComponentKind::OutputPort => "Where light leaves when this layout is used as a component box (right edge, top to bottom).",
-        OpticComponentKind::SignalIn => "Electrical input when this layout is used as a component box (top edge, left to right). Click it to switch it between 0 and 1 and try the layout on its own.",
+        OpticComponentKind::SignalIn => "Electrical input when this layout is used as a component box (top edge, left to right). Click it to switch it between 0 and 1 and try the layout on its own, or set any test value in the inspector.",
         OpticComponentKind::SignalOut => "Electrical output when this layout is used as a component box (bottom edge).",
     }
 }
@@ -701,6 +701,7 @@ impl OpticsPanel {
             self.prune_connections();
         }
         self.script_ui(ui, b);
+        self.test_light_ui(ui, Item::Box(id));
         if matches!(self.layout.instances[b].block, BlockRef::Builtin(_)) {
             self.exports_ui(ui, Item::Box(id));
         }
@@ -763,8 +764,44 @@ impl OpticsPanel {
         });
     }
 
+    /// A light input's test light: light shone into it while the layout is
+    /// tried on its own (not saved; inside a box the input takes what's
+    /// wired to it).
+    fn test_light_ui(&mut self, ui: &mut Ui, item: Item) {
+        let Some((k, light)) = self.test_light(item) else { return };
+        let mut on = light.is_some();
+        let mut light = light.unwrap_or(sim::TestLight::new(self.prefs.default_wavelength_nm as f64));
+        let before = (on, light);
+        ui.add_space(4.0);
+        ui.checkbox(&mut on, "Test light")
+            .on_hover_text("Light shone into this input while the layout is tried on its own (click the pin to switch it). Not saved; inside a box the input takes what's wired to it. All test lights are one coherent source, so they interfere.");
+        if on {
+            egui::Grid::new(("test_light", k)).num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                let l = ui.label("Power").id;
+                let mut a = light.power_mw.max(0.0).sqrt();
+                if units::power_editor(ui, &mut a, self.prefs.power_unit).labelled_by(l).changed() {
+                    light.power_mw = a * a;
+                }
+                ui.end_row();
+                let l = ui.label("Wavelength").id;
+                ui.add(egui::DragValue::new(&mut light.wavelength_nm).range(200.0..=2000.0).speed(0.5).suffix(" nm")).labelled_by(l);
+                ui.end_row();
+                let l = ui.label("Phase").id;
+                ui_kit::slider(ui, l, &mut light.phase, 0.0..=std::f64::consts::TAU, " rad")
+                    .labelled_by(l)
+                    .on_hover_text("Relative to the other inputs' test lights");
+                ui.end_row();
+            });
+        }
+        if (on, light) != before {
+            self.set_test_light(item, on.then_some(light));
+        }
+    }
+
     fn part_inspector(&mut self, ui: &mut Ui, i: usize) {
         let reading = self.detector_reading(i);
+        let pin_value = self.pin_value(i);
+        let mut new_pin_value = None;
         let unit = self.prefs.power_unit;
         let iface = sim::interface(&self.layout);
         let driver = self.layout.signal_source(Terminal { item: Item::Part(i), port: 0 });
@@ -943,10 +980,16 @@ impl OpticsPanel {
                 .on_hover_text("Drag from a signal output (square terminal) to the terminal above this part");
                 ui.end_row();
             }
-            if kind == OpticComponentKind::SignalIn {
-                ui.label("Test value");
-                ui.label(RichText::new("click the pin to toggle").weak())
-                    .on_hover_text("Used when this layout is simulated on its own; inside a box the pin follows its wire");
+            if let (OpticComponentKind::SignalIn, Some(mut v)) = (kind, pin_value) {
+                let l = ui.label("Test value").id;
+                if ui
+                    .add(egui::DragValue::new(&mut v).speed(0.01))
+                    .labelled_by(l)
+                    .on_hover_text("Its value while this layout is tried on its own (clicking the pin switches 0 and 1); inside a box the pin follows its wire")
+                    .changed()
+                {
+                    new_pin_value = Some(v);
+                }
                 ui.end_row();
             }
             if let (Some(v), false) = (output, kind.signal_outputs().is_empty()) {
@@ -958,6 +1001,10 @@ impl OpticsPanel {
         if label_changed {
             self.layout.set_label(i, &label);
         }
+        if let Some(v) = new_pin_value {
+            self.set_pin_value(i, v);
+        }
+        self.test_light_ui(ui, Item::Part(i));
         self.exports_ui(ui, Item::Part(i));
         ui.horizontal(|ui| {
             if ui.small_button("Rotate").on_hover_text("R").clicked() {
