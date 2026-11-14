@@ -134,6 +134,7 @@ Parts are named as the app names them: "Ring resonator", the second one "Ring re
 | `design.sweep(part, param, start, stop, points)` | `series(output)`, `readouts(output)` (resonances, FSR, width, Q), `to_csv()` |
 | `design.monte_carlo(runs, seed, variation)` | `values(output)`, `stats(output)`, `yield_of(output, min_mw, max_mw)` |
 | `design.optimise(variables, output, goal, target_mw, steps)` | the best values; `design.apply(variables, values)` sets them |
+| `design.optimise_aims(variables, aims, steps)` | several outputs at once: each `Aim(output, goal, target_mw, band_from_nm, band_to_nm, band_points, weight)`, across a band when `band_points` ≥ 2; each aim's power before and after |
 | `design.to_touchstone`, `to_sax`, `to_gdsfactory` | files for [other tools](interop.md) |
 
 Readings are named by part ("Detector") or by part and port ("Ring resonator.through").

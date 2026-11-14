@@ -8,7 +8,7 @@ use super::design::{Design, part_names};
 use super::error::{Error, Result};
 use super::part::{Part, Port, ports_of};
 use super::project::lock;
-use super::records::{Complex, Direction, Goal, Matrix, Optimised, PortKind, Reading, Readouts, Series, Stats, Variation};
+use super::records::{Aim, Aimed, Complex, Direction, Goal, Matrix, Optimised, PortKind, Reading, Readouts, Series, Stats, Variation};
 use crate::panels::circuit::sim::{self, Machine, Options, Outcome};
 use crate::panels::circuit::{monte_carlo, sweep, transfer};
 use crate::panels::interop;
@@ -431,6 +431,46 @@ impl Design {
                 return Err(Error::Simulation(e));
             }
             Ok(Optimised { values: r.values, before_mw: r.before, after_mw: r.after, simulations: r.simulations as u32 })
+        }
+    }
+
+    /// Adjust parameters (part, parameter, from, to) to bring several
+    /// outputs towards their goals at once, weighted and summed, each as
+    /// the design is or on average across a band of wavelengths. Desktop
+    /// only.
+    pub fn optimise_aims(&self, variables: &[(Part, String, f64, f64)], aims: &[Aim], steps: u32) -> Result<Aimed> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (variables, aims, steps);
+            Err(Error::Unsupported("optimisation runs in the desktop library".into()))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use crate::panels::circuit::optimise::{self, Band, Target, Variable};
+            for (part, param, _, _) in variables {
+                part.param(param)?;
+            }
+            let s = Snapshot::of(self);
+            let vars: Vec<Variable> = variables.iter().map(|(p, param, min, max)| Variable { item: p.item, param: param.clone(), min: *min, max: *max }).collect();
+            let targets: Vec<Target> = aims
+                .iter()
+                .map(|a| Target {
+                    output: a.output.clone(),
+                    goal: match a.goal {
+                        Goal::Maximise => optimise::Goal::Maximise,
+                        Goal::Minimise => optimise::Goal::Minimise,
+                        Goal::Target(t) => optimise::Goal::Target(t),
+                    },
+                    band: a.band.map(|(from_nm, to_nm, points)| Band { from_nm, to_nm, points: points as usize }),
+                    weight: a.weight,
+                })
+                .collect();
+            let read = |l: &Layout, o: &Outcome| s.readings(l, o);
+            let r = optimise::optimise_targets(&s.layout, s.cell_um, &s.project, &s.machine, Some(s.doc), &vars, &targets, steps as u64, &read);
+            if let Some(e) = r.error {
+                return Err(Error::Simulation(e));
+            }
+            Ok(Aimed { values: r.values, before_mw: r.before, after_mw: r.after, simulations: r.simulations as u32 })
         }
     }
 

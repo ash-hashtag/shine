@@ -1,5 +1,6 @@
-//! Analysis → Optimise…: let Shine find the parameter values that bring an
-//! output to a goal (desktop app: the optimiser runs natively).
+//! Analysis → Optimise…: let Shine find the parameter values that bring
+//! outputs to their goals, at the design's wavelengths or across a band
+//! (desktop app: the optimiser runs natively).
 
 use egui::RichText;
 
@@ -26,14 +27,36 @@ pub struct VariableRow {
     pub max: f64,
 }
 
+/// One output to aim for, as listed in the window.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetRow {
+    pub output: Option<String>,
+    pub goal: GoalKind,
+    pub target_mw: f64,
+    /// Met on average across a band of wavelengths (the design's first
+    /// laser tuned), rather than as the design is.
+    pub across_band: bool,
+    pub from_nm: f64,
+    pub to_nm: f64,
+    pub points: usize,
+    /// How much it counts against the others.
+    pub weight: f64,
+}
+
+impl Default for TargetRow {
+    fn default() -> Self {
+        Self { output: None, goal: GoalKind::Maximise, target_mw: 0.5, across_band: false, from_nm: 1545.0, to_nm: 1555.0, points: 11, weight: 1.0 }
+    }
+}
+
 /// What an optimisation found.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Found {
     /// The values, one per variable.
     pub values: Vec<f64>,
-    /// The output's power before and after, mW.
-    pub before: f64,
-    pub after: f64,
+    /// Each target's power before and after, mW (a band's average).
+    pub before: Vec<f64>,
+    pub after: Vec<f64>,
     pub simulations: usize,
 }
 
@@ -41,9 +64,7 @@ pub struct Found {
 pub struct OptimiseWindow {
     pub open: bool,
     pub variables: Vec<VariableRow>,
-    pub output: Option<String>,
-    pub goal: GoalKind,
-    pub target_mw: f64,
+    pub targets: Vec<TargetRow>,
     pub steps: u64,
     /// The last run, or why it failed.
     pub result: Option<Result<Found, String>>,
@@ -51,7 +72,7 @@ pub struct OptimiseWindow {
 
 impl Default for OptimiseWindow {
     fn default() -> Self {
-        Self { open: false, variables: Vec::new(), output: None, goal: GoalKind::Maximise, target_mw: 0.5, steps: 300, result: None }
+        Self { open: false, variables: Vec::new(), targets: vec![TargetRow::default()], steps: 300, result: None }
     }
 }
 
@@ -74,25 +95,31 @@ impl Workspace {
     /// Run the optimiser on the active design.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn run_optimise(&mut self) {
-        use crate::panels::circuit::optimise::{Goal, Objective, Variable, optimise};
+        use crate::panels::circuit::optimise::{Band, Goal, Target, Variable, optimise_targets};
         let Some(id) = self.active else { return };
         let Some(doc) = self.project.doc(id) else { return };
         let w = &self.optimise_window;
-        let Some(output) = w.output.clone() else {
-            self.optimise_window.result = Some(Err("Choose the output to optimise".into()));
-            return;
-        };
+        let mut targets = Vec::new();
+        for t in &w.targets {
+            let Some(output) = t.output.clone() else {
+                self.optimise_window.result = Some(Err("Choose an output for each goal".into()));
+                return;
+            };
+            let goal = match t.goal {
+                GoalKind::Maximise => Goal::Maximise,
+                GoalKind::Minimise => Goal::Minimise,
+                GoalKind::Target => Goal::Target(t.target_mw),
+            };
+            let band = t.across_band.then_some(Band { from_nm: t.from_nm, to_nm: t.to_nm, points: t.points });
+            targets.push(Target { output, goal, band, weight: t.weight });
+        }
         let vars: Vec<Variable> = w.variables.iter().map(|v| Variable { item: v.item, param: v.param.clone(), min: v.min, max: v.max }).collect();
-        let goal = match w.goal {
-            GoalKind::Maximise => Goal::Maximise,
-            GoalKind::Minimise => Goal::Minimise,
-            GoalKind::Target => Goal::Target(w.target_mw),
-        };
         let catalog = self.catalog();
         let layout = doc.layout();
         let names = |inst| layout.instance(inst).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
         let started = web_time::Instant::now();
-        let r = optimise(layout, doc.panel().cell_um, &self.project, &doc.panel().machine, Some(id), &vars, &Objective { output, goal }, w.steps, &names);
+        let read = crate::panels::circuit::optimise::read_outputs(&names);
+        let r = optimise_targets(layout, doc.panel().cell_um, &self.project, &doc.panel().machine, Some(id), &vars, &targets, w.steps, &read);
         tracing::debug!("Optimised in {} simulations, {:?}", r.simulations, started.elapsed());
         self.optimise_window.result = Some(match r.error {
             Some(e) => Err(e),
@@ -151,7 +178,7 @@ impl Workspace {
             .show(ctx, |ui| {
                 let w = &mut self.optimise_window;
                 ui.label(
-                    RichText::new("Shine adjusts the parameters below, within their bounds, until the output meets the goal. Each step is a full simulation; it finds the best values near the current ones.")
+                    RichText::new("Shine adjusts the parameters below, within their bounds, until the outputs meet their goals (weighted, summed), as the design is or on average across a band of wavelengths. Each step is a full simulation (a band, one per wavelength); it finds the best values near the current ones.")
                         .small()
                         .weak(),
                 );
@@ -187,48 +214,83 @@ impl Workspace {
                         ui.label(RichText::new("Select a part or block to add its parameters.").small().weak());
                     }
                 }
-                ui_kit::section(ui, "Goal");
-                ui.horizontal_wrapped(|ui| {
-                    let l = ui.label("Output").id;
-                    egui::ComboBox::from_id_salt("optimise_output")
-                        .selected_text(w.output.as_deref().unwrap_or("Choose…"))
-                        .show_ui(ui, |ui| {
-                            for n in &outputs {
-                                ui.selectable_value(&mut w.output, Some(n.clone()), n);
+                ui_kit::section(ui, "Goals");
+                let several = w.targets.len() > 1;
+                let mut remove_target = None;
+                for (k, t) in w.targets.iter_mut().enumerate() {
+                    ui.push_id(("target", k), |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            let l = ui.label("Output").id;
+                            egui::ComboBox::from_id_salt("optimise_output")
+                                .selected_text(t.output.as_deref().unwrap_or("Choose…"))
+                                .show_ui(ui, |ui| {
+                                    for n in &outputs {
+                                        ui.selectable_value(&mut t.output, Some(n.clone()), n);
+                                    }
+                                })
+                                .response
+                                .labelled_by(l);
+                            ui.selectable_value(&mut t.goal, GoalKind::Maximise, "Maximise");
+                            ui.selectable_value(&mut t.goal, GoalKind::Minimise, "Minimise");
+                            ui.selectable_value(&mut t.goal, GoalKind::Target, "Reach");
+                            if t.goal == GoalKind::Target {
+                                ui.add(egui::DragValue::new(&mut t.target_mw).range(0.0..=1e6).speed(0.001).max_decimals(6).suffix(" mW"))
+                                    .accessible_name("Target power");
                             }
-                        })
-                        .response
-                        .labelled_by(l);
-                    ui.selectable_value(&mut w.goal, GoalKind::Maximise, "Maximise");
-                    ui.selectable_value(&mut w.goal, GoalKind::Minimise, "Minimise");
-                    ui.selectable_value(&mut w.goal, GoalKind::Target, "Reach");
-                    if w.goal == GoalKind::Target {
-                        ui.add(egui::DragValue::new(&mut w.target_mw).range(0.0..=1e6).speed(0.001).max_decimals(6).suffix(" mW"))
-                            .accessible_name("Target power");
-                    }
-                });
+                            if several {
+                                let l = ui.label("weight").id;
+                                ui.add(egui::DragValue::new(&mut t.weight).range(0.0..=1e6).speed(0.05)).labelled_by(l);
+                                if ui.small_button("×").accessible_name("Remove this goal").clicked() {
+                                    remove_target = Some(k);
+                                }
+                            }
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            ui.checkbox(&mut t.across_band, "Across a band")
+                                .on_hover_text("Met on average across these wavelengths, the design's first laser tuned to each");
+                            if t.across_band {
+                                ui.add(egui::DragValue::new(&mut t.from_nm).range(200.0..=2000.0).speed(0.1).suffix(" nm")).accessible_name("Band from");
+                                ui.label("to");
+                                ui.add(egui::DragValue::new(&mut t.to_nm).range(200.0..=2000.0).speed(0.1).suffix(" nm")).accessible_name("Band to");
+                                let l = ui.label("points").id;
+                                ui.add(egui::DragValue::new(&mut t.points).range(2..=201)).labelled_by(l);
+                            }
+                        });
+                    });
+                    ui.add_space(2.0);
+                }
+                if let Some(k) = remove_target {
+                    w.targets.remove(k);
+                }
+                if ui.small_button("+ Another output").on_hover_text("Aim for several outputs at once, each weighted").clicked() {
+                    w.targets.push(TargetRow::default());
+                }
                 ui.horizontal(|ui| {
                     let l = ui.label("At most").id;
                     ui.add(egui::DragValue::new(&mut w.steps).range(10..=5000)).labelled_by(l);
                     ui.label(RichText::new("steps").small().weak());
-                    let ready = !w.variables.is_empty() && w.output.is_some() && cfg!(not(target_arch = "wasm32"));
+                    let ready = !w.variables.is_empty() && w.targets.iter().all(|t| t.output.is_some()) && cfg!(not(target_arch = "wasm32"));
                     run = ui
                         .add_enabled(ready, egui::Button::new(RichText::new("▶  Optimise").strong()))
-                        .on_disabled_hover_text(if cfg!(target_arch = "wasm32") { "Optimisation runs in the desktop app" } else { "Add a parameter and choose an output" })
+                        .on_disabled_hover_text(if cfg!(target_arch = "wasm32") { "Optimisation runs in the desktop app" } else { "Add a parameter and choose an output for each goal" })
                         .clicked();
                 });
                 match &w.result {
                     Some(Ok(found)) => {
                         ui.separator();
-                        ui.label(
-                            RichText::new(format!(
-                                "{} → {}  ({} simulations)",
-                                units::format_power(found.before, unit),
-                                units::format_power(found.after, unit),
-                                found.simulations
-                            ))
-                            .strong(),
-                        );
+                        for (t, (b, a)) in w.targets.iter().zip(found.before.iter().zip(&found.after)) {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{}: {} → {}{}",
+                                    t.output.as_deref().unwrap_or(""),
+                                    units::format_power(*b, unit),
+                                    units::format_power(*a, unit),
+                                    if t.across_band { " (the band's average)" } else { "" }
+                                ))
+                                .strong(),
+                            );
+                        }
+                        ui.label(RichText::new(format!("{} simulations", found.simulations)).small().weak());
                         for (k, (v, x)) in w.variables.iter().zip(&found.values).enumerate() {
                             ui.label(RichText::new(format!("{} · {} = {x:.6}", names.get(k).map_or("", String::as_str), v.param)).monospace());
                         }

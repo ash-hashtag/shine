@@ -196,6 +196,33 @@ pub enum Goal {
     Target,
 }
 
+/// One output an optimisation aims for, among several: its goal (and
+/// `target_mw` for Target), met as the design is or, with `band_points` of 2
+/// or more, on average across `band_from_nm`…`band_to_nm` (the design's first
+/// laser tuned to each), and its `weight` against the others.
+#[data]
+#[derive(Clone)]
+pub struct Aim {
+    pub output: String,
+    pub goal: Goal,
+    pub target_mw: f64,
+    pub band_from_nm: f64,
+    pub band_to_nm: f64,
+    pub band_points: u32,
+    pub weight: f64,
+}
+
+/// What an optimisation of several aims found: the best values, each aim's
+/// power before and after (mW; a band's average), and the simulations.
+#[data]
+#[derive(Clone)]
+pub struct Aimed {
+    pub values: Vec<f64>,
+    pub before_mw: Vec<f64>,
+    pub after_mw: Vec<f64>,
+    pub simulations: u32,
+}
+
 /// What an optimisation found: the best values (one per variable), the
 /// output's power before and after, and how many simulations it took.
 #[data]
@@ -615,6 +642,29 @@ impl Design {
         };
         let r = self.0.optimise(&vars, &output, goal, steps)?;
         Ok(Optimised { values: r.values, before_mw: r.before_mw, after_mw: r.after_mw, simulations: r.simulations })
+    }
+
+    /// Adjust the variables to bring several outputs towards their aims at
+    /// once (weighted and summed), each as the design is or across a band of
+    /// wavelengths: a filter's shape, or one output up and another down.
+    /// Not in the browser.
+    pub fn optimise_aims(&self, variables: Vec<Variable>, aims: Vec<Aim>, #[boltffi::default(300)] steps: u32) -> Result<Aimed, ShineError> {
+        let vars = self.variables(&variables)?;
+        let aims: Vec<api::Aim> = aims
+            .iter()
+            .map(|a| api::Aim {
+                output: a.output.clone(),
+                goal: match a.goal {
+                    Goal::Maximise => api::Goal::Maximise,
+                    Goal::Minimise => api::Goal::Minimise,
+                    Goal::Target => api::Goal::Target(a.target_mw),
+                },
+                band: (a.band_points >= 2).then_some((a.band_from_nm, a.band_to_nm, a.band_points)),
+                weight: a.weight,
+            })
+            .collect();
+        let r = self.0.optimise_aims(&vars, &aims, steps)?;
+        Ok(Aimed { values: r.values, before_mw: r.before_mw, after_mw: r.after_mw, simulations: r.simulations })
     }
 
     /// Set the variables to values (what an optimisation found).

@@ -42,7 +42,7 @@ pub use design::Design;
 pub use error::{Error, Result};
 pub use part::{Part, Port};
 pub use project::{Project, TransferFunction, layer_scale};
-pub use records::{Complex, Direction, Goal, Matrix, Optimised, Param, PortInfo, PortKind, Reading, Readouts, Series, Stats, Variation};
+pub use records::{Aim, Aimed, Complex, Direction, Goal, Matrix, Optimised, Param, PortInfo, PortKind, Reading, Readouts, Series, Stats, Variation};
 
 #[cfg(test)]
 mod tests;

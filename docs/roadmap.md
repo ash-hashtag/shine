@@ -76,8 +76,9 @@ want them.
 - [x] **Optimisation**: Shine finds the parameter values (couplings, lengths, phases) that
       maximise, minimise or reach a target power at an output (Analysis → Optimise…,
       desktop)
-- [ ] **Optimise a response**: targets over a band of wavelengths (a filter's shape, a
-      resonance's position), and several outputs at once
+- [x] **Optimise a response**: goals over a band of wavelengths (a filter's shape, a
+      resonance's position), and several outputs at once, weighted, in the app and the
+      libraries
 
 ## Milestone: design at scale
 

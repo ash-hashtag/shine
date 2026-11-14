@@ -176,6 +176,44 @@ pub enum Goal {
     Target(f64),
 }
 
+/// One output an optimisation aims for, among several: its goal, as the
+/// design is or on average across a band of wavelengths (the design's first
+/// laser tuned), and how much it counts against the others.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Aim {
+    pub output: String,
+    pub goal: Goal,
+    /// From and to (nm) and how many points; None, as the design is.
+    pub band: Option<(f64, f64, u32)>,
+    pub weight: f64,
+}
+
+impl Aim {
+    /// `output` towards `goal`, as the design is, weight 1.
+    pub fn new(output: &str, goal: Goal) -> Self {
+        Self { output: output.to_owned(), goal, band: None, weight: 1.0 }
+    }
+
+    /// Across a band of wavelengths instead, on average.
+    pub fn across(self, from_nm: f64, to_nm: f64, points: u32) -> Self {
+        Self { band: Some((from_nm, to_nm, points)), ..self }
+    }
+
+    pub fn weighted(self, weight: f64) -> Self {
+        Self { weight, ..self }
+    }
+}
+
+/// What an optimisation of several aims found: the best values, each aim's
+/// power before and after (mW, a band's average), and the simulations.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Aimed {
+    pub values: Vec<f64>,
+    pub before_mw: Vec<f64>,
+    pub after_mw: Vec<f64>,
+    pub simulations: u32,
+}
+
 /// What an optimisation found.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Optimised {

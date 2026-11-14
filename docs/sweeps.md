@@ -145,9 +145,21 @@ argmin library): each step is a full simulation, light and electronics, so it wo
 any design. It shows the power before and after and the values it found; **Apply to the
 design** puts them in (Ctrl+Z undoes it).
 
+**Several outputs and bands.** **+ Another output** adds more goals, each with a weight:
+Shine minimises their weighted sum, so one output can be pushed up while another is kept
+dark, or two splits set at once. **Across a band** makes a goal hold on average across a
+band of wavelengths instead of only at the laser's own: Shine tunes the design's first
+laser to each of the band's points (in parallel) at every step, so a filter's passband or
+a resonance's position can be shaped. Each goal shows its power before and after (a
+band's average).
+
 It finds the best values near the current ones, so start from a sensible design. For
 example, minimising a lossy ring's through port at resonance over its coupling finds
-critical coupling, where the coupling equals the round-trip loss (κ = 1 − a²).
+critical coupling, where the coupling equals the round-trip loss (κ = 1 − a²); minimising
+it across a band around the resonance widens the notch.
+
+The libraries do the same: `design.optimise_aims(variables, aims)`, each aim an output, a
+goal, an optional band and a weight ([Python](python.md#analysis)).
 
 ## Exporting
 

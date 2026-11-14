@@ -1396,16 +1396,16 @@ fn the_optimiser_finds_a_coupling_and_applies_it() {
         shine::panels::circuit::sweep::outputs(&p.layout, p.outcome().unwrap(), &names).into_iter().map(|o| o.0).find(|n| n.ends_with(" out1"))
     };
     {
-        let w = &mut h.state_mut().optimise_window;
-        w.output = bar;
-        w.goal = shine::panels::workspace::GoalKind::Target;
-        w.target_mw = 0.25;
+        let t = &mut h.state_mut().optimise_window.targets[0];
+        t.output = bar;
+        t.goal = shine::panels::workspace::GoalKind::Target;
+        t.target_mw = 0.25;
     }
     h.run_steps(2);
     h.get_by_label("▶  Optimise").click();
     h.run_steps(3);
     let Some(Ok(found)) = h.state().optimise_window.result.clone() else { panic!("{:?}", h.state().optimise_window.result) };
-    assert!((found.values[0] - 0.75).abs() < 1e-3 && (found.after - 0.25).abs() < 1e-5, "{found:?}");
+    assert!((found.values[0] - 0.75).abs() < 1e-3 && (found.after[0] - 0.25).abs() < 1e-5, "{found:?}");
 
     // Apply it to the design, and undo.
     h.get_by_label("Apply to the design").click();

@@ -33,7 +33,7 @@ pub use matrix_window::MatrixWindow;
 mod library_window;
 mod monte_carlo_window;
 mod optimise_window;
-pub use optimise_window::{Found, GoalKind, OptimiseWindow, VariableRow};
+pub use optimise_window::{Found, GoalKind, OptimiseWindow, TargetRow, VariableRow};
 mod transmission_window;
 pub use monte_carlo_window::MonteCarloWindow;
 pub use transmission_window::{Quantity, TransmissionWindow};

@@ -38,6 +38,9 @@ released: its changes are here.)
   from training for light to building, running and checking the chip, with
   `shine network WEIGHTS.json --out CHIP.shine` building it from any two-layer
   network's weights.
+- Optimising a response: several outputs at once, weighted, each as the design is or on
+  average across a band of wavelengths (the laser tuned to each point, in parallel), in
+  Analysis → Optimise… and `optimise_aims` in the libraries.
 - Matrices as light: any matrix W (any shape, real or complex) becomes a component
   computing W x / σmax from two MZI meshes and an attenuator per mode, or a unitary one
   mesh: **Component → New layer from a matrix…**, `shine layer`, and

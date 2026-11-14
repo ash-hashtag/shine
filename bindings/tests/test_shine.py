@@ -105,6 +105,22 @@ class Library(unittest.TestCase):
         laser.to(chip.place(f)).to(pd)
         self.assertAlmostEqual(chip.simulate().power_mw(pd), 0.25, places=12)
 
+    def test_several_aims_across_a_band(self):
+        project = shine.Project()
+        chip = project.new_design("Split")
+        laser, dc = chip.laser(), chip.coupler(0.5)
+        bar, cross = chip.detector(), chip.detector()
+        laser.to(dc)
+        chip.connect(dc.port("out1"), bar.port("in"))
+        chip.connect(dc.port("out2"), cross.port("in"))
+        aims = [
+            shine.Aim(output=bar.name(), goal=shine.Goal.TARGET, target_mw=0.25, band_from_nm=1540.0, band_to_nm=1560.0, band_points=5, weight=1.0),
+            shine.Aim(output=cross.name(), goal=shine.Goal.TARGET, target_mw=0.75, band_from_nm=0.0, band_to_nm=0.0, band_points=0, weight=1.0),
+        ]
+        r = chip.optimise_aims([shine.Variable(part=dc.name(), param="coupling", min=0.0, max=1.0)], aims, 200)
+        self.assertAlmostEqual(r.values[0], 0.75, places=3)
+        self.assertAlmostEqual(r.after_mw[1], 0.75, places=5)
+
     def test_a_weight_matrix_becomes_a_layer_of_light(self):
         rows = [[0.5, -1.0, 2.0], [0.25, 0.0, 1.0]]
         w = shine.Matrix(rows=2, cols=3, values=[shine.Complex(re=x, im=0.0) for row in rows for x in row])

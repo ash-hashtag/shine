@@ -239,3 +239,29 @@ fn a_weight_matrix_becomes_a_layer_of_light() -> Result<()> {
     assert!(p.new_weight_layer("Bad", &bad).unwrap_err().to_string().contains("needs 4 values"));
     Ok(())
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn several_aims_at_once_and_across_a_band() -> Result<()> {
+    // 0.25 mW to one detector and 0.75 mW to the other, on average across
+    // 1540–1560 nm: a coupler (flat in wavelength) at κ = 0.75.
+    let p = Project::new();
+    let chip = p.new_design("Split");
+    let laser = chip.laser(1550.0, 1.0)?;
+    let dc = chip.coupler(0.5)?;
+    let (bar, cross) = (chip.detector(), chip.detector());
+    laser.to(&dc)?;
+    chip.connect(&dc.port("out1")?, &bar.port("in")?)?;
+    chip.connect(&dc.port("out2")?, &cross.port("in")?)?;
+    let aims = [
+        Aim::new(&bar.name(), Goal::Target(0.25)).across(1540.0, 1560.0, 5),
+        Aim::new(&cross.name(), Goal::Target(0.75)).weighted(2.0),
+    ];
+    let r = chip.optimise_aims(&[(dc.clone(), "coupling".into(), 0.0, 1.0)], &aims, 200)?;
+    assert!(close(r.values[0], 0.75, 1e-4), "κ {}", r.values[0]);
+    assert!(close(r.before_mw[0], 0.5, 1e-12) && close(r.after_mw[0], 0.25, 1e-6) && close(r.after_mw[1], 0.75, 1e-6), "{r:?}");
+    assert!(r.simulations > 5 * 20, "the band is simulated each step: {}", r.simulations);
+    let e = chip.optimise_aims(&[(dc, "coupling".into(), 0.0, 1.0)], &[Aim::new("Nothing", Goal::Maximise)], 10).unwrap_err();
+    assert!(e.to_string().contains("no output “Nothing”"), "{e}");
+    Ok(())
+}

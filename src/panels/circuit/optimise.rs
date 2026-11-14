@@ -2,6 +2,12 @@
 //! that make an output reach a goal, by Nelder–Mead (from `argmin`), which
 //! needs no derivatives: each step is a full simulation. It finds a local
 //! optimum, starting from the design's current values.
+//!
+//! [`optimise_targets`] aims for several things at once: each target an
+//! output's power towards a goal, at the design's own wavelengths or across
+//! a band (its first laser tuned point by point, the goal met on average),
+//! weighted and summed. So a filter's response can be shaped over a band,
+//! or one output maximised while another is kept dark.
 
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
@@ -101,6 +107,165 @@ impl CostFunction for Cost<'_, '_> {
         };
         Ok(cost + 1e3 * outside)
     }
+}
+
+/// A band of wavelengths a target is met across, on average.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Band {
+    pub from_nm: f64,
+    pub to_nm: f64,
+    pub points: usize,
+}
+
+/// One thing an optimisation aims for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Target {
+    /// The output, as sweeps and readings name it.
+    pub output: String,
+    pub goal: Goal,
+    /// Across this band (the design's first laser tuned); None, as it is.
+    pub band: Option<Band>,
+    /// How much it counts against the other targets.
+    pub weight: f64,
+}
+
+/// What [`optimise_targets`] found: the values, the total cost before and
+/// after (lower is better), and each target's power before and after (mW,
+/// the band's average for a band).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Response {
+    pub values: Vec<f64>,
+    pub cost_before: f64,
+    pub cost_after: f64,
+    pub before: Vec<f64>,
+    pub after: Vec<f64>,
+    pub simulations: usize,
+    pub error: Option<String>,
+}
+
+/// The laser a band tunes: the layout's first, a part or a block.
+pub fn tunable_laser(layout: &Layout) -> Option<Item> {
+    use crate::panels::optics::model::{BlockRef, Builtin, OpticComponentKind};
+    layout
+        .components
+        .iter()
+        .position(|c| matches!(c.kind, OpticComponentKind::Laser { .. }))
+        .map(Item::Part)
+        .or_else(|| layout.instances.iter().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::Laser { .. }))).map(|i| Item::Box(i.id)))
+}
+
+/// How far a power is from a goal: lower is better.
+fn miss(goal: Goal, p: f64) -> f64 {
+    match goal {
+        Goal::Maximise => -p,
+        Goal::Minimise => p,
+        Goal::Target(t) => (p - t).powi(2),
+    }
+}
+
+/// What a simulated layout's outputs read, by name, in mW.
+pub type Read<'a> = dyn Fn(&Layout, &super::sim::Outcome) -> Vec<(String, f64)> + Sync + 'a;
+
+/// Each target's power (mW, a band's average) and the weighted cost, for a
+/// simulated layout; `simulations` counts the band's.
+#[allow(clippy::too_many_arguments)]
+fn evaluate(
+    layout: &Layout,
+    outcome: &super::sim::Outcome,
+    cell_um: f64,
+    docs: &(dyn Documents + Sync),
+    machine: &Machine,
+    root: Option<DocId>,
+    targets: &[Target],
+    read: &Read,
+    simulations: &std::sync::atomic::AtomicUsize,
+) -> Result<(Vec<f64>, f64), String> {
+    let here = read(layout, outcome);
+    let find = |there: &[(String, f64)], name: &str| {
+        there.iter().find(|o| o.0 == name).map(|o| o.1).ok_or_else(|| {
+            let names: Vec<&str> = there.iter().map(|o| o.0.as_str()).collect();
+            format!("no output “{name}”; there are: {}", names.join(", "))
+        })
+    };
+    let mut powers = Vec::with_capacity(targets.len());
+    let mut cost = 0.0;
+    for t in targets {
+        let samples: Vec<f64> = match &t.band {
+            None => vec![find(&here, &t.output)?],
+            Some(b) => {
+                // The first laser tuned to each wavelength of the band, in parallel.
+                let laser = tunable_laser(layout).ok_or("a band needs a laser to tune; this design has none")?;
+                let n = b.points.max(2);
+                let wavelengths: Vec<f64> = (0..n).map(|k| b.from_nm + (b.to_nm - b.from_nm) * k as f64 / (n - 1) as f64).collect();
+                simulations.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                crate::photonics::par::try_map(&wavelengths, |&wl| {
+                    let mut l = layout.clone();
+                    set(&mut l, laser, "wavelength", wl);
+                    let o = simulate(&l, cell_um, docs, machine, root, &Options::default());
+                    match o.error {
+                        Some(e) => Err(e),
+                        None => find(&read(&l, &o), &t.output),
+                    }
+                })?
+            }
+        };
+        let n = samples.len().max(1) as f64;
+        powers.push(samples.iter().sum::<f64>() / n);
+        cost += t.weight * samples.iter().map(|&p| miss(t.goal, p)).sum::<f64>() / n;
+    }
+    Ok((powers, cost))
+}
+
+/// What a layout's outputs read, named as sweeps and the app name them.
+pub fn read_outputs<'a>(names: &'a (dyn Fn(InstanceId) -> String + Sync)) -> impl Fn(&Layout, &super::sim::Outcome) -> Vec<(String, f64)> + Sync + 'a {
+    move |l, o| outputs(l, o, names).into_iter().map(|(name, p, _)| (name, p)).collect()
+}
+
+/// Adjust `vars` to bring `targets` (weighted, summed) towards their goals;
+/// `read` names and reads a simulated layout's outputs.
+#[allow(clippy::too_many_arguments)]
+pub fn optimise_targets(
+    layout: &Layout,
+    cell_um: f64,
+    docs: &(dyn Documents + Sync),
+    machine: &Machine,
+    root: Option<DocId>,
+    vars: &[Variable],
+    targets: &[Target],
+    max_steps: u64,
+    read: &Read,
+) -> Response {
+    let mut response = Response::default();
+    if targets.is_empty() {
+        response.error = Some("Choose at least one output to aim for".into());
+        return response;
+    }
+    let extra = std::sync::atomic::AtomicUsize::new(0);
+    let measure = |l: &Layout, o: &super::sim::Outcome| evaluate(l, o, cell_um, docs, machine, root, targets, read, &extra).map(|r| r.1);
+    let r = optimise_measured(layout, cell_um, docs, machine, root, vars, Goal::Minimise, max_steps, &measure);
+    response.simulations = r.simulations + extra.load(std::sync::atomic::Ordering::Relaxed);
+    if let Some(e) = r.error {
+        response.error = Some(e);
+        return response;
+    }
+    (response.values, response.cost_before, response.cost_after) = (r.values, r.before, r.after);
+    // Each target before and after, to show.
+    let each = |l: &Layout| -> Result<Vec<f64>, String> {
+        let o = simulate(l, cell_um, docs, machine, root, &Options::default());
+        if let Some(e) = o.error {
+            return Err(e);
+        }
+        evaluate(l, &o, cell_um, docs, machine, root, targets, read, &extra).map(|r| r.0)
+    };
+    let mut tuned = layout.clone();
+    for (v, &x) in vars.iter().zip(&response.values) {
+        set(&mut tuned, v.item, &v.param, x);
+    }
+    match (each(layout), each(&tuned)) {
+        (Ok(before), Ok(after)) => (response.before, response.after) = (before, after),
+        (Err(e), _) | (_, Err(e)) => response.error = Some(e),
+    }
+    response
 }
 
 /// Adjust `vars` to bring the objective's output towards its goal.
@@ -245,5 +410,45 @@ mod tests {
         let critical = 1.0 - a * a;
         assert!((r.values[0] - critical).abs() < 2e-3, "κ {} vs critical {critical}", r.values[0]);
         assert!(r.after < 1e-5 && r.after < r.before, "darkest: {} (from {})", r.after, r.before);
+    }
+
+    #[test]
+    fn two_outputs_are_aimed_at_together() {
+        // 1 mW in: 0.25 mW at one output and 0.75 mW at the other, at once:
+        // only κ = 0.75 does both.
+        let (l, b) = laser_into(Builtin::Coupler { coupling: 0.5 }, 1550.0);
+        let vars = [Variable { item: Item::Box(b), param: "coupling".into(), min: 0.0, max: 1.0 }];
+        let targets = [
+            Target { output: output(&l, " out1"), goal: Goal::Target(0.25), band: None, weight: 1.0 },
+            Target { output: output(&l, " out2"), goal: Goal::Target(0.75), band: None, weight: 1.0 },
+        ];
+        let r = optimise_targets(&l, 10.0, &NoDocuments, &Machine::default(), None, &vars, &targets, 200, &read_outputs(&names));
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!((r.values[0] - 0.75).abs() < 1e-4, "κ {}", r.values[0]);
+        assert!((r.before[0] - 0.5).abs() < 1e-12 && (r.after[0] - 0.25).abs() < 1e-6 && (r.after[1] - 0.75).abs() < 1e-6, "{r:?}");
+        assert!(r.cost_after < r.cost_before);
+    }
+
+    #[test]
+    fn a_rings_notch_is_shaped_across_a_band() {
+        // The through port darkened across 0.1 nm around the resonance, on
+        // average: the band's simulations are counted, and it gets darker.
+        let ring = Builtin::Ring { coupling: 0.02, length_um: 1000.0, n_eff: 2.4, loss_db_per_cm: 20.0, n_g: 2.4, reference_nm: 1550.0 };
+        let m = (2.4 * 1000.0 / 1.55_f64).round();
+        let resonance = 2.4 * 1_000_000.0 / m;
+        let (l, b) = laser_into(ring, resonance as f32);
+        let vars = [Variable { item: Item::Box(b), param: "coupling".into(), min: 0.01, max: 0.9 }];
+        let band = Band { from_nm: resonance - 0.05, to_nm: resonance + 0.05, points: 5 };
+        let targets = [Target { output: output(&l, " out1"), goal: Goal::Minimise, band: Some(band), weight: 1.0 }];
+        let r = optimise_targets(&l, 10.0, &NoDocuments, &Machine::default(), None, &vars, &targets, 100, &read_outputs(&names));
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(r.after[0] < 0.5 * r.before[0], "the band's average: {} → {}", r.before[0], r.after[0]);
+        assert!(r.simulations > 5 * 20, "each step simulates the band: {}", r.simulations);
+        // Without a laser, a band can't be tuned.
+        let mut dark = l.clone();
+        dark.components.clear();
+        dark.feeds.clear();
+        let r = optimise_targets(&dark, 10.0, &NoDocuments, &Machine::default(), None, &vars, &targets, 10, &read_outputs(&names));
+        assert!(r.error.is_some());
     }
 }
