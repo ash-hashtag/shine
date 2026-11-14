@@ -34,6 +34,9 @@ released: its changes are here.)
   `shine` program ([Optical neural network](neural-network.md#at-full-size)).
 - `shine simulate --input FILE|-` sets a design's inputs from a stream of numbers, several
   samples at a time; `--inputs` lists them and `--only TEXT` picks readings.
+- A how-to guide: [your neural network on a photonic chip](photonic-neural-networks.md),
+  from training for light to building, running and checking the chip; the chip builder
+  takes any two-layer network's weights.
 - Matrices as light: any matrix W (any shape, real or complex) becomes a component
   computing W x / σmax from two MZI meshes and an attenuator per mode, or a unitary one
   mesh: **Component → New layer from a matrix…**, `shine layer`, and

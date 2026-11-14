@@ -120,7 +120,8 @@ fn profiled<T>(what: &str, f: impl FnOnce() -> T) -> T {
 /// The chip's name, from what the network was trained on.
 fn chip_name(w: &Weights) -> String {
     match w.dataset.as_str() {
-        "" | "MNIST" => "MNIST digit recognizer".into(),
+        "" => "Optical neural network".into(),
+        "MNIST" => "MNIST digit recognizer".into(),
         d => format!("{d} classifier"),
     }
 }

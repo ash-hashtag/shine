@@ -48,6 +48,8 @@ pub struct Weights {
     pub w2: Vec<Vec<f64>>,
     /// H: the hidden powers are divided by it (and clamped to 1).
     pub hidden_scale: f64,
+    /// How well it did on its test set (0 if not said).
+    #[serde(default)]
     pub test_accuracy: f64,
     /// What it was trained on, e.g. "Fashion-MNIST" (empty if not said).
     #[serde(default)]

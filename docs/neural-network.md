@@ -16,6 +16,9 @@ neural network)**.
 It reads **93.6%** of 450 handwritten digits it was never trained on correctly, the same
 as the trained network. An electronic network of the same size reads 92.0%.
 
+To put a network of your own on a chip, see [Your neural network on a photonic
+chip](photonic-neural-networks.md).
+
 ## Using it
 
 Light and data flow left to right:

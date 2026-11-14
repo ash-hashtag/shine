@@ -27,6 +27,7 @@ Linux, Windows and macOS, as a Rust library, and as an MCP server for AI assista
 | [Examples](examples.md) | The ready-made circuits and what each one teaches |
 | [Validation](validation.md) | Shine's results against textbook formulas and an independent simulator |
 | [Optical neural network](neural-network.md) | A digit-reading AI inference chip, simulated end to end and checked against SAX and PhotonForge |
+| [Your neural network on a photonic chip](photonic-neural-networks.md) | How to train a network for light, build its chip from the weights, run it and check it |
 | [How the simulation works](simulation.md) | What is solved exactly, what is modelled simply, and the limits |
 | [Other tools and tapeout](interop.md) | S-parameters for circuit simulators, and a gdsfactory layout for a mask |
 | [Projects and files](files.md) | The `.shine` format, the browser and desktop builds, logging |
