@@ -71,7 +71,6 @@ pub struct Layer {
 pub fn weight_layer(project: &mut Project, name: &str, m: &Matrix) -> Result<Layer, String> {
     let s = svd(m)?;
     let (rows, cols) = (m.nrows(), m.ncols());
-    let k = rows.min(cols);
     let v = mesh_named(project, &s.v_adjoint, &format!("{name}: V† ({cols}×{cols} mesh)"), "V†");
     let u = mesh_named(project, &s.u, &format!("{name}: U ({rows}×{rows} mesh)"), "U");
     let mut l = Layout::default();
@@ -80,9 +79,9 @@ pub fn weight_layer(project: &mut Project, name: &str, m: &Matrix) -> Result<Lay
     for j in 0..cols {
         let pin = add(&mut l, Builtin::InputPin { name: format!("in{}", j + 1) }, (0, j as i32));
         link(&mut l, (pin, 0), (v_box, j));
-        if j < k {
+        if let Some(&amplitude) = s.attenuation.get(j) {
             // Mode j's singular value, as an attenuator.
-            let loss_db = -20.0 * s.attenuation[j].max(1e-12).log10();
+            let loss_db = -20.0 * amplitude.max(1e-12).log10();
             let a = add(&mut l, Builtin::Attenuator { loss_db }, (8, j as i32));
             link(&mut l, (v_box, j), (a, 0));
             link(&mut l, (a, 0), (u_box, j));
