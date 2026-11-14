@@ -984,3 +984,17 @@ fn inspecting_a_built_in_block_shows_its_settings() {
     let status = &panel(&mut ws, id).status.as_ref().unwrap().0;
     assert!(status.contains("“driver”, a function cell, is a built-in block"), "{status}");
 }
+
+#[test]
+fn an_example_opened_by_a_link_simulates() {
+    // Designs open paused, but a link to an example shows it working; a
+    // tab opened by a link simulates with `simulate`.
+    let mut ws = Workspace::default();
+    ws.apply_url_query("example=digit-recognizer-optical-neural-network");
+    assert_eq!(ws.simulation_flag().copied(), Some(true));
+    ws.apply_url_query("tab=linear-modulator");
+    assert_eq!(ws.project.doc(ws.active.unwrap()).unwrap().name, "Linear modulator");
+    assert_eq!(ws.simulation_flag().copied(), Some(false), "opened, it waits");
+    ws.apply_url_query("simulate");
+    assert_eq!(ws.simulation_flag().copied(), Some(true));
+}

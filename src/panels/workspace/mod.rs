@@ -617,11 +617,19 @@ impl Workspace {
         false
     }
 
+    /// Simulate the active tab live, or pause it.
+    pub fn simulate_active(&mut self, live: bool) {
+        if let Some(p) = self.active_panel() {
+            p.simulation_active = live;
+        }
+    }
+
     /// Apply a page URL query, as used by links into the web app:
     /// `example=<slug>` opens an example, `tab=<slug>` activates a document by
     /// name, `examples=demos|layouts|chips` opens the examples window and
-    /// `chip=<slug>` picks a chip-circuit example, and `sweep` opens and runs
-    /// the sweep window.
+    /// `chip=<slug>` picks a chip-circuit example, `sweep` opens and runs
+    /// the sweep window, and `simulate` simulates the active tab. An example
+    /// opened by a link simulates: a link shows it working.
     pub fn apply_url_query(&mut self, query: &str) {
         let slugify = |name: &str| {
             name.to_lowercase()
@@ -633,7 +641,14 @@ impl Workspace {
         for pair in query.trim_start_matches('?').split('&') {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
             match key {
-                "example" if !self.open_example(value) => tracing::warn!("Unknown example {value}"),
+                "example" => {
+                    if self.open_example(value) {
+                        self.simulate_active(true);
+                    } else {
+                        tracing::warn!("Unknown example {value}");
+                    }
+                }
+                "simulate" => self.simulate_active(true),
                 "tab" => {
                     let id = self
                         .project
