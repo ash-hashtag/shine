@@ -63,6 +63,8 @@ released: its changes are here.)
   being edited, bounded by size. The app and MCP server use mimalloc. On the 28×28 chip:
   building 503 s → 1.7 s, a simulation 26 s and 2.1 GB → 0.07 s, layer matrices from out
   of memory to 0.5 s, the editor 100–200 ms → 2–20 ms a frame.
+- SAX netlists leave out components' pins, zero-phase pass-throughs: 40% fewer instances
+  in the digit recognizer's layers (2 576 → 1 520), the same results to 10⁻¹⁰.
 - Saving the session writes the project only when it changed (it was written every 5 s,
   20 MB for the 28×28 chip), and panning or zooming no longer counts as changing a design.
 - Opening a document of over 50 000 parts asks first.

@@ -91,8 +91,8 @@ want them.
       ([Optical neural network](neural-network.md))
 - [x] **Program a mesh from a matrix**: any matrix as a component of MZI meshes, in the
       editor (Component → New layer from a matrix…), `shine layer` and the libraries
-- [ ] **Smaller SAX netlists**: leave out components' pins (zero-phase pass-throughs, a
-      third of the instances in a large design)
+- [x] **Smaller SAX netlists**: components' pins (zero-phase pass-throughs) are left out,
+      40% of the instances in the digit recognizer's layers
 - [x] **Simulate in the background**: editing a design whose simulation takes longer than
       a frame stays smooth, with results arriving when they're ready (desktop)
 - [x] **A chip of millions of parts**: an optical neural network for 28×28 pictures

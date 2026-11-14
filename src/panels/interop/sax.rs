@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 
 use super::gdsfactory::ident;
 use crate::panels::circuit::sim::{self, Machine};
-use crate::photonics::{C64, Kind, Matrix, NodeId};
+use crate::photonics::{C64, InPort, Kind, Matrix, NodeId, OutPort};
 use crate::panels::project::{DocId, Project, layout_interface};
 
 /// The result: the Python text, and what's in it.
@@ -175,14 +175,49 @@ pub fn export(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &st
     }
     // Sources and sinks aren't components in SAX: the netlist's ports are
     // where light goes in and comes out.
-    let kept: Vec<NodeId> = circuit
-        .nodes()
-        .filter(|&n| {
-            let c = circuit.component(n);
-            !matches!(c.kind(), Kind::Laser | Kind::Detector) && c.num_inputs() > 0 && c.num_outputs() > 0
-        })
-        .collect();
-    let kept_set: HashSet<NodeId> = kept.iter().copied().collect();
+    let parts = |n: NodeId| {
+        let c = circuit.component(n);
+        !matches!(c.kind(), Kind::Laser | Kind::Detector) && c.num_inputs() > 0 && c.num_outputs() > 0
+    };
+    // Components' pins are pass-throughs (a zero phase shift), a third of a
+    // big design's parts: left out, the light goes straight on. One is kept
+    // only where a port has nothing else to stand for (an input wired
+    // straight to an output).
+    let through = |n: NodeId| {
+        let c = circuit.component(n);
+        matches!(c.kind(), Kind::PhaseShifter { phase } if phase == 0.0) && c.num_inputs() == 1 && c.num_outputs() == 1
+    };
+    let mut kept_set: HashSet<NodeId> = circuit.nodes().filter(|&n| parts(n) && !through(n)).collect();
+    // Where light leaving `out` next meets a kept part, past pass-throughs.
+    let forward = |kept: &HashSet<NodeId>, out: OutPort| -> Option<InPort> {
+        let mut to = circuit.sink_of(out)?;
+        while !kept.contains(&to.node) && through(to.node) {
+            to = circuit.sink_of(to.node.output(0))?;
+        }
+        kept.contains(&to.node).then_some(to)
+    };
+    // Where light arriving at `input` last left a kept part.
+    let backward = |kept: &HashSet<NodeId>, input: InPort| -> Option<OutPort> {
+        let mut from = circuit.source_of(input)?;
+        while !kept.contains(&from.node) && through(from.node) {
+            from = circuit.source_of(from.node.input(0))?;
+        }
+        kept.contains(&from.node).then_some(from)
+    };
+    for p in &ports.inputs {
+        if !kept_set.contains(&p.node) && forward(&kept_set, p.node.output(0)).is_none() {
+            kept_set.insert(p.node);
+        }
+    }
+    for p in &ports.outputs {
+        if !kept_set.contains(&p.node) && backward(&kept_set, p.node.input(0)).is_none() {
+            kept_set.insert(p.node);
+        }
+    }
+    let kept: Vec<NodeId> = circuit.nodes().filter(|n| kept_set.contains(n)).collect();
+    // A port at a pass-through left out stands for the part beside it.
+    let input_end = |p: InPort| if kept_set.contains(&p.node) { Some(p) } else { forward(&kept_set, p.node.output(0)) };
+    let output_end = |p: OutPort| if kept_set.contains(&p.node) { Some(p) } else { backward(&kept_set, p.node.input(0)) };
 
     let mut instances = String::new();
     let mut tables = String::new();
@@ -236,7 +271,7 @@ pub fn export(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &st
     let mut links = 0;
     for &n in &kept {
         for k in 0..circuit.component(n).num_outputs() {
-            if let Some(to) = circuit.sink_of(n.output(k)).filter(|to| kept_set.contains(&to.node)) {
+            if let Some(to) = forward(&kept_set, n.output(k)) {
                 let _ = writeln!(connections, "        \"{},out{k}\": \"{},in{}\",", names[&n], names[&to.node], to.index);
                 links += 1;
             }
@@ -260,14 +295,14 @@ pub fn export(project: &Project, doc: DocId, wavelengths_nm: &[f64], source: &st
         .inputs
         .iter()
         .enumerate()
-        .filter(|(_, p)| kept_set.contains(&p.node))
+        .filter_map(|(k, &p)| Some((k, input_end(p)?)))
         .map(|(k, p)| (unique(iface.inputs.get(k).map_or("in", String::as_str)), format!("{},in{}", names[&p.node], p.index)))
         .collect();
     let outs: Vec<(String, String)> = ports
         .outputs
         .iter()
         .enumerate()
-        .filter(|(_, p)| kept_set.contains(&p.node))
+        .filter_map(|(k, &p)| Some((k, output_end(p)?)))
         .map(|(k, p)| (unique(iface.outputs.get(k).map_or("out", String::as_str)), format!("{},out{}", names[&p.node], p.index)))
         .collect();
 
