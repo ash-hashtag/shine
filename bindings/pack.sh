@@ -40,8 +40,8 @@ for py in ${PYTHONS:-}; do
   pythons+=(--python "$py")
 done
 # Python for the fix below: the first of PYTHONS, else python3.
-fixer=${PYTHONS:-python3}
-fixer=${fixer%% *}
+read -ra fixer <<<"${PYTHONS:-python3}"
+fixer=${fixer[0]:-python3}
 
 if [[ $what == python || $what == all ]]; then
   boltffi pack python ${release[@]+"${release[@]}"} ${pythons[@]+"${pythons[@]}"} --deny-skipped
