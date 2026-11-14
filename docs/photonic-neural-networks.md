@@ -12,6 +12,13 @@ for your own data. It covers two-layer classifiers, which Shine builds for you f
 weights; [further on](#layers-on-their-own) is how to build layers one at a time for
 anything else.
 
+![A two-layer optical neural network in Shine: the inputs, the laser and its splitter trees, the modulators, layer 1, the neurons in amber, layer 2 and the display reading the answer](img/neural-chip.webp)
+
+*Shine's digit recognizer, the chip this guide builds for your network, simulating: from
+the left, the value inputs (the picture), the laser split into one light per input, the
+modulators, layer 1, the neurons (amber: built-in electronics), layer 2's modulators,
+layer 2, and the readout, whose display shows the digit it reads.*
+
 ## What becomes light, and what stays electronic
 
 | In the network | On the chip | What it computes |
@@ -143,6 +150,11 @@ second) and count where the classes differ. For Shine's 28×28 chip, they never 
 
 ## Layers on their own
 
+![Inside a weight layer: input pins, the V† mesh, an attenuator per mode and the U mesh, then output pins](img/neural-layer.webp)
+
+*Inside a weight layer: the V† mesh, an attenuator per mode (the singular values) and
+the U mesh. The inspector says what it computes, with σmax.*
+
 For other shapes (more layers, other activations, a layer inside a bigger design) build
 each weight matrix as a component and wire the rest yourself:
 
@@ -156,7 +168,13 @@ Each layer computes W x / σmax (`layer_scale` gives σmax), with inputs `in1`�
 `out1`…. Between layers, a neuron is a function cell with one light input, whose
 expression is the activation on the detected power `p1` (for example
 `clamp(p1 * 2.5, 0, 1)`), driving a modulator on fresh light for the next layer
-([Electronics](electronics.md)). `shine network` builds the two-layer chip with the same blocks; its code, in Shine's
+([Electronics](electronics.md)).
+
+![A linear modulator: a Y-splitter, two heaters on two arms and a Y-combiner, with its driver, an amber function cell, setting the heaters from the value](img/neural-modulator.webp)
+
+*The linear modulator each input and neuron drives: a push-pull Mach–Zehnder whose
+driver (the amber function cell) sets the two heaters to ±(π/2 − asin v), so the light
+it passes is exactly v times the light in.* `shine network` builds the two-layer chip with the same blocks; its code, in Shine's
 repository (`src/panels/optics/digits.rs` and `src/panels/optics/layers.rs`), is the
 complete example to follow.
 

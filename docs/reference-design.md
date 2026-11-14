@@ -16,6 +16,8 @@ benchmark measures it.
 
 Open **File → Examples… → 16×16 photonic matrix processor**. Light flows left to right:
 
+![The 16×16 photonic matrix processor simulating: the laser and splitter tree on the left, sixteen value inputs and modulators, the 16×16 mesh, and the detectors on the right, three of them lit](img/matrix-processor.webp)
+
 1. **The laser** (*LS*, far left) shows its power and wavelength beneath it: 1 mW at
    1550 nm. **Select it** to change its power, wavelength or phase in the inspector on the
    right. The splitter tree (*1×N*) splits it into 16 lights of 1/16 each.

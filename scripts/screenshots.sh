@@ -3,7 +3,8 @@
 # headless Chromium.
 #   scripts/screenshots.sh <built site dir>
 # Writes web/public/screenshots/*.webp (site), docs/img/*.webp (docs) and the
-# Open Graph cards (web/public/og/).
+# Open Graph cards (web/public/og/). ONLY="name …" takes just those shots
+# (and skips the interactive ones and the cards).
 set -euo pipefail
 site=$1
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,9 +37,17 @@ shots=(
   "chips|examples=chips&chip=optical-fourier-transform|docs"
   "sweep|example=4-channel-wdm-optical-link&sweep|docs"
   "wdm|examples=chips&chip=wdm-demultiplexer|site"
+  # The reference design and the optical neural network, for their pages.
+  "matrix-processor|example=16-16-photonic-matrix-processor|docs"
+  "neural-chip|example=digit-recognizer-optical-neural-network|docs"
+  "neural-layer|example=digit-recognizer-optical-neural-network&tab=layer-1-16-16|docs"
+  "neural-modulator|example=digit-recognizer-optical-neural-network&tab=linear-modulator&simulate|docs"
 )
 for entry in "${shots[@]}"; do
   IFS='|' read -r name query dests <<<"$entry"
+  if [[ -n ${ONLY:-} && " $ONLY " != *" $name "* ]]; then
+    continue
+  fi
   chromium --headless=new --no-sandbox --hide-scrollbars \
     --use-angle=swiftshader --enable-unsafe-swiftshader \
     --force-color-profile=srgb --window-size=1400,900 --virtual-time-budget=10000 \
@@ -49,6 +58,10 @@ for entry in "${shots[@]}"; do
     echo "  $out/$name.webp"
   done
 done
+
+if [[ -n ${ONLY:-} ]]; then
+  exit 0
+fi
 
 # Interactive shots (menus, the parts browser) for the docs.
 chromium --headless=new --no-sandbox --hide-scrollbars \

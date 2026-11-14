@@ -42,12 +42,16 @@ Press Tab on a layer to see inside it, and Tab again on its meshes and MZI cells
 
 ## How it is built
 
+![The digit recognizer simulating in Shine: the 4×4 inputs, the laser and splitter trees, the modulators, layer 1, the neurons in amber, layer 2 and the display](img/neural-chip.webp)
+
 | Part | What it is | Size |
 |---|---|---|
 | **Linear modulator** | A push-pull Mach–Zehnder modulator with its driver: the driver sets the two arms' heaters to ±(π/2 − asin v), so the field out is exactly v times the field in, with no change of phase | 9 blocks |
 | **Layer** | A weight matrix W as W = U Σ V†: a mesh of MZIs for V†, an attenuator per output for Σ (the largest passing everything), a mesh for U. Both meshes are in the rectangular (Clements) arrangement, with balanced paths | Layer 1: 2 × 120 MZIs; layer 2: 120 + 45 MZIs |
 | **Neuron** | A function cell reading light: a photodetector, gain and clamp, driving the next modulator | |
 | **Chip** | 16 pixels, 32 modulators, 2 layers, 16 neurons, readout and display | 4 698 parts, 465 MZIs |
+
+![Layer 1 opened: the V† mesh, an attenuator per mode and the U mesh, with what it computes in the inspector](img/neural-layer.webp)
 
 The network was trained (`reference/digits/train.py`, with JAX) on exactly what the chip
 computes:
