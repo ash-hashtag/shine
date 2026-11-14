@@ -104,6 +104,9 @@ egui_extras = { version = "0.37.0", default-features = false, features = ["svg",
 # Component icons: reads the pictures people choose, scales them down and saves them as WebP.
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 web-time = "1.1.0"
+# Fetching: the desktop app's "Check for updates", and in the browser the
+# projects a link opens (?open=).
+ehttp = { version = "0.7.3", optional = true }
 postcard = { version = "1.1.3", features = ["use-std"] }
 # Fast hashing of a project, every frame, to know when it changed.
 foldhash = "0.2"
@@ -114,8 +117,6 @@ rand_distr = { version = "0.5", default-features = false, features = ["std"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.12.0"
 tracing-appender = { version = "0.2.5", optional = true }
-# The desktop app's "Check for updates" (the browser app is always current).
-ehttp = { version = "0.7.3", optional = true }
 # Reading S-parameter files (Touchstone 1 and 2): a port of scikit-rf.
 rust-rf = { version = "2.0.1", default-features = false, optional = true }
 # Scripted components: the QuickJS JavaScript engine, sandboxed (desktop only).

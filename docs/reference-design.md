@@ -14,7 +14,9 @@ benchmark measures it.
 
 ## Using it
 
-Open **File → Examples… → 16×16 photonic matrix processor**. Light flows left to right:
+Open **File → Examples… → 16×16 photonic matrix processor**, or [in your
+browser](https://shine.lupyd.com/app/?open=/reference/photonic-matrix-processor.shine&simulate).
+Light flows left to right:
 
 ![The 16×16 photonic matrix processor simulating: the laser and splitter tree on the left, sixteen value inputs and modulators, the 16×16 mesh, and the detectors on the right, three of them lit](img/matrix-processor.webp)
 

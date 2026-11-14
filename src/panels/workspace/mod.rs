@@ -580,8 +580,11 @@ impl Workspace {
             self.project = Project::from_bytes(bytes)?;
             self.tabs.clear();
             self.active = None;
-            if let Some(first) = self.project.documents.first().map(|d| d.id) {
-                self.open_tab(first);
+            // Its design, rather than one of the components it's built from
+            // (they may be saved first): the first document that isn't one.
+            let shown = self.project.documents.iter().find(|d| d.component.is_none()).or(self.project.documents.first());
+            if let Some(id) = shown.map(|d| d.id) {
+                self.open_tab(id);
             }
         } else {
             let json = std::str::from_utf8(bytes).map_err(|_| "not a Shine project".to_owned())?;
@@ -617,6 +620,12 @@ impl Workspace {
         false
     }
 
+    /// The egui context, for work that finishes between frames (downloads,
+    /// file dialogs, background simulations) to ask for one.
+    pub fn set_context(&mut self, ctx: egui::Context) {
+        self.ctx = Some(ctx);
+    }
+
     /// Simulate the active tab live, or pause it.
     pub fn simulate_active(&mut self, live: bool) {
         if let Some(p) = self.active_panel() {
@@ -628,7 +637,9 @@ impl Workspace {
     /// `example=<slug>` opens an example, `tab=<slug>` activates a document by
     /// name, `examples=demos|layouts|chips` opens the examples window and
     /// `chip=<slug>` picks a chip-circuit example, `sweep` opens and runs
-    /// the sweep window, and `simulate` simulates the active tab. An example
+    /// the sweep window, `open=/path/on/this/site.shine` fetches and opens a
+    /// project, and `simulate` simulates the active tab (or the project a link
+    /// opens, once it's here). An example
     /// opened by a link simulates: a link shows it working.
     pub fn apply_url_query(&mut self, query: &str) {
         let slugify = |name: &str| {
@@ -638,9 +649,13 @@ impl Workspace {
                 .collect::<Vec<_>>()
                 .join("-")
         };
-        for pair in query.trim_start_matches('?').split('&') {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let pairs: Vec<(&str, &str)> = query.trim_start_matches('?').split('&').map(|p| p.split_once('=').unwrap_or((p, ""))).collect();
+        let simulate = pairs.iter().any(|(k, _)| *k == "simulate");
+        for &(key, value) in &pairs {
             match key {
+                // A project on this site, fetched; simulated once it's here
+                // if the link says `simulate`.
+                "open" => self.open_link(value, simulate),
                 "example" => {
                     if self.open_example(value) {
                         self.simulate_active(true);
@@ -1015,7 +1030,11 @@ impl Workspace {
         }
         let start = web_time::Instant::now();
         let outcome = self.project.simulate(id, &panel.machine);
-        tracing::debug!("Simulated {} in {:?} ({} rounds)", id.0, start.elapsed(), outcome.iterations);
+        if start.elapsed().as_millis() >= 100 {
+            tracing::info!("Simulated {} in {:?} ({} rounds)", id.0, start.elapsed(), outcome.iterations);
+        } else {
+            tracing::debug!("Simulated {} in {:?} ({} rounds)", id.0, start.elapsed(), outcome.iterations);
+        }
         let ms = start.elapsed().as_secs_f64() * 1e3;
         self.stats.simulating += ms;
         self.stats.last_simulation_ms = ms;

@@ -103,7 +103,14 @@ directly:
 | `?examples=demos\|layouts\|chips` | open the examples window on that tab |
 | `?chip=<name>` | pick a chip-circuit example, e.g. `?examples=chips&chip=wdm-demultiplexer` |
 | `?sweep` | open the sweep window and run it, e.g. `?example=4-channel-wdm-optical-link&sweep` |
+| `?open=<path>` | fetch and open a project from this site, e.g. `?open=/reference/fashion-mnist-chip.shine` (paths on the site only) |
+| `?simulate` | simulate what opens; an example a link opens simulates anyway, as designs otherwise open paused |
 | `?renderer=webgpu` | use WebGPU instead of WebGL2 |
 
 Names are written in lower case with dashes. If the page fails to start, it shows the
 error instead of a blank page.
+
+The site serves the reference designs for such links: `/reference/photonic-matrix-processor.shine`,
+`/reference/digit-recognizer.shine` and `/reference/fashion-mnist-chip.shine` (15.6 MB).
+The browser keeps a few MB of a session between visits, so a project bigger than that
+isn't restored when the page reopens; open it again from its link or its file.

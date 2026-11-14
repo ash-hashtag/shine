@@ -11,7 +11,7 @@ of Mach–Zehnder interferometers does that with light in the time light takes t
 chip. This example is a complete small inference chip built that way: a two-layer optical
 neural network that reads handwritten digits. Shine simulates all of it, light, detectors
 and electronics together. Open it with **File → Examples… → Digit recognizer (optical
-neural network)**.
+neural network)**, or [in your browser](https://shine.lupyd.com/app/?example=digit-recognizer-optical-neural-network).
 
 It reads **93.6%** of 450 handwritten digits it was never trained on correctly, the same
 as the trained network. An electronic network of the same size reads 92.0%.
@@ -154,7 +154,10 @@ yourself, `--print-inputs` prints just the numbers:
 python examples/mnist.py --image shoe.png --print-inputs | shine simulate reference/mnist/fashion-mnist-chip.shine --input -
 ```
 
-The chip opens in the app as any project does (`shine reference/mnist/fashion-mnist-chip.shine`).
+The chip opens in the app as any project does (`shine reference/mnist/fashion-mnist-chip.shine`),
+or [in your browser](https://shine.lupyd.com/app/?open=/reference/fashion-mnist-chip.shine&simulate):
+it downloads (15.6 MB), opens in half a second and simulates its first picture in about
+7 s, its meshes solved on one thread (WebAssembly); press Space to pause it.
 
 ### Benchmarks
 

@@ -19,6 +19,8 @@ pub enum FilePurpose {
     Library,
     /// A matrix, as text, for New layer from a matrix.
     Matrix,
+    /// A project a link opened (`?open=`), simulated if it asked.
+    Link { simulate: bool },
     /// Dropped on the window, on the asset library or elsewhere.
     Dropped(DropTarget),
 }
@@ -68,6 +70,14 @@ impl Workspace {
             FilePurpose::Picture => self.set_dialog_picture(&file.name, &file.bytes),
             FilePurpose::Library => self.add_file_to_library(&file.name, &file.bytes),
             FilePurpose::Matrix => self.set_matrix_text(&file.name, &file.bytes),
+            FilePurpose::Link { simulate } => {
+                let (size, started) = (file.bytes.len(), web_time::Instant::now());
+                self.request_open(stem(&file.name), file.bytes, file.path);
+                tracing::info!("Opened {} ({:.1} MB) in {:?}", file.name, size as f64 / 1e6, started.elapsed());
+                if simulate && self.pending_open.is_none() {
+                    self.simulate_active(true);
+                }
+            }
             FilePurpose::Dropped(target) => self.drop_file(target, file),
         }
     }
@@ -250,6 +260,31 @@ impl Workspace {
                 let name = file.file_name();
                 let bytes = file.read().await;
                 incoming.lock().expect("not poisoned").push(IncomingFile::new(purpose, name, bytes));
+            }
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    /// Open the project at `path` on this site (a link's `?open=`), and
+    /// simulate it if `simulate`. Only paths on the same site: a link can't
+    /// make the app fetch from anywhere else.
+    pub fn open_link(&mut self, path: &str, simulate: bool) {
+        if !path.starts_with('/') || path.starts_with("//") || path.contains("://") || path.contains("..") {
+            self.notify(format!("Projects open from this site only: “{path}”"));
+            return;
+        }
+        let name = path.rsplit('/').next().unwrap_or("project").to_owned();
+        self.notify(format!("Opening {name}…"));
+        let incoming = self.incoming.clone();
+        let ctx = self.ctx.clone();
+        let purpose = FilePurpose::Link { simulate };
+        ehttp::fetch(ehttp::Request::get(path), move |result| {
+            match result {
+                Ok(r) if r.ok => incoming.lock().expect("not poisoned").push(IncomingFile::new(purpose, name, r.bytes)),
+                Ok(r) => tracing::warn!("Couldn't open {}: {} {}", r.url, r.status, r.status_text),
+                Err(e) => tracing::warn!("Couldn't open {name}: {e}"),
             }
             if let Some(ctx) = ctx {
                 ctx.request_repaint();

@@ -1042,3 +1042,21 @@ fn a_component_is_tried_on_its_own_with_test_inputs() {
     panel(&mut ws, id).toggle_test_light(Item::Box(input));
     assert!(passed(&mut ws) < 1e-15);
 }
+
+#[test]
+fn a_link_opens_a_project_from_the_site() {
+    use super::files::{FilePurpose, IncomingFile};
+    // Paths elsewhere are refused, before anything is fetched.
+    let mut ws = Workspace::default();
+    for bad in ["https://elsewhere.example/x.shine", "//elsewhere.example/x.shine", "reference/x.shine", "/a/../b.shine"] {
+        ws.open_link(bad, false);
+        assert!(ws.status.as_ref().unwrap().0.contains("from this site only"), "{bad}");
+    }
+    // What a link fetched opens, and simulates if the link said so.
+    let mut p = Project::new();
+    crate::panels::optics::digits::demo(&mut p);
+    ws.receive_file(IncomingFile::new(FilePurpose::Link { simulate: true }, "digit-recognizer.shine", p.to_bytes()));
+    let active = ws.project.doc(ws.active.unwrap()).unwrap();
+    assert!(active.component.is_none(), "the design opens, not a component: {}", active.name);
+    assert_eq!(ws.simulation_flag().copied(), Some(true));
+}

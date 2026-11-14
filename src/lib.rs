@@ -32,6 +32,12 @@ pub const APP_ID: &str = "Shine";
 mod app {
     use crate::panels::workspace::Workspace;
 
+    /// The most the session's project may take in the app's storage: the
+    /// browser's is a few MB a site; the desktop's is a file, so no limit.
+    fn too_big_to_keep(encoded: usize) -> bool {
+        cfg!(target_arch = "wasm32") && encoded > 4_000_000
+    }
+
     #[derive(Default)]
     pub struct ShineApp {
         pub workspace: Workspace,
@@ -39,12 +45,18 @@ mod app {
         /// rest of the session as last written: saving skips what's the same.
         saved_project: Option<u64>,
         saved_session: Option<String>,
+        /// The project as last saved was too big for the storage, so no
+        /// session is kept until it changes.
+        too_big: bool,
     }
 
     impl ShineApp {
         /// The app with the preferences and the session saved earlier.
         pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
             let mut app = Self::default();
+            // Known from the start, so work begun before the first frame (a
+            // link's download) can wake the app when it's done.
+            app.workspace.set_context(cc.egui_ctx.clone());
             if let Some(storage) = cc.storage {
                 app.load_from(storage);
             }
@@ -118,8 +130,22 @@ mod app {
             eframe::set_value(storage, crate::panels::prefs::STORAGE_KEY, &self.workspace.prefs);
             let fingerprint = self.workspace.project.fingerprint();
             if self.saved_project != Some(fingerprint) {
-                storage.set_string(session::PROJECT_KEY, session::base64_encode(&self.workspace.project.to_bytes()));
+                let encoded = session::base64_encode(&self.workspace.project.to_bytes());
                 self.saved_project = Some(fingerprint);
+                // The browser keeps a few MB per site: a project bigger than
+                // that (a chip of millions of parts) isn't kept, and neither
+                // is the rest of the session, so nothing stale comes back.
+                self.too_big = too_big_to_keep(encoded.len());
+                if self.too_big {
+                    tracing::info!("The project ({:.1} MB) is too big for the browser's storage; it isn't kept between visits", encoded.len() as f64 / 1e6);
+                    storage.remove_string(session::KEY);
+                    storage.remove_string(session::PROJECT_KEY);
+                    self.saved_session = None;
+                    return;
+                }
+                storage.set_string(session::PROJECT_KEY, encoded);
+            } else if self.too_big {
+                return;
             }
             let text = self.workspace.session_without_project().encode();
             if self.saved_session.as_deref() != Some(text.as_str()) {

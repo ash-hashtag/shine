@@ -36,6 +36,11 @@ released: its changes are here.)
   trained weights in `reference/mnist/fashion-mnist-weights.json`): 112 ms a picture through
   the whole chip, and the network's class on all 10 000 test pictures
   ([Optical neural network](neural-network.md#benchmarks)).
+- The reference designs on the website: links open them in the browser
+  (`?open=/reference/fashion-mnist-chip.shine&simulate`); the 3.1-million-part chip opens
+  in half a second and simulates in about 7 s there. A project opens on its design rather
+  than on one of its components, and one too big for the browser's storage isn't kept in
+  the session (it used to fail and then not restore).
 - `shine simulate --input FILE|-` sets a design's inputs from a stream of numbers, several
   samples at a time; `--inputs` lists them and `--only TEXT` picks readings.
 - A how-to guide: [your neural network on a photonic chip](photonic-neural-networks.md),
