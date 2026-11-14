@@ -106,10 +106,12 @@ want them.
       threads, kept between simulations until it changes
 - [x] **The editor costs what's on screen**: drawing and pointing go through a spatial
       index; per-frame work no longer reads the whole project
-- [ ] **Projects as databases**: a project file that is an indexed database (SQLite: one
-      file per project, documents, parts and connections as tables), so saving a small
-      change to a huge design writes only that change, and opening reads only what's
-      needed. A compact format of Shine's own later, if SQLite falls short
+- [x] **Projects as folders, in protobuf**: a file per design and component, referring to
+      each other by path, so components are shared between projects and saving writes
+      only what changed; the format is a Protocol Buffers schema
+      ([Projects and files](files.md#projects-as-folders))
+- [ ] **Folders in the browser** (File System Access API, Chrome and Edge), and Shine's
+      examples as read-only components to refer to rather than copy
 - [ ] **Load what's used**: documents read from the file when opened or simulated, the
       rest left on disk for the operating system's cache, so a project can be far bigger
       than memory

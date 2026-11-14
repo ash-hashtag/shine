@@ -174,9 +174,15 @@ impl Workspace {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn read_dropped(&mut self, purpose: FilePurpose, name: String, file: egui::DroppedFileHandle) {
-        // A folder, wherever it lands: its components go into the library.
+        // A project folder dropped on the workspace opens; any other folder,
+        // or one dropped on the library, has its components put in the library.
         if file.path().is_dir() {
-            self.import_folder(file.path());
+            let project = file.path().join(crate::panels::project::folder::MANIFEST).exists();
+            if project && matches!(purpose, FilePurpose::Dropped(DropTarget::Workspace)) {
+                self.open_folder(file.path());
+            } else {
+                self.import_folder(file.path());
+            }
             return;
         }
         match file.bytes() {

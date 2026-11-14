@@ -21,6 +21,7 @@ shine simulate wdm.shine
   Display 26,9   11
 ```
 
+The project can be a `.shine` file or a project folder ([Projects as folders](files.md#projects-as-folders)).
 It prints every reading of the first document that isn't a component: detectors and
 output ports (in mW and dBm), displays and registers. `--doc NAME` picks another
 document, and `--csv` prints the readings as CSV (name, value, unit).

@@ -427,7 +427,7 @@ fn decompose_matrix(args: &Map<String, Value>) -> Result<Value, String> {
 // ---- projects ------------------------------------------------------------------
 
 pub fn read_project(path: &Path) -> Result<Project, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
+    let bytes = crate::panels::project::folder::read_project(path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
     if !Project::is_project(&bytes) {
         return Err(format!("{} is not a Shine project file", path.display()));
     }

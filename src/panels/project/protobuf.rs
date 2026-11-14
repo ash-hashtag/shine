@@ -31,13 +31,17 @@ pub fn slug(name: &str) -> String {
     if words.is_empty() { "untitled".into() } else { words.join("-") }
 }
 
-/// Each document's path in a project folder: designs at the top, components
-/// in `components/`, named after them (numbered when two would clash).
-pub(crate) fn paths(documents: &[DocumentFile]) -> Vec<String> {
-    let mut taken = std::collections::HashSet::new();
+/// Each document's path in a project folder: the one it has in `known`,
+/// else one made from its name (designs at the top, components in
+/// `components/`, numbered when two would clash).
+pub(crate) fn paths(documents: &[DocumentFile], known: &HashMap<DocId, String>) -> Vec<String> {
+    let mut taken: std::collections::HashSet<String> = documents.iter().filter_map(|d| known.get(&d.id)).map(|p| p.to_lowercase()).collect();
     documents
         .iter()
         .map(|d| {
+            if let Some(path) = known.get(&d.id) {
+                return path.clone();
+            }
             let (folder, extension) = if d.component.is_some() { ("components/", COMPONENT_EXTENSION) } else { ("", DESIGN_EXTENSION) };
             let base = slug(&d.name);
             let mut n = 1;
@@ -53,52 +57,83 @@ pub(crate) fn paths(documents: &[DocumentFile]) -> Vec<String> {
 }
 
 /// The folder part of a path ("" at the top).
-fn folder_of(path: &str) -> &str {
+pub(crate) fn folder_of(path: &str) -> &str {
     path.rfind('/').map_or("", |i| &path[..i])
 }
 
-/// `to` written relative to the folder `from` ("/" separators).
-pub fn relative(from: &str, to: &str) -> String {
-    let from: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
-    let to_parts: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
-    let common = from.iter().zip(&to_parts).take_while(|(a, b)| a == b).count();
-    let mut out: Vec<&str> = vec![".."; from.len() - common];
-    out.extend(&to_parts[common..]);
-    out.join("/")
-}
-
-/// `path`, relative to the folder `from`, as a path from the top; `None` if
-/// it climbs above the top.
-pub fn resolve(from: &str, path: &str) -> Option<String> {
-    let mut parts: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
-    for p in path.split('/') {
-        match p {
+/// `path` with `.` and `name/..` taken out; `..` that climb above the top stay
+/// at the front (a file outside the project's folder).
+fn normalize(parts: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for p in parts {
+        match p.as_str() {
             "" | "." => {}
-            ".." => {
-                parts.pop()?;
+            ".." if out.last().is_some_and(|l| l != "..") => {
+                out.pop();
             }
-            p => parts.push(p),
+            _ => out.push(p),
         }
     }
-    Some(parts.join("/"))
+    out
+}
+
+fn split(path: &str) -> impl Iterator<Item = String> + '_ {
+    path.split('/').map(str::to_owned)
+}
+
+/// `path`, written relative to the folder `from`, as a path from the top
+/// of the project (starting with `..` if it is outside it), whose folder is
+/// `root` (as for [`relative`]).
+pub fn resolve(from: &str, path: &str, root: &str) -> String {
+    let full = normalize(split(from).chain(split(path)));
+    if !full.first().is_some_and(|p| p == "..") {
+        return full.join("/");
+    }
+    // Outside the project: the shortest way there from its folder.
+    relative("", &full.join("/"), root)
+}
+
+/// `to` written relative to the folder `from` ("/" separators); both are
+/// paths from the top of the project, whose folder is `root` (its full path
+/// if known, else its name: needed only when `from` is outside the project).
+pub fn relative(from: &str, to: &str, root: &str) -> String {
+    let from = normalize(split(from));
+    let to = normalize(split(to));
+    // Both from where the project's folder is, under as many unnamed folders
+    // as they could climb.
+    let up = from.iter().chain(&to).filter(|p| *p == "..").count();
+    let root: Vec<String> = root.split(['/', '\\']).filter(|s| !s.is_empty()).map(str::to_owned).collect();
+    let absolute = |parts: &[String]| -> Vec<String> {
+        let out: Vec<String> = (0..up).map(|k| format!("\u{0}{k}")).chain(root.iter().cloned()).collect();
+        normalize(out.into_iter().chain(parts.iter().cloned()))
+    };
+    let (from, to) = (absolute(&from), absolute(&to));
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut out: Vec<String> = vec!["..".to_owned(); from.len() - common];
+    out.extend(to[common..].iter().cloned());
+    out.join("/")
 }
 
 // ---- writing ------------------------------------------------------------------
 
-/// A project's documents as a bundle.
-pub(crate) fn bundle(documents: &[DocumentFile]) -> pb::Bundle {
-    let paths = paths(documents);
-    let path_of: HashMap<DocId, &str> = documents.iter().zip(&paths).map(|(d, p)| (d.id, p.as_str())).collect();
+/// A project's documents as a bundle, each under its path (`paths`, from
+/// [`paths`]); `root` is the project folder's name (see [`relative`]).
+pub(crate) fn bundle(documents: &[DocumentFile], paths: &[String], root: &str) -> pb::Bundle {
+    let path_of: HashMap<DocId, &str> = documents.iter().zip(paths).map(|(d, p)| (d.id, p.as_str())).collect();
     let files = documents
         .iter()
-        .zip(&paths)
-        .map(|(d, path)| {
-            let here = folder_of(path);
-            let reference = |id: DocId| path_of.get(&id).map(|to| relative(here, to));
-            pb::BundledFile { path: path.clone(), document: Some(document(d, &reference)), id: d.id.0 }
-        })
+        .zip(paths)
+        .map(|(d, path)| pb::BundledFile { path: path.clone(), document: Some(document_at(d, path, &path_of, root)), id: d.id.0 })
         .collect();
     pb::Bundle { files }
+}
+
+/// Document `d` as the file at `path` holds it: its boxes refer to
+/// components by their paths (`path_of`) relative to its folder.
+pub(crate) fn document_at(d: &DocumentFile, path: &str, path_of: &HashMap<DocId, &str>, root: &str) -> pb::Document {
+    let here = folder_of(path);
+    let reference = |id: DocId| path_of.get(&id).map(|to| relative(here, to, root));
+    document(d, &reference)
 }
 
 fn document(d: &DocumentFile, reference: &dyn Fn(DocId) -> Option<String>) -> pb::Document {
@@ -303,9 +338,11 @@ fn model(m: &ModelSpec) -> pb::Model {
 
 // ---- reading ------------------------------------------------------------------
 
-/// A bundle's documents, with their ids: each file's own if it has one
-/// (unique), else the next free one.
-pub(crate) fn documents(bundle: pb::Bundle) -> Result<Vec<DocumentFile>, String> {
+/// A bundle's documents and their paths, with their ids: each file's own if
+/// it has one (unique), else the next free one. `root` is the project's
+/// folder (see [`relative`]).
+pub(crate) fn documents(bundle: pb::Bundle, root: &str) -> Result<(Vec<DocumentFile>, Vec<String>), String> {
+    let paths: Vec<String> = bundle.files.iter().map(|f| resolve("", &f.path, root)).collect();
     let mut used = std::collections::HashSet::new();
     let mut ids: Vec<Option<DocId>> = bundle.files.iter().map(|f| (f.id != 0 && used.insert(f.id)).then_some(DocId(f.id))).collect();
     let mut next = used.iter().max().copied().unwrap_or(0) + 1;
@@ -315,18 +352,18 @@ pub(crate) fn documents(bundle: pb::Bundle) -> Result<Vec<DocumentFile>, String>
             next += 1;
         }
     }
-    let id_of: HashMap<String, DocId> = bundle.files.iter().zip(&ids).map(|(f, id)| (f.path.clone(), id.unwrap())).collect();
+    let id_of: HashMap<String, DocId> = paths.iter().zip(&ids).map(|(p, id)| (p.clone(), id.unwrap())).collect();
     // A box whose component isn't in the project refers to an id no
     // document has: it opens, and simulating it says the component is missing.
     let missing = std::cell::RefCell::new(HashMap::<String, DocId>::new());
-    bundle
+    let documents = bundle
         .files
         .into_iter()
         .zip(ids)
         .map(|(f, id)| {
-            let here = folder_of(&f.path).to_owned();
+            let here = folder_of(&resolve("", &f.path, root)).to_owned();
             let reference = |path: &str| -> DocId {
-                let full = resolve(&here, path).unwrap_or_else(|| path.to_owned());
+                let full = resolve(&here, path, root);
                 if let Some(&id) = id_of.get(&full) {
                     return id;
                 }
@@ -346,7 +383,8 @@ pub(crate) fn documents(bundle: pb::Bundle) -> Result<Vec<DocumentFile>, String>
                 layout: read_layout(d.layout.unwrap_or_default(), &reference)?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok((documents, paths))
 }
 
 fn component_meta(c: pb::ComponentInfo) -> ComponentMeta {
@@ -559,14 +597,25 @@ mod tests {
 
     #[test]
     fn paths_are_relative_and_resolve_back() {
-        assert_eq!(relative("", "components/mzi.shinecomp"), "components/mzi.shinecomp");
-        assert_eq!(relative("components", "components/mzi.shinecomp"), "mzi.shinecomp");
-        assert_eq!(relative("components/meshes", "components/mzi.shinecomp"), "../mzi.shinecomp");
-        assert_eq!(relative("components", "chip.shinedesign"), "../chip.shinedesign");
-        for (from, to) in [("", "a/b.x"), ("a", "a/b.x"), ("a/c", "a/b.x"), ("d", "a/b.x")] {
-            assert_eq!(resolve(from, &relative(from, to)).as_deref(), Some(to), "{from} → {to}");
+        let rel = |from, to| relative(from, to, "/work/kits/designs/chip");
+        assert_eq!(rel("", "components/mzi.shinecomp"), "components/mzi.shinecomp");
+        assert_eq!(rel("components", "components/mzi.shinecomp"), "mzi.shinecomp");
+        assert_eq!(rel("components/meshes", "components/mzi.shinecomp"), "../mzi.shinecomp");
+        assert_eq!(rel("components", "chip.shinedesign"), "../chip.shinedesign");
+        // Outside the project's folder: a shared component, and one inside
+        // the project used from it.
+        assert_eq!(rel("components", "../shared/mzi.shinecomp"), "../../shared/mzi.shinecomp");
+        assert_eq!(rel("../shared", "components/a.shinecomp"), "../chip/components/a.shinecomp");
+        assert_eq!(rel("../../kit", "../shared/b.shinecomp"), "../designs/shared/b.shinecomp");
+        // With only the folder's name, paths within reach still work.
+        assert_eq!(relative("../shared", "components/a.shinecomp", "chip"), "../chip/components/a.shinecomp");
+        for (from, to) in [("", "a/b.x"), ("a", "a/b.x"), ("a/c", "a/b.x"), ("d", "a/b.x"), ("a", "../s/b.x"), ("../s", "../t/b.x"), ("../../k", "../s/b.x")] {
+            assert_eq!(resolve(from, &rel(from, to), "/work/kits/designs/chip"), to, "{from} → {to}");
         }
-        assert_eq!(resolve("", "../outside.shinecomp"), None);
+        assert_eq!(resolve("", "../outside.shinecomp", "chip"), "../outside.shinecomp");
+        assert_eq!(resolve("a/b", "../../../x/./y", "chip"), "../x/y");
+        // Out and back in: the same file, however it's reached.
+        assert_eq!(resolve("../../kits", "../designs/chip/c.x", "/work/kits/designs/chip"), "c.x");
     }
 
     #[test]
@@ -580,8 +629,15 @@ mod tests {
         };
         let docs = [doc("Layer 1 (784→64)", true), doc("Layer 1 (784-64)", true), doc("Chip", false), doc("", false)];
         assert_eq!(
-            paths(&docs),
+            paths(&docs, &HashMap::new()),
             ["components/layer-1-784-64.shinecomp", "components/layer-1-784-64-2.shinecomp", "chip.shinedesign", "untitled.shinedesign"]
+        );
+        // Paths it has are kept, and new ones avoid them.
+        let docs: Vec<DocumentFile> = docs.into_iter().enumerate().map(|(k, d)| DocumentFile { id: DocId(k as u64 + 1), ..d }).collect();
+        let known = HashMap::from([(DocId(3), "components/layer-1-784-64.shinecomp".to_owned())]);
+        assert_eq!(
+            paths(&docs, &known),
+            ["components/layer-1-784-64-2.shinecomp", "components/layer-1-784-64-3.shinecomp", "components/layer-1-784-64.shinecomp", "untitled.shinedesign"]
         );
     }
 }

@@ -1062,3 +1062,32 @@ fn a_link_opens_a_project_from_the_site() {
     assert!(active.component.is_none(), "the design opens, not a component: {}", active.name);
     assert_eq!(ws.simulation_flag().copied(), Some(true));
 }
+
+#[test]
+fn a_project_saved_as_a_folder_saves_there_and_reopens() {
+    let dir = std::env::temp_dir().join(format!("shine-workspace-folder-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut ws = live();
+    demo(&mut ws, ADDER);
+    let documents = ws.project.documents.len();
+    assert_eq!(ws.save_folder_to(&dir).unwrap(), documents, "every document the first time");
+    assert!(!ws.has_unsaved_changes());
+    assert_eq!(ws.file_name(), dir.file_name().unwrap().to_string_lossy());
+
+    // An edit: unsaved, and saving writes that document alone.
+    let id = ws.active.unwrap();
+    panel(&mut ws, id).layout.components.push(crate::panels::optics::model::PlacedComponent { kind: crate::panels::optics::model::DETECTOR, pos: Pos2::new(20.0, 20.0) });
+    assert!(ws.has_unsaved_changes());
+    assert_eq!(ws.save_folder_to(&dir).unwrap(), 1);
+    assert!(!ws.has_unsaved_changes());
+
+    // Opened again (as `shine DIR` does): the same project, saved, and
+    // saving there again writes nothing.
+    let mut other = live();
+    other.open_path(&dir).unwrap();
+    assert_eq!(other.project.documents.len(), documents);
+    assert_eq!(other.project.path.as_deref(), Some(dir.as_path()));
+    assert!(!other.has_unsaved_changes());
+    assert_eq!(other.save_folder_to(&dir).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}

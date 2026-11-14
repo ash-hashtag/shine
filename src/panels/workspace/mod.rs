@@ -400,6 +400,17 @@ impl Workspace {
         Ok(())
     }
 
+    /// Save as the project folder `dir`: the files of the documents changed
+    /// since the last save there, and the manifest. Returns how many
+    /// documents were written.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save_folder_to(&mut self, dir: &Path) -> Result<usize, String> {
+        let written = self.project.save_folder(dir).map_err(|e| e.to_string())?;
+        self.project.path = Some(dir.to_owned());
+        self.mark_saved();
+        Ok(written)
+    }
+
     /// The session to keep in the app's storage.
     pub fn session(&self) -> super::session::Session {
         super::session::Session { project: self.project.to_bytes(), ..self.session_without_project() }
@@ -478,6 +489,10 @@ impl Workspace {
 
     /// The project as it is now counts as saved.
     pub fn mark_saved(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(dir) = self.project.path.clone().filter(|p| p.is_dir()) {
+            self.project.folder_saved(&dir);
+        }
         self.saved_fingerprint = self.project.fingerprint();
         self.saved_docs = self.project.documents.iter().filter_map(|d| Some((d.id, self.project.doc_fingerprint(d.id)?))).collect();
     }
@@ -496,7 +511,11 @@ impl Workspace {
             self.notify("The project hasn't been saved to a file yet: nothing to reload");
             return;
         };
-        match std::fs::read(&path) {
+        #[cfg(not(target_arch = "wasm32"))]
+        let read = crate::panels::project::folder::read_project(&path);
+        #[cfg(target_arch = "wasm32")]
+        let read = std::fs::read(&path).map_err(|e| e.to_string());
+        match read {
             Ok(bytes) => {
                 let name = path.file_stem().map_or_else(|| "Project".into(), |s| s.to_string_lossy().into_owned());
                 let show = self.active.and_then(|id| self.project.doc(id)).map(|d| d.name.clone());
@@ -564,9 +583,17 @@ impl Workspace {
         }
     }
 
-    /// Open a project, or import a JSON layout from an earlier version.
+    /// Open a project (a `.shine` file or a project folder), or import a
+    /// JSON layout from an earlier version.
     pub fn open_path(&mut self, path: &Path) -> Result<(), String> {
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let (bytes, path) = {
+            use crate::panels::project::folder;
+            let folder = folder::project_folder(path);
+            (folder::read_project(path)?, folder.unwrap_or_else(|| path.to_owned()))
+        };
+        #[cfg(target_arch = "wasm32")]
+        let (bytes, path) = (std::fs::read(path).map_err(|e| e.to_string())?, path.to_owned());
         let name = path
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -714,6 +741,11 @@ impl Workspace {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn save(&mut self, choose_path: bool) {
+        // A project folder saves as one.
+        if let (Some(dir), false) = (self.project.path.clone().filter(|p| p.is_dir()), choose_path) {
+            self.save_folder(Some(dir));
+            return;
+        }
         let path = match (&self.project.path, choose_path) {
             (Some(p), false) => p.clone(),
             _ => match rfd::FileDialog::new()
@@ -744,6 +776,45 @@ impl Workspace {
                 self.notify(format!("Downloaded {name}"));
             }
             Err(e) => self.notify(format!("Download failed: {e}")),
+        }
+    }
+
+    /// Save as a project folder: `dir`, or one the user picks.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn save_folder(&mut self, dir: Option<std::path::PathBuf>) {
+        let Some(dir) = dir.or_else(|| rfd::FileDialog::new().set_title("Save the project as a folder").pick_folder()) else {
+            return;
+        };
+        match self.save_folder_to(&dir) {
+            Ok(n) => self.notify(format!("Saved {} ({n} {} written)", dir.display(), if n == 1 { "file" } else { "files" })),
+            Err(e) => {
+                tracing::error!("Failed to save {}: {e}", dir.display());
+                self.notify(format!("Save failed: {e}"));
+            }
+        }
+    }
+
+    /// Open a project folder the user picks.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_folder_dialog(&mut self) {
+        let Some(dir) = rfd::FileDialog::new().set_title("Open a project folder").pick_folder() else {
+            return;
+        };
+        self.open_folder(&dir);
+    }
+
+    /// Open the project folder `dir` (asking about unsaved changes first).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open_folder(&mut self, dir: &Path) {
+        match crate::panels::project::folder::read_project(dir) {
+            Ok(bytes) => {
+                let name = dir.file_name().map_or_else(|| "Project".into(), |s| s.to_string_lossy().into_owned());
+                self.request_open(name, bytes, Some(dir.to_owned()));
+            }
+            Err(e) => {
+                tracing::error!("Failed to open {}: {e}", dir.display());
+                self.notify(format!("Open failed: {e}"));
+            }
         }
     }
 
@@ -1555,8 +1626,21 @@ impl Workspace {
             if ui.button("Save").clicked() {
                 self.save(false);
             }
-            if ui.button("Save as…").clicked() {
+            if ui.button("Save as…").on_hover_text("Save the whole project in one .shine file").clicked() {
                 self.save(true);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if ui.button("Open folder…").on_hover_text("Open a project saved as a folder: a file per design and component").clicked() {
+                    self.open_folder_dialog();
+                }
+                if ui
+                    .button("Save as folder…")
+                    .on_hover_text("Save the project as a folder: a file per design and component, so components can be shared between projects and changes reviewed one file at a time")
+                    .clicked()
+                {
+                    self.save_folder(None);
+                }
             }
             let on_disk = self.project.path.is_some();
             if ui

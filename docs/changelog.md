@@ -26,6 +26,13 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   The saved chip, `reference/mnist/fashion-mnist-chip.shine`, is gone: `shine network
   reference/mnist/fashion-mnist-weights.json --out chip.shine` makes it.
 
+### Added
+
+- Projects as folders: a file per design and component, and a manifest. Components refer
+  to each other by path, so one can be shared by several projects (`../shared/…`), and
+  saving writes only the files that changed. **File → Open folder…** and **Save as
+  folder…**; `shine DIR` and `shine simulate DIR` open them too.
+
 ### Fixed
 
 - The asset library listed a component it had opened twice (the library's and the

@@ -312,7 +312,8 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     if args.help {
         return Ok(format!("{USAGE}\n"));
     }
-    let bytes = std::fs::read(&args.project).map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
+    let bytes = crate::panels::project::folder::read_project(std::path::Path::new(&args.project))
+        .map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
     let mut project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
     let id = choose_doc(&project, args.doc.as_deref()).map_err(Failure::Usage)?;
     if args.list_inputs {

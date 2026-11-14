@@ -58,10 +58,16 @@ impl Project {
         Ok(Self { inner: Arc::new(Mutex::new(Inner { project, unplaced: HashSet::new() })) })
     }
 
-    /// A `.shine` file.
+    /// A `.shine` file, or a project folder.
     pub fn open(path: &str) -> Result<Self> {
-        let data = std::fs::read(path).map_err(|e| Error::File(format!("can't read {path}: {e}")))?;
-        Self::from_bytes(&data)
+        #[cfg(not(target_arch = "wasm32"))]
+        let data = crate::panels::project::folder::read_project(std::path::Path::new(path));
+        #[cfg(target_arch = "wasm32")]
+        let data = std::fs::read(path).map_err(|e| e.to_string());
+        let data = data.map_err(|e| Error::File(format!("can't read {path}: {e}")))?;
+        let project = Self::from_bytes(&data)?;
+        lock(&project.inner).project.path = Some(path.into());
+        Ok(project)
     }
 
     /// The project as a `.shine` file's contents. Parts added without a
@@ -75,6 +81,16 @@ impl Project {
     /// Save as a `.shine` file, to open in the app.
     pub fn save(&self, path: &str) -> Result<()> {
         std::fs::write(path, self.to_bytes()).map_err(|e| Error::File(format!("can't write {path}: {e}")))
+    }
+
+    /// Save as a project folder: a file per design and component, and a
+    /// manifest (`shine-project.pb`). Saved there again, only the documents
+    /// that changed are written.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save_folder(&self, path: &str) -> Result<()> {
+        let mut inner = lock(&self.inner);
+        super::arrange::arrange_all(&mut inner);
+        inner.project.save_folder(std::path::Path::new(path)).map(|_| ()).map_err(|e| Error::File(format!("can't write {path}: {e}")))
     }
 
     fn add(&self, name: &str, component: bool) -> Design {

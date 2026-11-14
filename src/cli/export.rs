@@ -112,7 +112,8 @@ pub struct Written {
 }
 
 pub fn export(args: &Args) -> Result<Written, Failure> {
-    let bytes = std::fs::read(&args.project).map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
+    let bytes = crate::panels::project::folder::read_project(std::path::Path::new(&args.project))
+        .map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
     let project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
     let id = match &args.doc {
         Some(_) => choose_doc(&project, args.doc.as_deref()).map_err(Failure::Usage)?,

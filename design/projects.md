@@ -67,16 +67,16 @@ designs.
 
 ## Order
 
-1. Built-in MZI with arms; meshes and layers use it (no more "MZI cell" component).
-2. The Fashion-MNIST classifier in the examples.
-3. The `.proto` schema and protobuf reading and writing of documents, with tests that
-   every example and reference design survives the round trip, and that postcard files
-   still open.
-4. Bundles (`.shine` in the new format) replace the postcard project file.
-5. Folder projects on desktop and the command line; paths as references; saving only what
-   changed.
-6. Folders in the browser (File System Access API).
-7. `shine:` components from Shine's examples, and the asset library as a folder of
+1. [x] The `.proto` schema, protobuf reading and writing, bundles as the `.shine` file
+   (postcard files still open, through frozen copies of format 8's types). Big files are
+   compressed (zlib).
+2. [x] Built-in MZI with arms; meshes and layers use it (no more "MZI cell" component).
+3. [x] The Fashion-MNIST classifier in the examples, built from its weights.
+4. [x] Folder projects on desktop and the command line: paths as references, saving only
+   what changed, components outside the folder.
+5. [ ] Folders in the browser (File System Access API).
+6. [ ] `shine:` components from Shine's examples, and the asset library as a folder of
    component files.
+7. [ ] Folders and `save_folder` in the Python and TypeScript packages.
 
 Each step keeps every test passing and existing files opening.

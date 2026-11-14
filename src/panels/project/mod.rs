@@ -235,6 +235,7 @@ pub(crate) struct DocumentFile {
     layout: Layout,
 }
 
+pub mod folder;
 pub mod protobuf;
 pub(crate) mod v4;
 pub(crate) mod v5;
@@ -674,8 +675,16 @@ impl Catalog {
 pub struct Project {
     pub documents: Vec<Document>,
     next_id: u64,
-    /// Where the project was last saved or opened from.
+    /// Where the project was last saved or opened from: a `.shine` file or a
+    /// project folder.
     pub path: Option<PathBuf>,
+    /// Each document's path in the project's folder (or the bundle's), as it
+    /// was opened or saved; documents without one get one from their name.
+    pub paths: std::collections::HashMap<DocId, String>,
+    /// The folder last saved to, and each document's fingerprint and path
+    /// then: saving there again writes only what changed.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    saved_files: (Option<PathBuf>, std::collections::HashMap<DocId, (u64, String)>),
     /// The catalog, and the fingerprint it was made at: the editor asks for
     /// it every frame, and making it reads every document.
     catalog: std::sync::Mutex<Option<(u64, Catalog)>>,
@@ -707,7 +716,7 @@ impl Project {
     }
 
     fn with_documents(documents: Vec<Document>, next_id: u64) -> Self {
-        Self { documents, next_id, path: None, catalog: std::sync::Mutex::new(None) }
+        Self { documents, next_id, path: None, paths: Default::default(), saved_files: Default::default(), catalog: std::sync::Mutex::new(None) }
     }
 
     fn allocate(&mut self) -> DocId {
@@ -829,7 +838,9 @@ impl Project {
                 documents.push(Document::from_file(d.to_file()));
             }
         }
-        Some(Project::with_documents(documents, self.next_id))
+        let mut bundle = Project::with_documents(documents, self.next_id);
+        bundle.paths = bundle.documents.iter().filter_map(|d| Some((d.id, self.paths.get(&d.id)?.clone()))).collect();
+        Some(bundle)
     }
 
     /// Copy `bundle`'s first document, and those it uses, into this project;
@@ -919,17 +930,29 @@ impl Project {
     /// Shine's protobuf format (`crates/shine-format`).
     pub fn to_bytes(&self) -> Vec<u8> {
         let documents: Vec<DocumentFile> = self.documents.iter().map(Document::to_file).collect();
-        shine_format::encode(&shine_format::ShineFile { content: shine_format::mod_ShineFile::OneOfcontent::bundle(protobuf::bundle(&documents)) })
+        let paths = protobuf::paths(&documents, &self.paths);
+        let bundle = protobuf::bundle(&documents, &paths, &self.root_name());
+        shine_format::encode(&shine_format::ShineFile { content: shine_format::mod_ShineFile::OneOfcontent::bundle(bundle) })
+    }
+
+    /// Where the project's folder is (for a `.shine` file, as if unpacked
+    /// beside it), for paths that climb out of it and back in.
+    fn root_name(&self) -> String {
+        let Some(path) = &self.path else { return "project".into() };
+        let folder = if path.is_dir() { path.clone() } else { path.with_extension("") };
+        std::path::absolute(&folder).unwrap_or(folder).to_string_lossy().into_owned()
     }
 
     /// Read a `.shine` file: the protobuf format, or the earlier postcard one.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if shine_format::is_file(bytes) {
-            let documents = match shine_format::decode(bytes)?.content {
-                shine_format::mod_ShineFile::OneOfcontent::bundle(b) => protobuf::documents(b)?,
+            let (documents, paths) = match shine_format::decode(bytes)?.content {
+                shine_format::mod_ShineFile::OneOfcontent::bundle(b) => protobuf::documents(b, "project")?,
                 _ => return Err("this Shine file is a single design or component, not a project".into()),
             };
-            return Ok(Self::from_files(documents, 1));
+            let mut project = Self::from_files(documents, 1);
+            project.paths = project.documents.iter().map(|d| d.id).zip(paths).collect();
+            return Ok(project);
         }
         let file: ProjectFile = match file_format::version(bytes)? {
             1 => {

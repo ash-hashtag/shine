@@ -24,6 +24,40 @@ one, so with unsaved changes Shine asks first: save (or download) and open, open
 saving, or cancel. Saving writes the file under a temporary name and then renames it, so a
 save that fails part-way never damages the file you had.
 
+### Projects as folders
+
+A project can also be a folder, with a file for each design (`.shinedesign`) and each
+component (`.shinecomp`), and a manifest, `shine-project.pb`, listing them:
+
+```
+my-chip/
+  shine-project.pb
+  classifier.shinedesign
+  components/
+    layer-1-784-64.shinecomp
+    linear-modulator.shinecomp
+```
+
+A box refers to the component it places by that component's path, relative to its own
+file. So a component can live outside the folder and be shared by several projects
+(`../shared/modulator.shinecomp`): improve it once and every project using it has the
+change. Changes can also be reviewed one file at a time.
+
+- **File → Save as folder…** saves the project as a folder. After that, **Save** writes
+  only the files of the designs and components that changed, and the manifest. Each file
+  is written under a temporary name and then renamed, as `.shine` files are. Files of
+  documents you've deleted from the project are left where they are, as another project
+  may use them.
+- **File → Open folder…** opens one (or drop the folder on the window), and so do
+  `shine my-chip/` and `shine simulate my-chip/`. A component file that's missing opens
+  as a missing component, and the boxes using it say so.
+- **Save as…** writes the whole project, every component included, to one `.shine` file
+  to send or put on a website. Its documents keep their paths inside it, so it unpacks to
+  the same folder.
+
+Folders are for the desktop app and the command line; the browser saves and opens `.shine`
+files.
+
 ### Your session is kept
 
 Shine keeps the open project, its tabs and their views in the app's storage (a settings

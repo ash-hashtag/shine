@@ -238,3 +238,19 @@ fn inputs_come_from_a_stream_of_numbers() {
     assert!(matches!(&e, Failure::Usage(m) if m.contains("input 2: “x” isn't a number")), "{e:?}");
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn a_project_folder_simulates_as_its_file_does() {
+    let (dir, path) = saved("adder-folder", examples::eight_bit_adder);
+    let folder = dir.join("adder");
+    let mut p = Project::from_bytes(&std::fs::read(&path).unwrap()).unwrap();
+    p.save_folder(&folder).unwrap();
+    // The same readings (the first line names where it came from).
+    let run = |at: &str| simulate(&parse(&args(&[at])).unwrap()).unwrap().replace(at, "PROJECT");
+    let from_file = run(&path);
+    assert!(from_file.contains("Display 9,8  155"), "{from_file}");
+    assert_eq!(run(&folder.to_string_lossy()), from_file);
+    // Its manifest names it too.
+    assert_eq!(run(&folder.join(crate::panels::project::folder::MANIFEST).to_string_lossy()), from_file);
+    std::fs::remove_dir_all(dir).ok();
+}
