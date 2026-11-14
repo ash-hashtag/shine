@@ -507,8 +507,11 @@ fn solved_components_are_reused_until_they_change() {
     assert_eq!(run(&p, true), first, "the mesh's kept solve, the same light");
     // An MZI inside the mesh changes: the kept solve no longer fits.
     let l = p.doc_mut(mesh).unwrap().layout_mut();
-    let mzi = l.instances.iter_mut().find(|i| matches!(i.block, BlockRef::Component(_))).unwrap();
-    mzi.set_param("θ", Some(1.234));
+    let mzi = l.instances.iter_mut().find_map(|i| match &mut i.block {
+        BlockRef::Builtin(crate::panels::optics::model::Builtin::Mzi { theta, .. }) => Some(theta),
+        _ => None,
+    });
+    *mzi.unwrap() = 1.234;
     let changed = run(&p, true);
     assert_ne!(changed, first);
     for (port, w) in &run(&p, false) {

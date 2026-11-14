@@ -150,7 +150,7 @@ impl Design {
     /// A Mach–Zehnder interferometer: θ sets the split (π: `in1` → `out1`,
     /// the bar state; 0: crossed), φ the phase of `in1`.
     pub fn mzi(&self, theta: f64, phi: f64) -> Part {
-        self.add(Builtin::Mzi { theta, phi })
+        self.add(Builtin::mzi(theta, phi))
     }
 
     /// An all-pass ring resonator on a bus: `in` → `through`, with dips at

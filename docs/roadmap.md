@@ -102,7 +102,7 @@ want them.
       simulated whole in 3.4 s and again in 0.08 s, edited at 2–24 ms a frame, in under
       1 GB ([Optical neural network](neural-network.md#at-full-size))
 - [x] **Passive components solved once**: a component of only passive parts is simulated
-      as its matrix, all the way down (an MZI cell, then the mesh of them), solved on all
+      as its matrix, all the way down (the mesh of MZIs, then the layer), solved on all
       threads, kept between simulations until it changes
 - [x] **The editor costs what's on screen**: drawing and pointing go through a spatial
       index; per-frame work no longer reads the whole project

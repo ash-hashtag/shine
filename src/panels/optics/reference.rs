@@ -39,11 +39,15 @@ pub const N_G: f64 = 4.2;
 pub const LOSS_DB_PER_CM: f64 = 2.0;
 pub const WAVELENGTH_NM: f64 = 1550.0;
 
-pub const MZI_CELL: &str = "MZI cell";
 pub const MODULATOR: &str = "Modulator";
 
 pub(super) fn arm() -> Builtin {
     Builtin::DelayLine { length_um: ARM_UM, n_eff: N_EFF, n_g: N_G, reference_nm: WAVELENGTH_NM, loss_db_per_cm: LOSS_DB_PER_CM }
+}
+
+/// The arms of the meshes' MZIs, for [`Builtin::Mzi`].
+pub fn arms() -> crate::panels::schematic::model::Arms {
+    crate::panels::schematic::model::Arms { length_um: ARM_UM, n_eff: N_EFF, n_g: N_G, reference_nm: WAVELENGTH_NM, loss_db_per_cm: LOSS_DB_PER_CM }
 }
 
 pub(super) fn link(l: &mut Layout, from: (InstanceId, usize), to: (InstanceId, usize)) {
@@ -54,44 +58,6 @@ pub(super) fn add(l: &mut Layout, b: Builtin, cell: (i32, i32)) -> InstanceId {
     l.add_instance(BlockRef::Builtin(b), cell)
 }
 
-/// The MZI cell: `Mzi(θ, φ)` built from its parts, with `θ` and `φ`
-/// exported for each box to set.
-pub fn mzi_cell(project: &mut Project) -> DocId {
-    if let Some(id) = project.find(MZI_CELL).filter(|&id| project.doc(id).is_some_and(|d| d.component.is_some())) {
-        return id;
-    }
-    let mut l = Layout::default();
-    let a = add(&mut l, Builtin::InputPin { name: "a".into() }, (0, 0));
-    let b = add(&mut l, Builtin::InputPin { name: "b".into() }, (0, 1));
-    let phi = add(&mut l, Builtin::PhaseShifter { phase: 0.0 }, (3, 0));
-    let split = add(&mut l, Builtin::Coupler { coupling: 0.5 }, (6, 0));
-    let theta = add(&mut l, Builtin::PhaseShifter { phase: 0.0 }, (9, 0));
-    let upper = add(&mut l, arm(), (12, 0));
-    let lower = add(&mut l, arm(), (12, 1));
-    let join = add(&mut l, Builtin::Coupler { coupling: 0.5 }, (15, 0));
-    let out_a = add(&mut l, Builtin::OutputPin { name: "a".into() }, (18, 0));
-    let out_b = add(&mut l, Builtin::OutputPin { name: "b".into() }, (18, 1));
-    link(&mut l, (a, 0), (phi, 0));
-    link(&mut l, (phi, 0), (split, 0));
-    link(&mut l, (b, 0), (split, 1));
-    link(&mut l, (split, 0), (theta, 0));
-    link(&mut l, (theta, 0), (upper, 0));
-    link(&mut l, (split, 1), (lower, 0));
-    link(&mut l, (upper, 0), (join, 0));
-    link(&mut l, (lower, 0), (join, 1));
-    link(&mut l, (join, 0), (out_a, 0));
-    link(&mut l, (join, 1), (out_b, 0));
-    l.exports.push(Export { name: "θ".into(), item: Item::Box(theta), param: "phase".into() });
-    l.exports.push(Export { name: "φ".into(), item: Item::Box(phi), param: "phase".into() });
-    project.add_component(
-        MZI_CELL,
-        "MZI",
-        "A thermally tuned Mach–Zehnder interferometer: two 50:50 couplers, a heater θ between 100 µm arms that sets the split (θ = 0 crosses, π is the bar state) and a heater φ on the top input that sets the phase. The unit cell of programmable photonic meshes.",
-        l,
-        10.0,
-    )
-}
-
 /// The N×N mesh programmed to `mesh`, as a component (named for its size).
 pub fn mesh(project: &mut Project, mesh: &UnitaryMesh) -> DocId {
     let n = mesh.size;
@@ -100,7 +66,6 @@ pub fn mesh(project: &mut Project, mesh: &UnitaryMesh) -> DocId {
 
 /// [`mesh`] with a name and initials of its own.
 pub fn mesh_named(project: &mut Project, mesh: &UnitaryMesh, name: &str, initials: &str) -> DocId {
-    let cell = mzi_cell(project);
     let n = mesh.size;
     let mut l = Layout::default();
     const PITCH: i32 = 5;
@@ -113,10 +78,7 @@ pub fn mesh_named(project: &mut Project, mesh: &UnitaryMesh, name: &str, initial
         let mut busy = vec![false; n];
         for (s, _) in mesh.mzis.iter().zip(&columns).filter(|(_, col)| **col == c) {
             let m = s.mode;
-            let b = l.add_instance(BlockRef::Component(cell), (column_x(c), m as i32));
-            let inst = l.instances.last_mut().expect("the MZI just added");
-            inst.set_param("θ", Some(s.theta));
-            inst.set_param("φ", Some(s.phi));
+            let b = add(&mut l, Builtin::Mzi { theta: s.theta, phi: s.phi, arms: arms() }, (column_x(c), m as i32));
             for k in 0..2 {
                 link(&mut l, front[m + k], (b, k));
                 front[m + k] = (b, k);
@@ -141,7 +103,7 @@ pub fn mesh_named(project: &mut Project, mesh: &UnitaryMesh, name: &str, initial
         name,
         initials,
         &format!(
-            "{} MZI cells in the rectangular (Clements) arrangement, {depth} columns deep, programmed to a {n}×{n} unitary matrix; every path crosses the same length of waveguide, so losses are balanced.",
+            "{} MZIs (built in, with 100 µm arms) in the rectangular (Clements) arrangement, {depth} columns deep, programmed to a {n}×{n} unitary matrix; every path crosses the same length of waveguide, so losses are balanced.",
             mesh.mzis.len()
         ),
         l,
@@ -269,4 +231,85 @@ pub fn expected_powers(u: &Matrix, inputs: &[f64]) -> Vec<f64> {
             (field * loss).norm_sqr()
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::panels::circuit::sim::{self, Machine};
+
+    const MZI_CELL: &str = "MZI cell";
+
+    /// The MZI cell meshes were once built from: `Mzi(θ, φ)` from its parts,
+        /// with `θ` and `φ` exported for each box to set.
+    pub fn mzi_cell(project: &mut Project) -> DocId {
+        if let Some(id) = project.find(MZI_CELL).filter(|&id| project.doc(id).is_some_and(|d| d.component.is_some())) {
+            return id;
+        }
+        let mut l = Layout::default();
+        let a = add(&mut l, Builtin::InputPin { name: "a".into() }, (0, 0));
+        let b = add(&mut l, Builtin::InputPin { name: "b".into() }, (0, 1));
+        let phi = add(&mut l, Builtin::PhaseShifter { phase: 0.0 }, (3, 0));
+        let split = add(&mut l, Builtin::Coupler { coupling: 0.5 }, (6, 0));
+        let theta = add(&mut l, Builtin::PhaseShifter { phase: 0.0 }, (9, 0));
+        let upper = add(&mut l, arm(), (12, 0));
+        let lower = add(&mut l, arm(), (12, 1));
+        let join = add(&mut l, Builtin::Coupler { coupling: 0.5 }, (15, 0));
+        let out_a = add(&mut l, Builtin::OutputPin { name: "a".into() }, (18, 0));
+        let out_b = add(&mut l, Builtin::OutputPin { name: "b".into() }, (18, 1));
+        link(&mut l, (a, 0), (phi, 0));
+        link(&mut l, (phi, 0), (split, 0));
+        link(&mut l, (b, 0), (split, 1));
+        link(&mut l, (split, 0), (theta, 0));
+        link(&mut l, (theta, 0), (upper, 0));
+        link(&mut l, (split, 1), (lower, 0));
+        link(&mut l, (upper, 0), (join, 0));
+        link(&mut l, (lower, 0), (join, 1));
+        link(&mut l, (join, 0), (out_a, 0));
+        link(&mut l, (join, 1), (out_b, 0));
+        l.exports.push(Export { name: "θ".into(), item: Item::Box(theta), param: "phase".into() });
+        l.exports.push(Export { name: "φ".into(), item: Item::Box(phi), param: "phase".into() });
+        project.add_component(
+            MZI_CELL,
+            "MZI",
+            "A thermally tuned Mach–Zehnder interferometer: two 50:50 couplers, a heater θ between 100 µm arms that sets the split (θ = 0 crosses, π is the bar state) and a heater φ on the top input that sets the phase. The unit cell of programmable photonic meshes.",
+            l,
+            10.0,
+        )
+    }
+
+    /// Light pins a, b into `block`, and out of it to pins a, b.
+    fn around(block: BlockRef, params: Vec<(String, f64)>) -> Layout {
+        let mut l = Layout::default();
+        let a = add(&mut l, Builtin::InputPin { name: "a".into() }, (0, 0));
+        let b = add(&mut l, Builtin::InputPin { name: "b".into() }, (0, 1));
+        let it = l.add_instance(block, (3, 0));
+        l.instances.last_mut().unwrap().params = params;
+        let out_a = add(&mut l, Builtin::OutputPin { name: "a".into() }, (8, 0));
+        let out_b = add(&mut l, Builtin::OutputPin { name: "b".into() }, (8, 1));
+        link(&mut l, (a, 0), (it, 0));
+        link(&mut l, (b, 0), (it, 1));
+        link(&mut l, (it, 0), (out_a, 0));
+        link(&mut l, (it, 1), (out_b, 0));
+        l
+    }
+
+    #[test]
+    fn the_built_in_mzi_with_arms_is_the_mzi_cell() {
+        let mut p = Project::new();
+        let cell = mzi_cell(&mut p);
+        let wavelengths = [1530.0, 1550.0, 1565.0];
+        for (theta, phi) in [(0.0, 0.0), (1.0, 2.0), (PI, 0.5), (2.5, 5.0)] {
+            let params = vec![("θ".to_owned(), theta), ("φ".to_owned(), phi)];
+            let made = around(BlockRef::Component(cell), params);
+            let built_in = around(BlockRef::Builtin(Builtin::Mzi { theta, phi, arms: arms() }), Vec::new());
+            let t = |l: &Layout| sim::transmission(l, 10.0, &p, &Machine::default(), None, &wavelengths).unwrap();
+            let (a, b) = (t(&made), t(&built_in));
+            for (ma, mb) in a.matrices.iter().zip(&b.matrices) {
+                for (i, j) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                    assert!((ma[(i, j)] - mb[(i, j)]).norm() < 1e-12, "θ {theta}, φ {phi}: {} vs {}", ma[(i, j)], mb[(i, j)]);
+                }
+            }
+        }
+    }
 }

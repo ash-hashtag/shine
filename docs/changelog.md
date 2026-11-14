@@ -10,6 +10,23 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
+## Unreleased
+
+### Changed
+
+- Projects are saved in a new format: [Protocol Buffers](https://protobuf.dev), with the
+  schema in `crates/shine-format/proto/shine.proto`, so other tools can read and write
+  Shine's files and the format can grow without breaking them. Big files are compressed
+  (the Fashion-MNIST chip is 9.8 MB, from 15.6 MB). Files from 0.1 still open.
+- The MZI switch has arms: give it an arm length (and loss) and it is the MZI on a chip,
+  its two waveguides adding the same phase and loss to both paths. Meshes and neural
+  network layers are built from it, instead of an "MZI cell" component in every project.
+
+### Fixed
+
+- The asset library listed a component it had opened twice (the library's and the
+  project's copy).
+
 ## 0.1.3 (2026-11-14)
 
 The simulator for designs of millions of parts, and Shine as a library. (0.1.2 wasn't

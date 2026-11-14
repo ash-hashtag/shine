@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::v6::Meta6 as ComponentMeta;
 use super::{DocId, DocumentFile};
-use crate::panels::optics::model::{self, BlockRef, Feed, InstanceId, Line, PlacedComponent, SignalWire, Wire};
+use super::v8::BlockRef8 as BlockRef;
+use crate::panels::optics::model::{self, Feed, InstanceId, Line, PlacedComponent, SignalWire, Wire};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Instance {
@@ -17,7 +18,7 @@ pub struct Instance {
 
 impl Instance {
     pub fn upgrade(self) -> model::Instance {
-        model::Instance { id: self.id, block: self.block, cell: self.cell, params: Vec::new() }
+        model::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell, params: Vec::new() }
     }
 }
 

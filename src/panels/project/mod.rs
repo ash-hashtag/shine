@@ -239,6 +239,7 @@ pub mod protobuf;
 pub(crate) mod v4;
 pub(crate) mod v5;
 pub(crate) mod v6;
+pub(crate) mod v8;
 
 /// Format 3: layouts had no laser feeds (waveguides from a laser into a box).
 pub(crate) mod v3 {
@@ -967,7 +968,14 @@ impl Project {
                 }
             }
             // Format 8 only added model blocks: format 7 reads as it is.
-            7 => file_format::decode_body(bytes)?,
+            7 => {
+                let old: v8::Project = file_format::decode_body(bytes)?;
+                ProjectFile { next_id: old.next_id, documents: old.documents.into_iter().map(v8::upgrade).collect() }
+            }
+            8 => {
+                let old: v8::Project = file_format::decode(bytes)?;
+                ProjectFile { next_id: old.next_id, documents: old.documents.into_iter().map(v8::upgrade).collect() }
+            }
             6 => {
                 let old: v6::Project = file_format::decode_body(bytes)?;
                 ProjectFile {
@@ -975,7 +983,7 @@ impl Project {
                     documents: old.documents.into_iter().map(v6::upgrade).collect(),
                 }
             }
-            _ => file_format::decode(bytes)?,
+            v => return Err(format!("unknown file format {v}")),
         };
         Ok(Self::from_files(file.documents, file.next_id))
     }

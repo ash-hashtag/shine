@@ -278,6 +278,8 @@ message DelayLine {
 message Mzi {
   double theta = 1;
   double phi = 2;
+  // The two equal waveguides between its couplers; unset is the ideal MZI.
+  DelayLine arms = 3;
 }
 
 message Ring {

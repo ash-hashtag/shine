@@ -294,8 +294,9 @@ impl Builder<'_> {
                 }
                 two(name)
             }
-            Builtin::Mzi { theta, phi } => {
-                self.add(name, "mzi2x2_2x2_phase_shifter", Vec::new(), at, 0, Some(format!("Shine: θ = {theta:.4} rad, φ = {phi:.4} rad, set by its heater")));
+            Builtin::Mzi { theta, phi, arms } => {
+                let arms = if arms.is_ideal() { String::new() } else { format!(", arms {} µm at {} dB/cm", arms.length_um, arms.loss_db_per_cm) };
+                self.add(name, "mzi2x2_2x2_phase_shifter", Vec::new(), at, 0, Some(format!("Shine: θ = {theta:.4} rad, φ = {phi:.4} rad, set by its heater{arms}")));
                 two(name)
             }
             Builtin::PhaseShifter { phase } => {

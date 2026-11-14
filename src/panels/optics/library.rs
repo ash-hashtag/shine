@@ -1397,14 +1397,32 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 ui.label(RichText::new(format!("delay {delay:.3} ps")).small().weak());
                 ui.end_row();
             }
-            Builtin::Mzi { theta, phi } => {
+            Builtin::Mzi { theta, phi, arms } => {
                 row(ui, "θ (internal)", &mut |ui, l| {
                     ui_kit::slider(ui, l, theta, 0.0..=tau, " rad")
                         .on_hover_text("π: in1 → out1 (bar). 0: in1 → out2 (cross). π/2: half to each.")
                 });
                 row(ui, "φ (input)", &mut |ui, l| ui_kit::slider(ui, l, phi, 0.0..=tau, " rad"));
+                row(ui, "Arm length", &mut |ui, _| {
+                    ui.add(egui::DragValue::new(&mut arms.length_um).range(0.0..=1e5).speed(0.1).suffix(" µm"))
+                        .on_hover_text("The two arms between the couplers: 0 is an ideal MZI. Longer arms add phase and loss to both paths alike.")
+                });
+                if arms.length_um > 0.0 {
+                    if arms.n_eff == 0.0 {
+                        // First given a length: silicon strip waveguide at 1550 nm.
+                        *arms = crate::panels::schematic::model::Arms::silicon(arms.length_um, arms.loss_db_per_cm);
+                    }
+                    row(ui, "Arm loss", &mut |ui, _| {
+                        ui.add(egui::DragValue::new(&mut arms.loss_db_per_cm).range(0.0..=1000.0).speed(0.1).suffix(" dB/cm"))
+                    });
+                    row(ui, "Arm n_eff", &mut |ui, _| {
+                        ui.add(egui::DragValue::new(&mut arms.n_eff).range(1.0..=4.0).speed(0.01)).on_hover_text("Effective index at the reference wavelength")
+                    });
+                }
                 // Where light from in1 goes, so a switch at π doesn't look broken.
-                let s = crate::photonics::Component::s_matrix(&crate::photonics::Mzi::new(*theta, *phi), crate::photonics::REFERENCE_NM);
+                let mzi = crate::photonics::Mzi::new(*theta, *phi);
+                let mzi = if arms.is_ideal() { mzi } else { mzi.with_arms(arms.waveguide()) };
+                let s = crate::photonics::Component::s_matrix(&mzi, crate::photonics::REFERENCE_NM);
                 let (bar, cross) = (s[(0, 0)].norm_sqr() * 100.0, s[(1, 0)].norm_sqr() * 100.0);
                 ui.label("");
                 ui.label(RichText::new(format!("in1 → out1 {bar:.0}%, out2 {cross:.0}%")).small().weak());

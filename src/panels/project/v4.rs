@@ -60,7 +60,7 @@ impl Builtin {
             Self::DelayLine { length_um, n_eff } => {
                 B::DelayLine { length_um, n_eff, n_g: n_eff, reference_nm: REFERENCE_NM, loss_db_per_cm: 0.0 }
             }
-            Self::Mzi { theta, phi } => B::Mzi { theta, phi },
+            Self::Mzi { theta, phi } => B::mzi(theta, phi),
             Self::YSplitter => B::YSplitter,
             Self::YCombiner => B::YCombiner,
             Self::Crossing => B::Crossing,
@@ -106,8 +106,8 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn upgrade(self) -> super::v5::Instance {
-        super::v5::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell }
+    pub fn upgrade(self) -> model::Instance {
+        model::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell, params: Vec::new() }
     }
 }
 
@@ -125,7 +125,7 @@ pub struct Layout4 {
 
 impl Layout4 {
     pub fn upgrade(self) -> model::Layout {
-        super::v5::Layout5 {
+        model::Layout {
             components: self.components,
             lines: self.lines,
             instances: self.instances.into_iter().map(Instance::upgrade).collect(),
@@ -134,8 +134,8 @@ impl Layout4 {
             next_instance: self.next_instance,
             labels: self.labels,
             feeds: self.feeds,
+            exports: Vec::new(),
         }
-        .upgrade()
     }
 }
 

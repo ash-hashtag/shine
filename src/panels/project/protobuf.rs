@@ -12,6 +12,7 @@ use shine_format::{mod_Builtin::OneOfkind as B, mod_Instance::OneOfblock, mod_It
 use super::{ComponentMeta, DocId, DocumentFile};
 use crate::panels::appearance::{Appearance, BoxShape, Icon, IconFormat};
 use crate::panels::models::{ModelSource, ModelSpec};
+use crate::panels::schematic::model::Arms;
 use crate::panels::optics::model::{
     BlockRef, Builtin, Export, Feed, Instance, InstanceId, Item, Layout, Line, OpticComponentKind, PlacedComponent, PortRef, SignalWire, Terminal,
     Wire,
@@ -239,7 +240,17 @@ fn builtin(b: &Builtin) -> pb::Builtin {
             reference_nm: *reference_nm,
             loss_db_per_cm: *loss_db_per_cm,
         }),
-        Builtin::Mzi { theta, phi } => B::mzi(pb::Mzi { theta: *theta, phi: *phi }),
+        Builtin::Mzi { theta, phi, arms } => B::mzi(pb::Mzi {
+            theta: *theta,
+            phi: *phi,
+            arms: (!arms.is_ideal()).then_some(pb::DelayLine {
+                length_um: arms.length_um,
+                n_eff: arms.n_eff,
+                n_g: arms.n_g,
+                reference_nm: arms.reference_nm,
+                loss_db_per_cm: arms.loss_db_per_cm,
+            }),
+        }),
         Builtin::YSplitter => B::y_splitter(pb::Empty {}),
         Builtin::YCombiner => B::y_combiner(pb::Empty {}),
         Builtin::Crossing => B::crossing(pb::Empty {}),
@@ -475,7 +486,17 @@ fn read_builtin(b: pb::Builtin) -> Result<Builtin, String> {
             reference_nm: d.reference_nm,
             loss_db_per_cm: d.loss_db_per_cm,
         },
-        B::mzi(m) => Builtin::Mzi { theta: m.theta, phi: m.phi },
+        B::mzi(m) => Builtin::Mzi {
+            theta: m.theta,
+            phi: m.phi,
+            arms: m.arms.map_or_else(Arms::default, |a| Arms {
+                length_um: a.length_um,
+                n_eff: a.n_eff,
+                n_g: a.n_g,
+                reference_nm: a.reference_nm,
+                loss_db_per_cm: a.loss_db_per_cm,
+            }),
+        },
         B::y_splitter(_) => Builtin::YSplitter,
         B::y_combiner(_) => Builtin::YCombiner,
         B::crossing(_) => Builtin::Crossing,

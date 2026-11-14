@@ -109,7 +109,7 @@ fn parameters_get_set_and_csv() {
         kind: OpticComponentKind::BeamSplitter { reflectivity: 0.5, transparency: 0.5, normal: Vec2::new(1.0, 0.0) },
         pos: cell_center(0, 0),
     }]);
-    let mzi = l.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: 1.0, phi: 0.0 }), (3, 0));
+    let mzi = l.add_instance(BlockRef::Builtin(Builtin::mzi(1.0, 0.0)), (3, 0));
     assert_eq!(params(&l, Item::Part(0)).len(), 1);
     assert_eq!(params(&l, Item::Box(mzi)).iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["θ", "φ"]);
     assert!(set(&mut l, Item::Part(0), "reflectivity", 0.3));

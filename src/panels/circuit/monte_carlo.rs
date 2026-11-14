@@ -108,9 +108,13 @@ pub fn vary(layout: &Layout, v: &Variation, rng: &mut StdRng) -> Layout {
                 *n_eff += normal(rng, v.n_eff);
                 *loss_db_per_cm = relative(rng, *loss_db_per_cm, v.loss).max(0.0);
             }
-            Builtin::Mzi { theta, phi } => {
+            Builtin::Mzi { theta, phi, arms } => {
                 *theta += normal(rng, v.phase);
                 *phi += normal(rng, v.phase);
+                if !arms.is_ideal() {
+                    arms.n_eff += normal(rng, v.n_eff);
+                    arms.loss_db_per_cm = relative(rng, arms.loss_db_per_cm, v.loss).max(0.0);
+                }
             }
             Builtin::Ring { coupling, n_eff, loss_db_per_cm, .. } | Builtin::AddDropRing { coupling, n_eff, loss_db_per_cm, .. } => {
                 *coupling = relative(rng, *coupling, v.coupling).clamp(0.0, 1.0);

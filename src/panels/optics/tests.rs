@@ -1327,7 +1327,7 @@ fn lasers_wire_into_boxes_with_waveguides() {
     // signal pin) onto a box's light input connects a waveguide, without
     // moving anything, and its light goes through the box.
     let mut panel = live_panel();
-    let mzi = add_box(&mut panel, Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }, (6, 3));
+    let mzi = add_box(&mut panel, Builtin::mzi(std::f64::consts::FRAC_PI_2, 0.0), (6, 3));
     panel.layout.components.push(model::PlacedComponent {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(0.0, -1.0), source: 0, color: None },
         pos: cell_center(0, 8),
@@ -1385,7 +1385,7 @@ fn lasers_wire_into_boxes_with_waveguides() {
 #[test]
 fn duplicating_a_laser_and_box_copies_their_waveguide() {
     let mut panel = live_panel();
-    let mzi = add_box(&mut panel, Builtin::Mzi { theta: 1.0, phi: 0.0 }, (6, 3));
+    let mzi = add_box(&mut panel, Builtin::mzi(1.0, 0.0), (6, 3));
     panel.layout.components.push(model::PlacedComponent {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
         pos: cell_center(2, 3),

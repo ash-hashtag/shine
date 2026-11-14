@@ -50,8 +50,8 @@ read 0. Try:
 - **Change the wavelength**: the mesh is built from wavelength-independent couplers, so
   the spectrum stays; the waveguides' loss and phase are common to every path.
 
-Press **Tab** on the mesh to look inside (120 MZI cells, each with its θ and φ), and Tab
-on an MZI cell or a modulator to see its couplers, heaters and arms. **Analysis →
+Press **Tab** on the mesh to look inside (120 MZIs, each with its θ, φ and arms), and Tab
+on a modulator to see its splitter, heater and arms. **Analysis →
 Sweep…** sweeps the laser's wavelength or any input; **File → Export for other tools…**
 writes the mesh's S-parameters, SAX netlist or gdsfactory layout.
 
@@ -63,8 +63,8 @@ This one has these components:
 
 | Level | What it is | Size |
 |---|---|---|
-| **MZI cell** | two 50:50 directional couplers, a heater θ between two 100 µm silicon arms, and a heater φ on the top input; θ and φ are parameters each box sets | 10 parts |
-| **16×16 mesh** | 120 MZI cells in the rectangular (Clements) arrangement, 16 columns deep, with a matching waveguide wherever a mode skips a column (so every path has the same length and loss) and an output phase on each mode | 184 boxes, 288 waveguides |
+| **MZI** | Shine's built-in MZI: two 50:50 couplers, a heater θ between two 100 µm silicon arms (2 dB/cm), and a heater φ on the top input | 1 box |
+| **16×16 mesh** | 120 MZIs in the rectangular (Clements) arrangement, 16 columns deep, with a matching waveguide wherever a mode skips a column (so every path has the same length and loss) and an output phase on each mode | 184 boxes, 288 waveguides |
 | **Modulator** | a Mach–Zehnder modulator: Y-splitter, a heater θ = π on one 100 µm arm, Y-combiner; its drive v adds vπ, so it passes sin²(πv/2) of the power (its phase moves with v too, as with any modulator driven on one arm) | 7 parts |
 | **Processor** | a 1550 nm laser, a 1×16 splitter tree, 16 modulators each driven by a value input, the mesh, and 16 detectors | 1 410 parts |
 

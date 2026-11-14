@@ -244,7 +244,7 @@ fn projects_round_trip_through_files_with_laser_waveguides() {
         kind: OpticComponentKind::Laser { amplitude: 2.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
         pos: cell_center(0, 0),
     });
-    let mzi = p.layout.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }), (4, 3));
+    let mzi = p.layout.add_instance(BlockRef::Builtin(Builtin::mzi(std::f64::consts::FRAC_PI_2, 0.0)), (4, 3));
     p.layout.connect_feed(0, PortRef { instance: mzi, port: 0 });
     ws.save_project_to(&path).unwrap();
 
@@ -369,7 +369,7 @@ fn an_mzi_at_pi_says_it_sends_everything_to_out1() {
     // θ = π is the bar state: all of in1 leaves out1. The inspector says so,
     // so a dark out2 doesn't look like a fault.
     let mut h = app();
-    active_mut(&mut h).layout.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: std::f64::consts::PI, phi: 0.0 }), (2, 2));
+    active_mut(&mut h).layout.add_instance(BlockRef::Builtin(Builtin::mzi(std::f64::consts::PI, 0.0)), (2, 2));
     active_mut(&mut h).editor.boxes.select_only(0);
     h.run_steps(2);
     assert!(h.query_by_label("in1 → out1 100%, out2 0%").is_some());
@@ -783,7 +783,7 @@ fn wires_are_drawn_from_the_keyboard() {
         kind: OpticComponentKind::Laser { amplitude: 1.0, phase: 0.0, wavelength: 1550.0, dir: Vec2::new(1.0, 0.0), source: 0, color: None },
         pos: cell_center(0, 0),
     });
-    let mzi = p.layout.add_instance(BlockRef::Builtin(Builtin::Mzi { theta: std::f64::consts::FRAC_PI_2, phi: 0.0 }), (4, 0));
+    let mzi = p.layout.add_instance(BlockRef::Builtin(Builtin::mzi(std::f64::consts::FRAC_PI_2, 0.0)), (4, 0));
     let number = p.layout.add_instance(BlockRef::Builtin(Builtin::NumberInput { bits: 2, value: 3 }), (0, 10));
     let display = p.layout.add_instance(BlockRef::Builtin(Builtin::Display { bits: 2 }), (0, 16));
     h.hover_at(Pos2::new(5.0, 5.0));

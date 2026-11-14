@@ -293,15 +293,26 @@ impl Component for DirectionalCoupler {
 /// internal phase `theta` on the upper arm and a second 50:50 coupler.
 ///
 /// `theta = 0` is the cross state, `theta = pi` the bar state.
+///
+/// Its arms, when given, are two equal waveguides between the couplers: they
+/// add the same phase and loss to both paths, so the matrix is the ideal
+/// MZI's times the arm's transmission.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mzi {
     pub theta: f64,
     pub phi: f64,
+    pub arms: Option<Waveguide>,
 }
 
 impl Mzi {
     pub fn new(theta: f64, phi: f64) -> Self {
-        Self { theta, phi }
+        Self { theta, phi, arms: None }
+    }
+
+    /// The MZI with arms of this waveguide.
+    pub fn with_arms(mut self, arm: Waveguide) -> Self {
+        self.arms = Some(arm);
+        self
     }
 
     /// `i e^{i theta/2} [[e^{i phi} sin(theta/2), cos(theta/2)], [e^{i phi} cos(theta/2), -sin(theta/2)]]`
@@ -315,7 +326,10 @@ impl Mzi {
 
 impl Component for Mzi {
     fn kind(&self) -> Kind<'_> {
-        Kind::Mzi { theta: self.theta, phi: self.phi }
+        match self.arms {
+            None => Kind::Mzi { theta: self.theta, phi: self.phi },
+            Some(_) => Kind::Other,
+        }
     }
     fn name(&self) -> &str {
         "Mzi"
@@ -326,8 +340,15 @@ impl Component for Mzi {
     fn num_outputs(&self) -> usize {
         2
     }
-    fn s_matrix(&self, _wavelength_nm: f64) -> Matrix {
-        Self::matrix(self.theta, self.phi)
+    fn s_matrix(&self, wavelength_nm: f64) -> Matrix {
+        let m = Self::matrix(self.theta, self.phi);
+        match &self.arms {
+            None => m,
+            Some(arm) => {
+                let t = arm.transmission(wavelength_nm);
+                Matrix::from_fn(2, 2, |i, j| m[(i, j)] * t)
+            }
+        }
     }
 }
 

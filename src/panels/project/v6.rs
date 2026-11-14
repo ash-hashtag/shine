@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{ComponentMeta, DocId, DocumentFile};
-use crate::panels::optics::model::Layout;
+use super::v8::Layout8 as Layout;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Meta6 {
@@ -35,5 +35,5 @@ pub struct Project {
 }
 
 pub fn upgrade(d: Document) -> DocumentFile {
-    DocumentFile { id: d.id, name: d.name, component: d.component.map(Meta6::upgrade), cell_um: d.cell_um, layout: d.layout }
+    DocumentFile { id: d.id, name: d.name, component: d.component.map(Meta6::upgrade), cell_um: d.cell_um, layout: d.layout.upgrade() }
 }

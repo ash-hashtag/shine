@@ -301,7 +301,7 @@ fn exports_and_instance_values_are_saved_and_format_5_files_open() {
             layout: v5::Layout5 {
                 components: Vec::new(),
                 lines: Vec::new(),
-                instances: vec![v5::Instance { id: InstanceId(0), block: BlockRef::Builtin(Builtin::Detector), cell: (1, 1) }],
+                instances: vec![v5::Instance { id: InstanceId(0), block: v8::BlockRef8::Builtin(v8::Builtin8::Detector), cell: (1, 1) }],
                 wires: Vec::new(),
                 signals: Vec::new(),
                 next_instance: 1,
@@ -350,7 +350,7 @@ fn appearance_is_saved_and_format_6_still_opens() {
                 name: d.name.clone(),
                 component: d.component.as_ref().map(|m| v6::Meta6 { initials: m.initials.clone(), description: m.description.clone() }),
                 cell_um: d.panel().cell_um,
-                layout: d.layout().clone(),
+                layout: v8::Layout8::downgrade(d.layout().clone()),
             })
             .collect(),
     };
@@ -476,7 +476,8 @@ fn every_kind_of_thing_survives_the_protobuf_format() {
         Builtin::PhaseShifter { phase: 3.0 },
         Builtin::Attenuator { loss_db: 2.0 },
         Builtin::DelayLine { length_um: 100.0, n_eff: 2.4, n_g: 4.2, reference_nm: 1550.0, loss_db_per_cm: 2.0 },
-        Builtin::Mzi { theta: 0.1, phi: 0.2 },
+        Builtin::mzi(0.1, 0.2),
+        Builtin::Mzi { theta: 0.3, phi: 0.4, arms: crate::panels::schematic::model::Arms::silicon(100.0, 2.0) },
         Builtin::YSplitter,
         Builtin::YCombiner,
         Builtin::Crossing,
@@ -519,9 +520,9 @@ fn every_kind_of_thing_survives_the_protobuf_format() {
 
 #[test]
 fn the_saved_reference_designs_survive_the_protobuf_format() {
-    // Saved in the earlier (postcard) format: they open, and come back the
-    // same from the new one.
-    for file in ["reference/photonic-matrix-processor.shine", "reference/digits/digit-recognizer.shine"] {
+    // The kept designs (the Fashion-MNIST chip still in the earlier, postcard,
+    // format) open, and come back the same.
+    for file in ["reference/photonic-matrix-processor.shine", "reference/digits/digit-recognizer.shine", "reference/mnist/fashion-mnist-chip.shine"] {
         let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file)).unwrap();
         let p = Project::from_bytes(&bytes).unwrap();
         let q = Project::from_bytes(&p.to_bytes()).unwrap();

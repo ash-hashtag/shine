@@ -38,7 +38,7 @@ Light and data flow left to right:
 6. **Readout**: electronics (*ƒ argmax*) find the brightest of the 10 outputs and the
    display shows it: the digit the chip read.
 
-Press Tab on a layer to see inside it, and Tab again on its meshes and MZI cells.
+Press Tab on a layer to see inside it, and Tab again on its meshes of MZIs.
 
 ## How it is built
 
@@ -202,8 +202,8 @@ it.
 What makes that possible, rather than minutes and tens of gigabytes:
 
 - **Passive components are solved once.** A component of only passive parts is, to the
-  light, its matrix. Shine solves it into that matrix, all the way down: each MZI cell
-  becomes a 2×2 matrix, on all threads at once, then the mesh of them one 784×784 matrix.
+  light, its matrix. Shine solves it into that matrix, all the way down: each mesh, made
+  of built-in MZIs (2×2 matrices), becomes one 784×784 matrix, on all threads at once.
   The matrices are kept between simulations until the component changes, so a new picture
   costs only what's around the meshes.
 - **Solving keeps only the fields still needed.** A mesh's fields are each read once, by

@@ -41,6 +41,34 @@ pub struct BlockInfo {
     pub category: Category,
 }
 
+/// The arms of an MZI: two equal waveguides between its couplers, adding the
+/// same phase and loss to both paths. Length 0 is an ideal MZI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Arms {
+    pub length_um: f64,
+    /// Effective index at `reference_nm`.
+    pub n_eff: f64,
+    /// Group index: how the phase changes with wavelength.
+    pub n_g: f64,
+    pub reference_nm: f64,
+    pub loss_db_per_cm: f64,
+}
+
+impl Arms {
+    /// Silicon strip waveguide arms at 1550 nm, `length_um` long, with this loss.
+    pub fn silicon(length_um: f64, loss_db_per_cm: f64) -> Self {
+        Self { length_um, n_eff: 2.4, n_g: 4.2, reference_nm: 1550.0, loss_db_per_cm }
+    }
+
+    pub fn is_ideal(&self) -> bool {
+        self.length_um == 0.0 && self.loss_db_per_cm == 0.0
+    }
+
+    pub fn waveguide(&self) -> Waveguide {
+        Waveguide::new(self.length_um, self.n_eff).with_group_index(self.n_g, self.reference_nm).with_loss(self.loss_db_per_cm)
+    }
+}
+
 /// Blocks that come with the editor. Each is backed by a `photonics` component or block.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Builtin {
@@ -74,9 +102,12 @@ pub enum Builtin {
         reference_nm: f64,
         loss_db_per_cm: f64,
     },
+    /// `arms` are the two equal waveguides between its couplers; of
+    /// length 0 (the default), it is the ideal MZI.
     Mzi {
         theta: f64,
         phi: f64,
+        arms: Arms,
     },
     YSplitter,
     YCombiner,
@@ -144,6 +175,11 @@ fn numbered(prefix: &str, n: usize) -> Vec<String> {
 }
 
 impl Builtin {
+    /// An ideal MZI.
+    pub fn mzi(theta: f64, phi: f64) -> Self {
+        Self::Mzi { theta, phi, arms: Arms::default() }
+    }
+
     /// Every built-in block with default parameters, in library order.
     pub fn palette() -> Vec<Builtin> {
         vec![
@@ -167,10 +203,7 @@ impl Builtin {
                 loss_db_per_cm: 0.0,
             },
             // Balanced: light in one input leaves both outputs, half each.
-            Self::Mzi {
-                theta: std::f64::consts::FRAC_PI_2,
-                phi: 0.0,
-            },
+            Self::mzi(std::f64::consts::FRAC_PI_2, 0.0),
             Self::YSplitter,
             Self::YCombiner,
             Self::Crossing,
@@ -533,8 +566,9 @@ impl Builtin {
                 );
                 single(n, 1, 1)
             }
-            Self::Mzi { theta, phi } => {
-                let n = c.add(Mzi::new(*theta, *phi));
+            Self::Mzi { theta, phi, arms } => {
+                let mzi = Mzi::new(*theta, *phi);
+                let n = c.add(if arms.is_ideal() { mzi } else { mzi.with_arms(arms.waveguide()) });
                 single(n, 2, 2)
             }
             Self::YSplitter => {
