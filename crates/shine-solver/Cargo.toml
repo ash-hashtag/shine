@@ -1,0 +1,17 @@
+[package]
+name = "shine-solver"
+version = "0.1.3"
+edition = "2024"
+description = "Shine's photonic circuit solver: components as scattering matrices, circuits solved exactly in the frequency domain (feedback included), compiled for SIMD and threads, and MZI mesh decompositions"
+license = "GPL-3.0-only"
+repository = "https://github.com/ash-hashtag/shine"
+homepage = "https://shine.lupyd.com"
+
+[dependencies]
+num-complex = "0.4.6"
+pulp = "0.22.3"
+faer = { version = "0.24.4", default-features = false, features = ["std", "linalg"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1.12.0"
+faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "rayon"] }

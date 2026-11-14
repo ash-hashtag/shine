@@ -43,9 +43,13 @@ jobs:
       # Includes the headless UI tests and the docs coverage tests.
       - name: Test
         run: cargo test --locked
-      - name: The engine alone
+      # The solver crate (crates/shine-solver), on its own.
+      - name: The solver
         if: runner.os == 'Linux'
-        run: cargo test --locked --no-default-features --lib
+        run: |
+          cargo clippy --locked -p shine-solver --all-targets -- -D warnings
+          cargo test --locked -p shine-solver
+          cargo test --locked --no-default-features --lib
       # Designs, simulation and files without the editor: what the library and
       # the Python and TypeScript packages are built on.
       - name: The library without the editor

@@ -12,7 +12,7 @@
 //! - a lossless 2x2 coupler is `[[t, i k], [i k, t]]` with `t^2 + k^2 = 1`.
 //!
 //! ```
-//! use shine::photonics::*;
+//! use shine_solver::*;
 //!
 //! // A Mach-Zehnder interferometer built from two 50:50 couplers.
 //! let mut c = Circuit::new();

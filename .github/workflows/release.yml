@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - name: Tag matches Cargo.toml and the library packages
         run: |
-          for file in Cargo.toml bindings/Cargo.toml bindings/boltffi.toml; do
+          for file in Cargo.toml crates/*/Cargo.toml bindings/Cargo.toml bindings/boltffi.toml; do
             version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$file" | head -1)
             if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
               echo "::error::Tag $GITHUB_REF_NAME does not match the version in $file ($version)"

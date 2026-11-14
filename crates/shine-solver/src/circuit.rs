@@ -337,7 +337,7 @@ mod tests {
     use std::f64::consts::PI;
 
     use super::*;
-    use crate::photonics::*;
+    use crate::*;
 
     /// All-pass ring: bus -> coupler -> ring waveguide -> attenuator -> coupler.
     fn ring(
@@ -534,7 +534,7 @@ mod api_tests {
     use std::f64::consts::PI;
 
     use super::*;
-    use crate::photonics::*;
+    use crate::*;
 
     #[test]
     fn node_and_port_helpers() {

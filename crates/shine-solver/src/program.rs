@@ -1067,7 +1067,7 @@ fn strongly_connected_components(circuit: &Circuit) -> Vec<Vec<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::photonics::*;
+    use crate::*;
 
     const WL: f64 = 1550.0;
 

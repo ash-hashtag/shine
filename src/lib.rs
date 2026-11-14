@@ -1,4 +1,5 @@
-pub mod photonics;
+/// The photonic circuit solver, the `shine-solver` crate.
+pub use shine_solver as photonics;
 
 /// Shine as a library: designs, simulation, analysis and files, without the app.
 #[cfg(feature = "core")]

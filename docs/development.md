@@ -23,13 +23,26 @@ in `Cargo.toml`).
 On Linux the editor needs the usual windowing libraries (`libxkbcommon`, `libxcb`,
 Wayland or X11 at runtime).
 
+## Crates
+
+Shine is becoming a workspace of crates, each with one job (the plan is
+`design/crates.md`). So far:
+
+- `crates/shine-solver`: the photonic circuit solver, components as scattering matrices,
+  circuits solved exactly in the frequency domain, compiled for SIMD and threads, and MZI
+  mesh decompositions. `shine::photonics` re-exports it. `cargo test -p shine-solver`
+  runs its tests in seconds.
+- `shine` (the root): everything else, the design model, simulation, the library, the
+  editor and the binaries.
+- `bindings`: the Python and TypeScript packages, `shine-photonics`.
+
 ## Tests
 
 Three layers, all run by CI:
 
-- **Unit tests** next to the code (`cargo test --lib`): the photonics engine against
-  closed-form results, the simulator, file formats and upgrades, the MCP tools, and the
-  editor's UI driven headlessly with simulated mouse and keyboard input.
+- **Unit tests** next to the code (`cargo test -p shine-solver`, `cargo test --lib`): the
+  solver against closed-form results, the simulator, file formats and upgrades, the MCP
+  tools, and the editor's UI driven headlessly with simulated mouse and keyboard input.
 - **Integration tests** in `tests/` (`cargo test --test ui`): the whole app through its
   public API with [egui_kittest](https://docs.rs/egui_kittest), clicking menus and buttons
   by their labels and dragging with the mouse; plus the MCP server over stdio.

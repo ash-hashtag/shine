@@ -12,7 +12,7 @@ homepage = "https://shine.lupyd.com"
 # The library's Python and TypeScript packages. They build Shine with only
 # `core`, so they're left out of plain `cargo` commands here (which build the
 # app); build them with `-p shine-photonics` or the boltffi tool in bindings/.
-members = ["bindings"]
+members = ["bindings", "crates/shine-solver"]
 default-members = ["."]
 
 [features]
@@ -94,6 +94,8 @@ serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 rfd = { version = "0.18.0", optional = true }
 num-complex = "0.4.6"
+# The photonic circuit solver (shine::photonics).
+shine-solver = { path = "crates/shine-solver", version = "0.1.3" }
 faer = { version = "0.24.4", default-features = false, features = ["std", "linalg"] }
 pulp = "0.22.3"
 egui_plot = { version = "0.38.0", optional = true }
