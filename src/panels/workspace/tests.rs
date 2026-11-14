@@ -169,7 +169,9 @@ fn examples_open_and_simulate() {
         let sim = panel(&mut ws, id).sim.clone().expect("simulated");
         assert!(sim.outcome.error.is_none(), "{:?}", sim.outcome.error);
     }
-    for i in 0..demos().len() {
+    // The Fashion-MNIST chip takes minutes to simulate in a debug build:
+    // tests/mnist.rs checks it.
+    for i in (0..demos().len()).filter(|&i| !demos()[i].name.starts_with("Fashion-MNIST")) {
         ws.load_demo(i);
         h.frame(&mut ws, Vec::new());
         let id = ws.active.unwrap();

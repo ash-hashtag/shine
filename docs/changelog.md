@@ -21,6 +21,10 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - The MZI switch has arms: give it an arm length (and loss) and it is the MZI on a chip,
   its two waveguides adding the same phase and loss to both paths. Meshes and neural
   network layers are built from it, instead of an "MZI cell" component in every project.
+- The Fashion-MNIST classifier, the optical neural network at full size, is an example:
+  built from its weights (in the repository) when opened, in the app and the browser.
+  The saved chip, `reference/mnist/fashion-mnist-chip.shine`, is gone: `shine network
+  reference/mnist/fashion-mnist-weights.json --out chip.shine` makes it.
 
 ### Fixed
 

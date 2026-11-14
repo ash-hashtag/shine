@@ -109,8 +109,10 @@ The same chip scales to 28×28 pictures: 784 pixels, 784 modulators, and a layer
 V† mesh has 784 modes, 306 936 MZIs. Opened up, the chip has **3 124 074 parts**. It's
 Shine's stress test, and the reason Shine handles designs of millions of parts.
 
-The one in the repository, `reference/mnist/fashion-mnist-chip.shine`, is trained on
-**Fashion-MNIST**: 70 000 pictures of ten kinds of clothing (T-shirt/top, trouser,
+It's among the app's examples, **Fashion-MNIST classifier (optical neural network)**
+([open it in your browser](https://shine.lupyd.com/app/?example=fashion-mnist-classifier-optical-neural-network)),
+built from the network in the repository (`reference/mnist/fashion-mnist-weights.json`)
+trained on **Fashion-MNIST**: 70 000 pictures of ten kinds of clothing (T-shirt/top, trouser,
 pullover, dress, coat, sandal, shirt, sneaker, bag, ankle boot), in MNIST's format. Its
 network (784 → 64 → 10, trained for the chip's electronics as above) reads **87.96%** of
 the 10 000 test pictures. The same tools train it on MNIST's handwritten digits instead
@@ -151,13 +153,13 @@ once: about 3.5 s for the first and a tenth of a second for each after. To run `
 yourself, `--print-inputs` prints just the numbers:
 
 ```sh
-python examples/mnist.py --image shoe.png --print-inputs | shine simulate reference/mnist/fashion-mnist-chip.shine --input -
+shine network reference/mnist/fashion-mnist-weights.json --out chip.shine
+python examples/mnist.py --image shoe.png --print-inputs | shine simulate chip.shine --input -
 ```
 
-The chip opens in the app as any project does (`shine reference/mnist/fashion-mnist-chip.shine`),
-or [in your browser](https://shine.lupyd.com/app/?open=/reference/fashion-mnist-chip.shine&simulate):
-it downloads (15.6 MB), opens in half a second and simulates its first picture in about
-7 s, its meshes solved on one thread (WebAssembly); press Space to pause it.
+In the app it's an example (**File → Examples**); [in your browser](https://shine.lupyd.com/app/?example=fashion-mnist-classifier-optical-neural-network)
+it is built in under 3 s and simulates its first picture in about 3 s more, its meshes
+solved on one thread (WebAssembly); press Space to pause it.
 
 ### Benchmarks
 

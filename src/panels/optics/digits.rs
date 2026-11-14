@@ -74,6 +74,44 @@ pub fn test_digits() -> TestDigits {
     serde_json::from_str(include_str!("../../../reference/digits/test-digits.json")).expect("the bundled test digits")
 }
 
+/// The full-size network, trained on Fashion-MNIST (`reference/mnist`):
+/// 784 pixels, 64 neurons, 10 classes.
+pub fn fashion_weights() -> Weights {
+    serde_json::from_str(include_str!("../../../reference/mnist/fashion-mnist-weights.json")).expect("the bundled weights")
+}
+
+/// One Fashion-MNIST test picture of a class: 784 pixels, 0 to 1.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Sample {
+    pub class: String,
+    pub test_index: usize,
+    pixels: Vec<u8>,
+}
+
+impl Sample {
+    pub fn pixels(&self) -> Vec<f64> {
+        self.pixels.iter().map(|&p| p as f64 / 255.0).collect()
+    }
+}
+
+/// One Fashion-MNIST test picture of each class, in class order.
+pub fn fashion_samples() -> Vec<Sample> {
+    #[derive(Deserialize)]
+    struct File {
+        pictures: Vec<Sample>,
+    }
+    let file: File = serde_json::from_str(include_str!("../../../reference/mnist/fashion-mnist-samples.json")).expect("the bundled pictures");
+    file.pictures
+}
+
+/// The example: the Fashion-MNIST chip (3.1 million parts opened up),
+/// showing a test picture of an ankle boot.
+pub fn fashion_demo(project: &mut Project) -> DocId {
+    let w = fashion_weights();
+    let boot = fashion_samples().into_iter().find(|s| s.class == "Ankle boot").expect("a picture of each class");
+    chip_named(project, "Fashion-MNIST classifier (optical neural network)", &w, &boot.pixels()).expect("the bundled weights make a chip").top
+}
+
 fn matrix(rows: &[Vec<f64>]) -> Matrix {
     Matrix::from_fn(rows.len(), rows[0].len(), |i, j| C64::new(rows[i][j], 0.0))
 }

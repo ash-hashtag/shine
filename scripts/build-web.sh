@@ -34,8 +34,7 @@ ls -lh web/public/pkg/shine_bg.wasm
 # The reference designs, for links into the app (?open=/reference/…).
 rm -rf web/public/reference
 mkdir -p web/public/reference
-cp reference/photonic-matrix-processor.shine reference/digits/digit-recognizer.shine \
-  reference/mnist/fashion-mnist-chip.shine web/public/reference/
+cp reference/photonic-matrix-processor.shine reference/digits/digit-recognizer.shine web/public/reference/
 
 echo "Building the site"
 (cd web && pnpm install --frozen-lockfile && pnpm run build)

@@ -161,6 +161,11 @@ strip = "debuginfo"
 [profile.dev.package."*"]
 opt-level = 1
 
+# The solver too: its matrix work (decomposing meshes, solving them) is what
+# a debug build of a big design spends its time on.
+[profile.dev.package.shine-solver]
+opt-level = 2
+
 # Used by scripts/build-web.sh for the browser build.
 [profile.web]
 inherits = "release"

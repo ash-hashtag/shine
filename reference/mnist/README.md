@@ -6,8 +6,8 @@ The full-size version of Shine's optical neural network
 
 | File | What it is |
 |---|---|
-| `fashion-mnist-chip.shine` | The chip trained on Fashion-MNIST, ready to simulate: `shine simulate fashion-mnist-chip.shine --input -` with 784 pixel values, or `python examples/mnist.py --image shoe.png` |
-| `fashion-mnist-weights.json` | Its trained weights (W1 64×784, W2 10×64, the hidden scale H): `shine network fashion-mnist-weights.json --out chip.shine` builds the chip from them |
+| `fashion-mnist-weights.json` | The network trained on Fashion-MNIST (W1 64×784, W2 10×64, the hidden scale H): `shine network fashion-mnist-weights.json --out chip.shine` builds the chip from them (in under 2 s), to simulate with `shine simulate chip.shine --input -` and 784 pixel values, or `python examples/mnist.py --image shoe.png`. The app has the chip among its examples: **Fashion-MNIST classifier (optical neural network)** |
+| `fashion-mnist-samples.json` | One test picture of each class, shown on the example's inputs |
 | `benchmark.py` | Runs the test pictures through the chip with the `shine` program: time per picture, memory, accuracy, and agreement with the network (NumPy) |
 | `train.py` | Trains the network on what the chip computes (JAX), on Fashion-MNIST or MNIST, downloading the data into a cache folder |
 
@@ -21,7 +21,7 @@ To make it again (the data isn't kept here):
 ```sh
 pip install numpy jax
 python reference/mnist/train.py CACHE --dataset fashion
-shine network CACHE/weights.json --out reference/mnist/fashion-mnist-chip.shine
+cp CACHE/weights.json reference/mnist/fashion-mnist-weights.json
 ```
 
 `--dataset mnist` trains it on MNIST's handwritten digits instead (97.40%).
@@ -30,5 +30,5 @@ shine network CACHE/weights.json --out reference/mnist/fashion-mnist-chip.shine
 
 Fashion-MNIST is by Han Xiao, Kashif Rasul and Roland Vollgraf (Zalando Research, 2017,
 https://github.com/zalandoresearch/fashion-mnist), under the MIT licence; the chip's
-weights were trained on it. MNIST (Y. LeCun, C. Cortes and C. J. C. Burges) is under
+weights were trained on it, and `fashion-mnist-samples.json` holds ten of its test pictures. MNIST (Y. LeCun, C. Cortes and C. J. C. Burges) is under
 CC BY-SA 3.0, so neither its digits nor a chip trained on them are kept here.

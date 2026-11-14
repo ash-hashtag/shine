@@ -9,7 +9,8 @@ trained network (its weights, fashion-mnist-weights.json, computed here with Num
     python reference/mnist/benchmark.py [--images 1000] [--shine PROGRAM] [--cache DIR]
 
 The test pictures (Fashion-MNIST, Zalando Research, MIT licence) are downloaded
-into the cache folder (default ~/.cache/shine/fashion-mnist) the first time.
+into the cache folder (default ~/.cache/shine/fashion-mnist) the first time, and
+the chip is built there from the weights (`shine network`) unless --chip gives one.
 """
 import argparse, csv, gzip, io, json, os, platform, resource, shutil, subprocess, sys, time, urllib.request
 
@@ -64,12 +65,19 @@ def main():
     a = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     a.add_argument("--images", type=int, default=1000, help="how many test pictures (up to 10 000)")
     a.add_argument("--shine", default=os.environ.get("SHINE") or shutil.which("shine"), help="the shine program")
-    a.add_argument("--chip", default=os.path.join(HERE, "fashion-mnist-chip.shine"))
+    a.add_argument("--chip", help="the chip (default: built from --weights into the cache folder)")
     a.add_argument("--weights", default=os.path.join(HERE, "fashion-mnist-weights.json"))
     a.add_argument("--cache", default=os.path.join(os.path.expanduser("~"), ".cache", "shine", "fashion-mnist"))
     args = a.parse_args()
     if not args.shine:
         sys.exit("Can't find the shine program: put it on PATH, set SHINE, or give --shine")
+
+    if not args.chip:
+        args.chip = os.path.join(args.cache, "fashion-mnist-chip.shine")
+        os.makedirs(args.cache, exist_ok=True)
+        built = subprocess.run([args.shine, "network", args.weights, "--out", args.chip], capture_output=True, text=True)
+        if built.returncode != 0:
+            sys.exit(built.stderr.strip())
 
     images, labels = test_set(args.cache)
     n = min(args.images, len(labels))

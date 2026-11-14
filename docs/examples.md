@@ -72,6 +72,18 @@ the display shows the brightest of its 10 outputs. 465 MZIs, 4 698 parts. See
 [Optical neural network](neural-network.md) for how it's built, and how it compares with
 SAX and PhotonForge.
 
+### Fashion-MNIST classifier (optical neural network)
+
+The same network at full size, trained on Fashion-MNIST: a 28×28 picture (an ankle boot
+from the test set) on 784 modulators, layer 1 (784 → 64: a 784×784 and a 64×64 MZI mesh
+with attenuators between them), 64 photodetector neurons, layer 2 (64 → 10) and the
+display, which shows the class: 0 T-shirt/top, 1 trouser, 2 pullover, 3 dress, 4 coat,
+5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot. It reads 88% of the 10 000 test
+pictures right. 311 000 MZIs, 3.1 million parts when opened up: it takes a few seconds to
+build and to simulate the first time. Its layers are components like any other, so you can
+place them in your own designs; [Optical neural network](neural-network.md#at-full-size)
+has its benchmarks, and how to run pictures of your own through it.
+
 ### Cascaded interferometers
 
 A free-space Mach–Zehnder saved as a component and used twice: a beam enters the first

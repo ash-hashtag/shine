@@ -520,12 +520,43 @@ fn every_kind_of_thing_survives_the_protobuf_format() {
 
 #[test]
 fn the_saved_reference_designs_survive_the_protobuf_format() {
-    // The kept designs (the Fashion-MNIST chip still in the earlier, postcard,
-    // format) open, and come back the same.
-    for file in ["reference/photonic-matrix-processor.shine", "reference/digits/digit-recognizer.shine", "reference/mnist/fashion-mnist-chip.shine"] {
+    for file in ["reference/photonic-matrix-processor.shine", "reference/digits/digit-recognizer.shine"] {
         let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file)).unwrap();
         let p = Project::from_bytes(&bytes).unwrap();
         let q = Project::from_bytes(&p.to_bytes()).unwrap();
         assert_same_documents(&p, &q);
     }
+}
+
+#[test]
+fn format_8_files_from_shine_0_1_open() {
+    // Shine 0.1's last postcard format, written from its frozen types: a
+    // component (with an ideal MZI) placed in a design.
+    let mut p = Project::new();
+    let mut inner = Layout::default();
+    let a = inner.add_instance(BlockRef::Builtin(Builtin::InputPin { name: "a".into() }), (0, 0));
+    let m = inner.add_instance(BlockRef::Builtin(Builtin::mzi(1.0, 2.0)), (3, 0));
+    inner.add_waveguide(PortRef { instance: a, port: 0 }, PortRef { instance: m, port: 0 });
+    let inner = p.add_component("Switch", "SW", "An MZI", inner, 10.0);
+    let mut top = Layout::default();
+    top.add_instance(BlockRef::Component(inner), (2, 2));
+    p.add_layout("Top", top, 5.0);
+    let old = v8::Project {
+        next_id: 9,
+        documents: p
+            .documents
+            .iter()
+            .map(|d| v8::Document {
+                id: d.id,
+                name: d.name.clone(),
+                component: d.component.clone(),
+                cell_um: d.cell_um(),
+                layout: v8::Layout8::downgrade(d.layout().clone()),
+            })
+            .collect(),
+    };
+    let bytes = file_format::encode(&old);
+    assert_eq!(file_format::version(&bytes), Ok(8));
+    let opened = Project::from_bytes(&bytes).unwrap();
+    assert_same_documents(&p, &opened);
 }

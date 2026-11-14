@@ -7,10 +7,11 @@ dataset's pictures were, and runs the `shine` program on the chip with them:
     shine simulate CHIP --input -     (the pixels on standard input)
 
 The chip is a Shine project: an optical neural network of 3.1 million parts
-(see docs/neural-network.md). The one in the repository,
-reference/mnist/fashion-mnist-chip.shine, was trained on Fashion-MNIST (ten
-kinds of clothing); one trained on MNIST reads handwritten digits. With Pillow,
-to read pictures (pip install pillow):
+(see docs/neural-network.md). By default it is the one trained on Fashion-MNIST
+(ten kinds of clothing), built from its weights in the repository
+(reference/mnist/fashion-mnist-weights.json) with `shine network` the first
+time, and kept in ~/.cache/shine; one trained on MNIST reads handwritten
+digits. With Pillow, to read pictures (pip install pillow):
 
     python examples/mnist.py --image shoe.png [more.png ...] [--chip FILE] [--shine PROGRAM]
 
@@ -19,11 +20,12 @@ class's detector. Several pictures go through one run of `shine`, one after
 another. `--print-inputs` only prints the pixel values, a picture per line, for
 `shine` yourself:
 
-    python examples/mnist.py --image shoe.png --print-inputs | shine simulate reference/mnist/fashion-mnist-chip.shine --input -
+    python examples/mnist.py --image shoe.png --print-inputs | shine simulate CHIP --input -
 """
 import argparse, csv, io, os, shutil, subprocess, sys
 
-CHIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reference", "mnist", "fashion-mnist-chip.shine")
+WEIGHTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reference", "mnist", "fashion-mnist-weights.json")
+CHIP = os.path.join(os.path.expanduser("~"), ".cache", "shine", "fashion-mnist-chip.shine")
 
 # What each dataset's ten classes are, and how its pictures were prepared:
 # MNIST's digits fitted in 20×20 and centred by their centre of mass,
@@ -102,17 +104,29 @@ def find_shine(given):
     return program
 
 
+def fashion_chip(shine):
+    """The Fashion-MNIST chip, built from the repository's weights the first time."""
+    if not os.path.exists(CHIP):
+        os.makedirs(os.path.dirname(CHIP), exist_ok=True)
+        print(f"Building the chip into {CHIP} (once) ...", file=sys.stderr)
+        done = subprocess.run([shine, "network", os.path.normpath(WEIGHTS), "--out", CHIP], capture_output=True, text=True)
+        if done.returncode != 0:
+            sys.exit(done.stderr.strip())
+    return CHIP
+
+
 def main():
     a = argparse.ArgumentParser(description="Classify pictures with Shine's 28×28 optical neural network chip.")
     a.add_argument("--image", nargs="+", required=True, help="pictures (PNG, JPEG, ...)")
-    a.add_argument("--chip", default=os.environ.get("SHINE_MNIST_CHIP", os.path.normpath(CHIP)),
-                   help="the chip (default reference/mnist/fashion-mnist-chip.shine, or SHINE_MNIST_CHIP)")
+    a.add_argument("--chip", default=os.environ.get("SHINE_MNIST_CHIP"),
+                   help="the chip (default: SHINE_MNIST_CHIP, else the Fashion-MNIST chip, built from its weights)")
     a.add_argument("--dataset", choices=sorted(DATASETS),
                    help="what the chip was trained on (default: from its file name, else fashion)")
     a.add_argument("--shine", help="the shine program (default: SHINE, else shine on PATH)")
     a.add_argument("--print-inputs", action="store_true", help="only print the pixel values, a picture per line")
     args = a.parse_args()
-    dataset = args.dataset or ("mnist" if "mnist" in os.path.basename(args.chip).lower() and "fashion" not in os.path.basename(args.chip).lower() else "fashion")
+    name = os.path.basename(args.chip or "").lower()
+    dataset = args.dataset or ("mnist" if "mnist" in name and "fashion" not in name else "fashion")
     classes, fit, by_mass = DATASETS[dataset]
 
     inputs = [pixels(p, fit, by_mass) for p in args.image]
@@ -120,11 +134,13 @@ def main():
     if args.print_inputs:
         sys.stdout.write(stream)
         return
-    if not os.path.exists(args.chip):
-        sys.exit(f"No chip at {args.chip}: see reference/mnist/README.md to make it, or give --chip")
+    shine = find_shine(args.shine)
+    chip = args.chip or fashion_chip(shine)
+    if not os.path.exists(chip):
+        sys.exit(f"No chip at {chip}: see reference/mnist/README.md to make it, or give --chip")
 
     # The ten scores are the light leaving layer 2; the display shows the digit.
-    command = [find_shine(args.shine), "simulate", args.chip, "--input", "-", "--csv", "--box-outputs",
+    command = [shine, "simulate", chip, "--input", "-", "--csv", "--box-outputs",
                "--only", "Layer 2", "--only", "Display"]
     run = subprocess.run(command, input=stream, capture_output=True, text=True)
     if run.returncode != 0:
