@@ -1,7 +1,9 @@
 // Shine's file format: projects, designs and components.
 //
 // A file is the 4 bytes "SHPB", a 2-byte format version (little-endian, 1),
-// then one `ShineFile` message. The version changes only if a change can't
+// a byte saying how the rest is stored (0: as it is; 1: compressed with zlib,
+// RFC 1950, which Shine does for files of 64 KiB and more), then one
+// `ShineFile` message. The version changes only if a change can't
 // be made the protobuf way; otherwise the schema grows by adding fields, and
 // field numbers are never reused or renumbered, so old files keep reading and
 // old versions of Shine skip what they don't know.
