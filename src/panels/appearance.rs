@@ -243,8 +243,9 @@ pub fn paint_badge(painter: &egui::Painter, rect: Rect, appearance: &Appearance,
         }
     }
     painter.add(appearance.shape.shape(rect.shrink(1.0), fill, Stroke::NONE));
-    let size = if initials.chars().count() > 2 { rect.height() * 0.36 } else { rect.height() * 0.46 };
-    painter.text(rect.center(), egui::Align2::CENTER_CENTER, initials, egui::FontId::proportional(size.max(6.0)), text_on(fill));
+    // Initials sized to fit the badge, however many letters.
+    let galley = super::ui_kit::fitted_initials(painter, rect, initials, text_on(fill));
+    painter.galley(rect.center() - galley.size() / 2.0, galley, text_on(fill));
 }
 
 /// Picture files the icon picker offers.

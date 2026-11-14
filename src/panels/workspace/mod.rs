@@ -1274,6 +1274,9 @@ impl Workspace {
                 .default_size(230.0)
                 .resizable(true)
                 .show(ui, |ui| {
+                    // A side panel is as wide as it's set: text that doesn't
+                    // fit goes on to the next line, never past the edge.
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                     ui.horizontal(|ui| {
                         ui.selectable_value(&mut self.left_tab, LeftTab::Parts, "Parts").on_hover_text("Parts and blocks, and the project's documents");
                         ui.selectable_value(&mut self.left_tab, LeftTab::Assets, "Assets")
@@ -1301,6 +1304,7 @@ impl Workspace {
                 .default_size(270.0)
                 .resizable(true)
                 .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         self.document_header(ui, id);
                         if let Some(doc) = self.project.doc_mut(id) {

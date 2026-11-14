@@ -92,7 +92,7 @@ impl Workspace {
 
     pub(super) fn assets_ui(&mut self, ui: &mut Ui, catalog: &Catalog) {
         let mut action = None;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("⊞ Library").on_hover_text("Browse every component in a grid (View → Asset library…)").clicked() {
                 action = Some(Action::OpenWindow);
             }
@@ -102,6 +102,10 @@ impl Workspace {
                 .clicked()
             {
                 action = Some(Action::Import);
+            }
+            // Too narrow beside the buttons: on a line of its own.
+            if ui.available_width() < 140.0 {
+                ui.end_row();
             }
             ui.add(egui::TextEdit::singleline(&mut self.asset_search).hint_text("Search assets").desired_width(f32::INFINITY))
                 .accessible_name("Search assets")

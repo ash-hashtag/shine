@@ -1,6 +1,6 @@
 //! Small shared widgets and the canvas colour theme.
 
-use egui::{Align2, Color32, FontId, Painter, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 /// Canvas colours derived from the egui theme, so light and dark modes both read well.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -134,8 +134,14 @@ pub fn item_row_sized(
     height: f32,
     icon: impl FnOnce(&Painter, Rect),
 ) -> Response {
+    // The label wraps onto more lines rather than running past the edge, and
+    // the row grows to hold it.
+    let font = FontId::proportional(if height < 24.0 { 13.0 } else { 13.5 });
+    let text_width = (ui.available_width() - 38.0).max(40.0);
+    let galley = ui.painter().layout(label.to_owned(), font, Color32::PLACEHOLDER, text_width);
+    let row_height = height.max(galley.size().y + 8.0);
     let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), height),
+        Vec2::new(ui.available_width(), row_height),
         Sense::click_and_drag(),
     );
     // Painted by hand, so describe it for screen readers (and UI tests).
@@ -145,16 +151,14 @@ pub fn item_row_sized(
         if selected || response.hovered() {
             ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
         }
-        let icon_rect =
-            Rect::from_center_size(rect.left_center() + Vec2::new(16.0, 0.0), Vec2::splat((height - 6.0).min(20.0)));
-        icon(ui.painter(), icon_rect);
-        ui.painter().text(
-            rect.left_center() + Vec2::new(34.0, 0.0),
-            Align2::LEFT_CENTER,
-            label,
-            FontId::proportional(if height < 24.0 { 13.0 } else { 13.5 }),
-            visuals.text_color(),
+        // The icon beside the first line.
+        let icon_rect = Rect::from_center_size(
+            Pos2::new(rect.left() + 16.0, rect.top() + height / 2.0),
+            Vec2::splat((height - 6.0).min(20.0)),
         );
+        icon(ui.painter(), icon_rect);
+        let top = if row_height > height { rect.top() + 4.0 } else { rect.center().y - galley.size().y / 2.0 };
+        ui.painter().galley(Pos2::new(rect.left() + 34.0, top), galley, visuals.text_color());
     }
     response
 }
@@ -189,19 +193,21 @@ pub fn window<'open>(ctx: &egui::Context, title: &str) -> egui::Window<'open> {
 /// Rounded badge with initials, used for components in libraries and on canvases.
 pub fn badge(painter: &Painter, rect: Rect, initials: &str, fill: Color32, text: Color32) {
     painter.rect(rect, 3.0, fill, Stroke::NONE, egui::StrokeKind::Inside);
-    let size = (rect.height() * 0.45).clamp(6.0, 40.0)
-        * if initials.chars().count() > 2 {
-            0.85
-        } else {
-            1.0
-        };
-    painter.text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        initials,
-        FontId::proportional(size),
-        text,
-    );
+    let galley = fitted_initials(painter, rect, initials, text);
+    painter.galley(rect.center() - galley.size() / 2.0, galley, text);
+}
+
+/// Initials laid out to fit inside `rect` (a badge): smaller for more
+/// letters, never past its edges. Paint it at `rect.center() - size / 2`.
+pub fn fitted_initials(painter: &Painter, rect: Rect, initials: &str, text: Color32) -> std::sync::Arc<egui::Galley> {
+    let mut size = (rect.height() * 0.45).clamp(6.0, 40.0);
+    let mut galley = painter.layout_no_wrap(initials.to_owned(), FontId::proportional(size), text);
+    let room = rect.width() - 3.0;
+    if galley.size().x > room && galley.size().x > 0.0 {
+        size = (size * room / galley.size().x).max(4.0);
+        galley = painter.layout_no_wrap(initials.to_owned(), FontId::proportional(size), text);
+    }
+    galley
 }
 
 /// Centered hint drawn on an empty canvas.

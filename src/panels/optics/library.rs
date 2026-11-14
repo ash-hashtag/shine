@@ -406,9 +406,16 @@ impl OpticsPanel {
         }
     }
 
-    /// One tile in the browser: icon, name and the start of the description.
+    /// One tile in the browser: icon, name and description, all of it (the
+    /// tile grows to hold them).
     fn tile(&self, ui: &mut Ui, entry: &Entry) -> egui::Response {
-        let size = egui::vec2(160.0, 82.0);
+        let width = 160.0;
+        let text = ui.visuals().text_color();
+        let weak = ui.visuals().weak_text_color();
+        let name = ui.painter().layout(entry.name.clone(), egui::FontId::proportional(13.0), text, width - 46.0);
+        let description = ui.painter().layout(entry.description.clone(), egui::FontId::proportional(10.5), weak, width - 16.0);
+        let header = (name.size().y + 2.0).max(22.0);
+        let size = egui::vec2(width, (8.0 + header + 4.0 + description.size().y + 8.0).max(82.0));
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
@@ -421,18 +428,8 @@ impl OpticsPanel {
             );
             let icon = egui::Rect::from_min_size(rect.min + egui::vec2(8.0, 8.0), egui::vec2(22.0, 22.0));
             draw_icon(ui.painter(), icon, &entry.item, &self.catalog);
-            let text = ui.visuals().text_color();
-            let name = ui.painter().layout(entry.name.clone(), egui::FontId::proportional(13.0), text, rect.width() - 46.0);
-            let name_bottom = icon.top() + 2.0 + name.size().y;
             ui.painter().galley(icon.right_top() + egui::vec2(8.0, 2.0), name, text);
-            let mut description = entry.description.clone();
-            if description.chars().count() > 70 {
-                description = description.chars().take(68).collect::<String>() + "…";
-            }
-            let weak = ui.visuals().weak_text_color();
-            let galley = ui.painter().layout(description, egui::FontId::proportional(10.5), weak, rect.width() - 16.0);
-            let top = name_bottom.max(icon.bottom()) + 4.0;
-            ui.painter().with_clip_rect(rect.shrink(2.0)).galley(egui::pos2(rect.left() + 8.0, top), galley, weak);
+            ui.painter().galley(egui::pos2(rect.left() + 8.0, rect.top() + 8.0 + header + 4.0), description, weak);
         }
         response.on_hover_text(format!("{}\n{}", entry.name, entry.description))
     }
