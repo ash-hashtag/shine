@@ -104,7 +104,7 @@ pub fn fashion_samples() -> Vec<Sample> {
     file.pictures
 }
 
-/// The example: the Fashion-MNIST chip (3.1 million parts opened up),
+/// The example: the Fashion-MNIST chip (311 000 MZIs),
 /// showing a test picture of an ankle boot.
 pub fn fashion_demo(project: &mut Project) -> DocId {
     let w = fashion_weights();

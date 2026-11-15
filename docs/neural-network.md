@@ -106,8 +106,9 @@ python reference/digits/compare.py out reference/digits/test-digits.json --photo
 ## At full size
 
 The same chip scales to 28×28 pictures: 784 pixels, 784 modulators, and a layer 1 whose
-V† mesh has 784 modes, 306 936 MZIs. Opened up, the chip has **3 124 074 parts**. It's
-Shine's stress test, and the reason Shine handles designs of millions of parts.
+V† mesh has 784 modes, 306 936 MZIs: **311 013 MZIs** in all, 324 957 parts opened up
+(3.1 million when each MZI was built from its couplers, heaters and arms, before 0.2).
+It's Shine's stress test, and the reason Shine handles designs of this size.
 
 It's among the app's examples, **Fashion-MNIST classifier (optical neural network)**
 ([open it in your browser](https://shine.lupyd.com/app/?example=fashion-mnist-classifier-optical-neural-network)),
@@ -149,7 +150,7 @@ pixel values on its standard input (`shine simulate … --input -`, see
 [Command line](command-line.md#inputs)); it finds `shine` on the PATH, or in `SHINE` or
 `--shine`. It shows the 28×28 the chip sees, the light at each class's detector and the
 class the chip's display shows. Several pictures go through one run, the meshes solved
-once: about 3.5 s for the first and a tenth of a second for each after. To run `shine`
+once: about 3 s for the first and a tenth of a second for each after. To run `shine`
 yourself, `--print-inputs` prints just the numbers:
 
 ```sh
@@ -170,11 +171,11 @@ readout. From `python reference/mnist/benchmark.py --images 1000`:
 
 | | |
 |---|---|
-| One picture (opening the 15.6 MB chip, solving its meshes, simulating) | 3.5 s |
-| … each picture after that, in the same run | **112 ms** (9 a second) |
-| 1 000 pictures in one run | 116 s |
-| Peak memory | 689 MB |
-| The same network computed directly (NumPy, for scale) | 4 µs a picture |
+| One picture (opening the 9.8 MB chip, solving its meshes, simulating) | 2.8 s |
+| … each picture after that, in the same run | **110 ms** (9 a second) |
+| 1 000 pictures in one run | 112 s |
+| Peak memory | 533 MB |
+| The same network computed directly (NumPy, for scale) | 5 µs a picture |
 
 Against the trained network (its weights are in the repository too,
 `reference/mnist/fashion-mnist-weights.json`), on all 10 000 test pictures
@@ -184,18 +185,18 @@ Against the trained network (its weights are in the repository too,
 |---|---|
 | Accuracy | **87.96%**, the trained network's |
 | The network's class | **10 000 of 10 000** pictures |
-| Scores, the largest difference from the network's | 8.4·10⁻¹⁵ of the largest (rounding) |
+| Scores, the largest difference from the network's | 6.7·10⁻¹⁵ of the largest (rounding) |
 
 Building and editing it (from Shine's source: `cargo run --release --example mnist`):
 
 | | |
 |---|---|
-| Building the chip from its weights (`shine network`) | 1.6 s |
+| Building the chip from its weights (`shine network`) | 1.1 s, and 0.6 s to save it |
 | Layer 1's 64 × 784 matrix | 0.5 s |
-| The editor on the chip, a frame (drawn and tessellated) | 3 ms |
-| … inside the 784-mode mesh, seen whole / at 15% | 17 ms / 21 ms (panning 9 / 12 ms) |
+| The editor on the chip, a frame (drawn and tessellated) | 1 ms |
+| … inside the 784-mode mesh, seen whole / at 15% | 12 ms / 17 ms (panning 7 / 11 ms) |
 
-A simulated picture takes 112 ms where NumPy computes the same answer in 4 µs: the
+A simulated picture takes 110 ms where NumPy computes the same answer in 5 µs: the
 simulator works out what every waveguide, detector and electronic block does, which is
 what lets the same design be checked against the physics, exported to SAX or a layout,
 and taped out. On the chip itself, the answer would take as long as light takes to cross

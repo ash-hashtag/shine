@@ -90,7 +90,7 @@ Wrote “Optical neural network” to chip.shine: a 5 → 3 → 2 network on 17 
 ```
 
 It builds any two-layer network of this kind, of any size (layers may widen or narrow): a
-5 → 3 → 2 network takes a few milliseconds, a 784 → 64 → 10 one (3.1 million parts)
+5 → 3 → 2 network takes a few milliseconds, a 784 → 64 → 10 one (311 000 MZIs)
 under two seconds. `--name` names the chip; `shine network --help` has the details. The
 chip has the value inputs in a square grid (for pictures,
 row by row), the laser, splitter trees and modulators, the two weight layers as components

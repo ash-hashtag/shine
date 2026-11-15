@@ -1,4 +1,4 @@
-# A 28×28 optical neural network of 3.1 million parts
+# A 28×28 optical neural network of 311 000 MZIs
 
 The full-size version of Shine's optical neural network
 ([docs/neural-network.md](../../docs/neural-network.md#at-full-size)): 28×28 pixels into a

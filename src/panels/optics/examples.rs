@@ -478,7 +478,7 @@ pub fn demos() -> Vec<Demo> {
         },
         Demo {
             name: "Fashion-MNIST classifier (optical neural network)",
-            description: "The optical neural network at full size: a 28×28 picture (the value inputs, top left, showing an ankle boot from Fashion-MNIST's test set) on 784 modulators, layer 1 (784 → 64: two MZI meshes, 784×784 and 64×64, with attenuators between them), 64 photodetector neurons, layer 2 (64 → 10), and the readout of the brightest of 10 classes on the display: 0 T-shirt/top, 1 trouser, 2 pullover, 3 dress, 4 coat, 5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot. 88% right on Fashion-MNIST's 10 000 test pictures. 311 000 MZIs, 3.1 million parts opened up: it takes a few seconds to build and to simulate the first time. Press Tab on a layer to see its meshes; place its layers in your own designs.",
+            description: "The optical neural network at full size: a 28×28 picture (the value inputs, top left, showing an ankle boot from Fashion-MNIST's test set) on 784 modulators, layer 1 (784 → 64: two MZI meshes, 784×784 and 64×64, with attenuators between them), 64 photodetector neurons, layer 2 (64 → 10), and the readout of the brightest of 10 classes on the display: 0 T-shirt/top, 1 trouser, 2 pullover, 3 dress, 4 coat, 5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot. 88% right on Fashion-MNIST's 10 000 test pictures. 311 000 MZIs: it takes a few seconds to build and to simulate the first time. Press Tab on a layer to see its meshes; place its layers in your own designs.",
             build: super::digits::fashion_demo,
         },
         Demo {

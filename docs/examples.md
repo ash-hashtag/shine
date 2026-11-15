@@ -79,7 +79,7 @@ from the test set) on 784 modulators, layer 1 (784 → 64: a 784×784 and a 64×
 with attenuators between them), 64 photodetector neurons, layer 2 (64 → 10) and the
 display, which shows the class: 0 T-shirt/top, 1 trouser, 2 pullover, 3 dress, 4 coat,
 5 sandal, 6 shirt, 7 sneaker, 8 bag, 9 ankle boot. It reads 88% of the 10 000 test
-pictures right. 311 000 MZIs, 3.1 million parts when opened up: it takes a few seconds to
+pictures right. 311 000 MZIs (325 000 parts opened up): it takes a few seconds to
 build and to simulate the first time. Its layers are components like any other, so you can
 place them in your own designs; [Optical neural network](neural-network.md#at-full-size)
 has its benchmarks, and how to run pictures of your own through it.

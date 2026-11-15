@@ -6,7 +6,7 @@ dataset's pictures were, and runs the `shine` program on the chip with them:
 
     shine simulate CHIP --input -     (the pixels on standard input)
 
-The chip is a Shine project: an optical neural network of 3.1 million parts
+The chip is a Shine project: an optical neural network of 311 000 MZIs
 (see docs/neural-network.md). By default it is the one trained on Fashion-MNIST
 (ten kinds of clothing), built from its weights in the repository
 (reference/mnist/fashion-mnist-weights.json) with `shine network` the first
