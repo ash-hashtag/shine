@@ -24,36 +24,102 @@ pub const MANIFEST: &str = "shine-project.pb";
 /// missing is left out (the boxes using it show a missing component).
 /// `root` is the folder's full path, if known (see `protobuf::relative`).
 pub fn pack(read: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>, root: &str) -> Result<pb::Bundle, String> {
-    let manifest = match pb::decode(&read(MANIFEST)?)?.content {
-        OneOfcontent::manifest(m) => m,
-        _ => return Err(format!("{MANIFEST} isn't a project's manifest")),
-    };
-    let mut queue: VecDeque<String> = manifest.documents.iter().map(|p| resolve("", p, root)).collect();
-    let mut seen: HashSet<String> = queue.iter().cloned().collect();
-    let mut files = Vec::new();
-    while let Some(path) = queue.pop_front() {
-        let bytes = match read(&path) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                tracing::warn!("{path}: {e}");
-                continue;
-            }
+    let mut packing = Packing::new(&read(MANIFEST)?, root)?;
+    while let Some(path) = packing.next_file() {
+        match read(&path) {
+            Ok(bytes) => packing.add(path, &bytes)?,
+            Err(e) => tracing::warn!("{path}: {e}"),
+        }
+    }
+    Ok(packing.bundle())
+}
+
+/// Packing a project folder into a bundle, a file at a time: [`Self::next_file`]
+/// says which file to read next, [`Self::add`] takes it. (In steps, so the
+/// browser can read its files asynchronously.)
+pub struct Packing {
+    root: String,
+    queue: VecDeque<String>,
+    seen: HashSet<String>,
+    files: Vec<pb::BundledFile>,
+}
+
+impl Packing {
+    /// Start from the manifest's contents; `root` as for [`pack`].
+    pub fn new(manifest: &[u8], root: &str) -> Result<Self, String> {
+        let manifest = match pb::decode(manifest)?.content {
+            OneOfcontent::manifest(m) => m,
+            _ => return Err(format!("{MANIFEST} isn't a project's manifest")),
         };
-        let document = match pb::decode(&bytes).map_err(|e| format!("{path}: {e}"))?.content {
+        let queue: VecDeque<String> = manifest.documents.iter().map(|p| resolve("", p, root)).collect();
+        let seen = queue.iter().cloned().collect();
+        Ok(Self { root: root.to_owned(), queue, seen, files: Vec::new() })
+    }
+
+    /// The next file to read (a path from the top of the folder), if any.
+    pub fn next_file(&mut self) -> Option<String> {
+        self.queue.pop_front()
+    }
+
+    /// The file at `path`: its document, and the components it uses to read.
+    pub fn add(&mut self, path: String, bytes: &[u8]) -> Result<(), String> {
+        let document = match pb::decode(bytes).map_err(|e| format!("{path}: {e}"))?.content {
             OneOfcontent::document(d) => d,
             _ => return Err(format!("{path} isn't a design or a component")),
         };
         for b in document.layout.iter().flat_map(|l| &l.boxes) {
             if let OneOfblock::component(used) = &b.block {
-                let full = resolve(folder_of(&path), used, root);
-                if seen.insert(full.clone()) {
-                    queue.push_back(full);
+                let full = resolve(folder_of(&path), used, &self.root);
+                if self.seen.insert(full.clone()) {
+                    self.queue.push_back(full);
                 }
             }
         }
-        files.push(pb::BundledFile { path, document: Some(document), id: 0 });
+        self.files.push(pb::BundledFile { path, document: Some(document), id: 0 });
+        Ok(())
     }
-    Ok(pb::Bundle { files })
+
+    pub fn bundle(self) -> pb::Bundle {
+        pb::Bundle { files: self.files }
+    }
+}
+
+/// What a save to a folder wrote, kept once it's written (see
+/// [`super::Project::folder_changes`]).
+pub struct Written {
+    paths: HashMap<super::DocId, String>,
+    saved: HashMap<super::DocId, (u64, String)>,
+}
+
+impl super::Project {
+    /// What saving to the folder `key` (whose full path is `root`) must
+    /// write: the files of the documents changed since the last save there
+    /// (all the first time, and any `exists` says is gone) and the manifest.
+    /// Once they're written, [`Self::folder_written`] records it.
+    pub fn folder_changes(&self, key: &std::path::Path, root: &str, exists: &dyn Fn(&str) -> bool) -> (Files, Written) {
+        let same_folder = self.saved_files.0.as_deref() == Some(key);
+        let saved = &self.saved_files.1;
+        let write = |id, path: &str| !same_folder || saved.get(&id).is_none_or(|(f, p)| Some(*f) != self.doc_fingerprint(id) || p != path) || !exists(path);
+        let (files, paths) = files(self, root, &write);
+        let saved = paths.iter().filter_map(|(&id, p)| Some((id, (self.doc_fingerprint(id)?, p.clone())))).collect();
+        (files, Written { paths, saved })
+    }
+
+    /// The files [`Self::folder_changes`] gave are written to the folder `key`.
+    pub fn folder_written(&mut self, key: &std::path::Path, written: Written) {
+        self.paths = written.paths;
+        self.saved_files = (Some(key.to_owned()), written.saved);
+    }
+
+    /// The project as it is now is what the folder `key` holds: saving there
+    /// writes only what changes from here.
+    pub fn folder_saved(&mut self, key: &std::path::Path) {
+        let documents: Vec<super::DocumentFile> = self.documents.iter().map(super::Document::to_file).collect();
+        let paths = super::protobuf::paths(&documents, &self.paths);
+        self.paths = documents.iter().map(|d| d.id).zip(paths).collect();
+        let saved = self.paths.iter().filter_map(|(&id, p)| Some((id, (self.doc_fingerprint(id)?, p.clone())))).collect();
+        self.saved_files = (Some(key.to_owned()), saved);
+    }
 }
 
 /// Files to write: each one's path in the folder, and its contents.
@@ -62,8 +128,6 @@ pub type Files = Vec<(String, Vec<u8>)>;
 /// A project's files in a folder: each document's path and contents, for
 /// those `write` picks (by id and path), and the manifest last; and every
 /// document's path.
-// Used by the browser once it saves folders (design/projects.md).
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) fn files(project: &super::Project, root: &str, write: &dyn Fn(super::DocId, &str) -> bool) -> (Files, HashMap<super::DocId, String>) {
     let documents: Vec<super::DocumentFile> = project.documents.iter().map(super::Document::to_file).collect();
     let paths = super::protobuf::paths(&documents, &project.paths);
@@ -134,16 +198,6 @@ mod disk {
     }
 
     impl Project {
-        /// The project as it is now is what the folder `dir` holds: saving
-        /// there writes only what changes from here.
-        pub fn folder_saved(&mut self, dir: &Path) {
-            let documents: Vec<super::super::DocumentFile> = self.documents.iter().map(super::super::Document::to_file).collect();
-            let paths = super::super::protobuf::paths(&documents, &self.paths);
-            self.paths = documents.iter().map(|d| d.id).zip(paths).collect();
-            let saved = self.paths.iter().filter_map(|(&id, p)| Some((id, (self.doc_fingerprint(id)?, p.clone())))).collect();
-            self.saved_files = (Some(dir.to_owned()), saved);
-        }
-
         /// Save the project as the folder `dir`: the files of the documents
         /// that changed since it was last saved there (all of them the first
         /// time), and the manifest. Files of documents no longer in the
@@ -151,17 +205,11 @@ mod disk {
         /// many documents were written.
         pub fn save_folder(&mut self, dir: &Path) -> std::io::Result<usize> {
             let root = std::path::absolute(dir).unwrap_or_else(|_| dir.to_owned()).to_string_lossy().into_owned();
-            if self.saved_files.0.as_deref() != Some(dir) {
-                self.saved_files = (Some(dir.to_owned()), Default::default());
-            }
-            let saved = &self.saved_files.1;
-            let write = |id, path: &str| saved.get(&id).is_none_or(|(f, p)| Some(*f) != self.doc_fingerprint(id) || p != path) || !dir.join(path).exists();
-            let (files, paths) = super::files(self, &root, &write);
+            let (files, written) = self.folder_changes(dir, &root, &|path| dir.join(path).exists());
             for (path, bytes) in &files {
                 write_atomically(&dir.join(path), bytes)?;
             }
-            self.saved_files.1 = paths.iter().filter_map(|(&id, p)| Some((id, (self.doc_fingerprint(id)?, p.clone())))).collect();
-            self.paths = paths;
+            self.folder_written(dir, written);
             Ok(files.len() - 1)
         }
     }

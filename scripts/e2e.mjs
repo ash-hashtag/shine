@@ -26,8 +26,14 @@ const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
 let id = 0;
 const pending = new Map();
+// The app's console, for tests that wait for what it logs.
+const logs = [];
 ws.onmessage = (m) => {
   const d = JSON.parse(m.data);
+  if (d.method === "Runtime.consoleAPICalled") {
+    logs.push(d.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
+    return;
+  }
   pending.get(d.id)?.(d.result);
   pending.delete(d.id);
 };
@@ -145,6 +151,16 @@ const expect = (ok, message) => {
 };
 
 await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+await send("Runtime.enable");
+/** The first line the app logs that matches `pattern`, waiting for it. */
+const waitForLog = async (pattern, seconds = 60) => {
+  for (let i = 0; i < seconds * 10; i++) {
+    const hit = logs.find((l) => pattern.test(l));
+    if (hit) return hit;
+    await sleep(100);
+  }
+  throw new Error(`the app didn't log ${pattern}`);
+};
 const open = async (query = "") => {
   await send("Page.navigate", { url: `${site}/app/${query}` });
   // Wait for the app to draw its menu bar (dark text top left).
@@ -222,6 +238,25 @@ await test("an example opens from a link and shows its light", async () => {
   let lit = 0;
   for (let y = 60; y < 860; y += 4) for (let x = 240; x < 1100; x += 4) if (red(pixel(x, y))) lit++;
   expect(lit > 50, `only ${lit} lit samples`);
+});
+
+await test("a project saves to a folder and opens from it", async () => {
+  // The File System Access API, on a folder in the site's private storage
+  // (the same API as a folder the user picks, without the picker).
+  logs.length = 0;
+  await open("?example=8-bit-photonic-adder&save-to-storage=e2e-adder");
+  const saved = await waitForLog(/Saved the folder e2e-adder: \d+ files written/);
+  const written = Number(saved.match(/(\d+) files/)[1]);
+  expect(written >= 2, `only ${written} files written`);
+  // From a clean slate (no session), open the folder.
+  await send("Page.navigate", { url: `${site}/` });
+  await sleep(1500);
+  await send("Runtime.evaluate", { expression: "localStorage.clear()" });
+  logs.length = 0;
+  await open("?open-storage=e2e-adder");
+  const opened = await waitForLog(/Opened e2e-adder \(\d+ documents\)/);
+  const documents = Number(opened.match(/\((\d+) documents/)[1]);
+  expect(documents === written, `${documents} documents opened, ${written} written`);
 });
 
 ws.close();

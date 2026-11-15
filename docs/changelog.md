@@ -31,7 +31,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 - Projects as folders: a file per design and component, and a manifest. Components refer
   to each other by path, so one can be shared by several projects (`../shared/…`), and
   saving writes only the files that changed. **File → Open folder…** and **Save as
-  folder…**; `shine DIR` and `shine simulate DIR` open them too.
+  folder…**, on desktop and in Chrome and Edge; `shine DIR` and `shine simulate DIR` open
+  them too.
 
 ### Fixed
 

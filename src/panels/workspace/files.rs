@@ -62,6 +62,53 @@ impl Workspace {
         for file in files {
             self.receive_file(file);
         }
+        #[cfg(target_arch = "wasm32")]
+        self.receive_folder_events();
+    }
+
+    /// What came of reading and writing project folders (browser).
+    #[cfg(target_arch = "wasm32")]
+    fn receive_folder_events(&mut self) {
+        use crate::web_folder::{self, Event};
+        for event in web_folder::take_events() {
+            match event {
+                Event::Opened { name, bytes } => {
+                    let key = web_folder::key_of(&name);
+                    self.request_open(name, bytes, Some(key));
+                }
+                Event::PickedForSave { name } => self.save_browser_folder(name),
+                Event::Saved { name, count, done } => {
+                    done(self);
+                    tracing::info!("Saved the folder {name}: {count} files written");
+                    self.notify(format!("Saved the folder {name} ({count} {} written)", if count == 1 { "file" } else { "files" }));
+                }
+                Event::Failed(e) => {
+                    tracing::error!("Folder: {e}");
+                    self.notify(format!("Couldn't: {e}"));
+                }
+            }
+        }
+    }
+
+    /// Save the project in the browser folder `name` (picked already): the
+    /// documents changed since the last save there, and the manifest. It
+    /// counts as saved as it was when the save began.
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn save_browser_folder(&mut self, name: String) {
+        let key = crate::web_folder::key_of(&name);
+        let (files, written) = self.project.folder_changes(&key, &name, &|_| true);
+        let fingerprint = self.project.fingerprint();
+        let docs: std::collections::HashMap<_, _> = self.project.documents.iter().filter_map(|d| Some((d.id, self.project.doc_fingerprint(d.id)?))).collect();
+        crate::web_folder::save(
+            name,
+            files,
+            Box::new(move |ws: &mut Workspace| {
+                ws.project.folder_written(&key, written);
+                ws.project.path = Some(key);
+                ws.saved_fingerprint = fingerprint;
+                ws.saved_docs = docs;
+            }),
+        );
     }
 
     pub fn receive_file(&mut self, file: IncomingFile) {

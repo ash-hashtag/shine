@@ -683,7 +683,6 @@ pub struct Project {
     pub paths: std::collections::HashMap<DocId, String>,
     /// The folder last saved to, and each document's fingerprint and path
     /// then: saving there again writes only what changed.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     saved_files: (Option<PathBuf>, std::collections::HashMap<DocId, (u64, String)>),
     /// The catalog, and the fingerprint it was made at: the editor asks for
     /// it every frame, and making it reads every document.

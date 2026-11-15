@@ -10,6 +10,8 @@ pub mod logging;
 
 #[cfg(all(feature = "gui", target_arch = "wasm32"))]
 pub mod web;
+#[cfg(target_arch = "wasm32")]
+pub mod web_folder;
 
 #[cfg(all(feature = "gui", not(target_arch = "wasm32")))]
 pub mod crash;

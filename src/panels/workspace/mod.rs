@@ -493,6 +493,10 @@ impl Workspace {
         if let Some(dir) = self.project.path.clone().filter(|p| p.is_dir()) {
             self.project.folder_saved(&dir);
         }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(key) = self.project.path.clone().filter(|p| crate::web_folder::folder_name(p).is_some_and(|n| crate::web_folder::is_open(&n))) {
+            self.project.folder_saved(&key);
+        }
         self.saved_fingerprint = self.project.fingerprint();
         self.saved_docs = self.project.documents.iter().filter_map(|d| Some((d.id, self.project.doc_fingerprint(d.id)?))).collect();
     }
@@ -511,6 +515,15 @@ impl Workspace {
             self.notify("The project hasn't been saved to a file yet: nothing to reload");
             return;
         };
+        #[cfg(target_arch = "wasm32")]
+        if let Some(name) = crate::web_folder::folder_name(&path) {
+            if crate::web_folder::is_open(&name) {
+                crate::web_folder::reopen();
+            } else {
+                self.notify("Open the folder again (File → Open folder…): the browser forgets it when the page reloads");
+            }
+            return;
+        }
         #[cfg(not(target_arch = "wasm32"))]
         let read = crate::panels::project::folder::read_project(&path);
         #[cfg(target_arch = "wasm32")]
@@ -573,7 +586,10 @@ impl Workspace {
                         self.open_tab(id);
                         self.notify(format!("Reloaded {}", pending.name));
                     }
-                    None => self.notify(format!("Opened {}", pending.name)),
+                    None => {
+                        tracing::info!("Opened {} ({} documents)", pending.name, self.project.documents.len());
+                        self.notify(format!("Opened {}", pending.name));
+                    }
                 }
             }
             Err(e) => {
@@ -655,6 +671,8 @@ impl Workspace {
     /// The egui context, for work that finishes between frames (downloads,
     /// file dialogs, background simulations) to ask for one.
     pub fn set_context(&mut self, ctx: egui::Context) {
+        #[cfg(target_arch = "wasm32")]
+        crate::web_folder::set_context(ctx.clone());
         self.ctx = Some(ctx);
     }
 
@@ -696,6 +714,11 @@ impl Workspace {
                     }
                 }
                 "simulate" => self.simulate_active(true),
+                // A project folder in the site's private storage (tests).
+                #[cfg(target_arch = "wasm32")]
+                "open-storage" => crate::web_folder::open_storage(value.to_owned()),
+                #[cfg(target_arch = "wasm32")]
+                "save-to-storage" => crate::web_folder::save_to_storage(value.to_owned()),
                 "tab" => {
                     let id = self
                         .project
@@ -766,9 +789,19 @@ impl Workspace {
         }
     }
 
-    /// In the browser, saving downloads the project file.
+    /// In the browser, saving downloads the project file, or writes the
+    /// project's folder (where the browser can).
     #[cfg(target_arch = "wasm32")]
-    fn save(&mut self, _choose_path: bool) {
+    fn save(&mut self, choose_path: bool) {
+        if let (Some(name), false) = (self.project.path.as_deref().and_then(crate::web_folder::folder_name), choose_path) {
+            if crate::web_folder::is_open(&name) {
+                self.save_browser_folder(name);
+            } else {
+                // After the page was reloaded: the browser needs the folder again.
+                crate::web_folder::pick_for_save();
+            }
+            return;
+        }
         let name = format!("project.{}", file_format::EXTENSION);
         match crate::web::download(&name, &self.project.to_bytes()) {
             Ok(()) => {
@@ -1629,6 +1662,19 @@ impl Workspace {
             if ui.button("Save as…").on_hover_text("Save the whole project in one .shine file").clicked() {
                 self.save(true);
             }
+            #[cfg(target_arch = "wasm32")]
+            if crate::web_folder::supported() {
+                if ui.button("Open folder…").on_hover_text("Open a project saved as a folder: a file per design and component").clicked() {
+                    crate::web_folder::pick_and_open();
+                }
+                if ui
+                    .button("Save as folder…")
+                    .on_hover_text("Save the project as a folder: a file per design and component, so components can be shared between projects and changes reviewed one file at a time")
+                    .clicked()
+                {
+                    crate::web_folder::pick_for_save();
+                }
+            }
             #[cfg(not(target_arch = "wasm32"))]
             {
                 if ui.button("Open folder…").on_hover_text("Open a project saved as a folder: a file per design and component").clicked() {
@@ -1924,6 +1970,10 @@ impl Workspace {
 
     /// The project's file name, or "Unsaved project".
     pub fn file_name(&self) -> String {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(name) = self.project.path.as_deref().and_then(crate::web_folder::folder_name) {
+            return name;
+        }
         self.project
             .path
             .as_ref()

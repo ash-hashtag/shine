@@ -110,8 +110,9 @@ want them.
       each other by path, so components are shared between projects and saving writes
       only what changed; the format is a Protocol Buffers schema
       ([Projects and files](files.md#projects-as-folders))
-- [ ] **Folders in the browser** (File System Access API, Chrome and Edge), and Shine's
-      examples as read-only components to refer to rather than copy
+- [x] **Folders in the browser** (File System Access API, Chrome and Edge)
+- [ ] **Shine's examples as components to refer to** rather than copy (`shine:` paths),
+      and the asset library as a folder of component files
 - [ ] **Load what's used**: documents read from the file when opened or simulated, the
       rest left on disk for the operating system's cache, so a project can be far bigger
       than memory

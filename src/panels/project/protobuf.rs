@@ -86,7 +86,7 @@ fn split(path: &str) -> impl Iterator<Item = String> + '_ {
 /// `root` (as for [`relative`]).
 pub fn resolve(from: &str, path: &str, root: &str) -> String {
     let full = normalize(split(from).chain(split(path)));
-    if !full.first().is_some_and(|p| p == "..") {
+    if full.first().is_none_or(|p| p != "..") {
         return full.join("/");
     }
     // Outside the project: the shortest way there from its folder.

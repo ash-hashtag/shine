@@ -55,8 +55,12 @@ change. Changes can also be reviewed one file at a time.
   to send or put on a website. Its documents keep their paths inside it, so it unpacks to
   the same folder.
 
-Folders are for the desktop app and the command line; the browser saves and opens `.shine`
-files.
+In the browser, **Open folder…** and **Save as folder…** work in Chrome and Edge (which
+let a page read and write a folder you choose; Firefox and Safari don't, and open and
+download `.shine` files instead). The browser asks before it lets Shine see the folder, and
+forgets it when the page reloads: **Save** then asks for the folder again. Components
+outside the folder are out of the page's reach there, so they open as missing; use the
+desktop app for projects that share components with others.
 
 ### Your session is kept
 

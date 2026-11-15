@@ -74,7 +74,7 @@ designs.
 3. [x] The Fashion-MNIST classifier in the examples, built from its weights.
 4. [x] Folder projects on desktop and the command line: paths as references, saving only
    what changed, components outside the folder.
-5. [ ] Folders in the browser (File System Access API).
+5. [x] Folders in the browser (File System Access API, Chrome and Edge).
 6. [ ] `shine:` components from Shine's examples, and the asset library as a folder of
    component files.
 7. [ ] Folders and `save_folder` in the Python and TypeScript packages.
