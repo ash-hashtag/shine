@@ -265,7 +265,20 @@ message Builtin {
     FunctionCell function_cell = 21;
     Model model = 22;
     Value value = 23;
+    Process process = 24;
   }
+}
+
+// Runs a program on the user's computer (only once they allow it): Shine
+// writes "shine 1 <inputs> <outputs>" to its standard input, it answers "ok",
+// then for each line of input numbers it answers a line of output numbers.
+message Process {
+  string name = 1;
+  // Run directly, not through a shell.
+  string command = 2;
+  repeated string args = 3;
+  repeated string inputs = 4;
+  repeated string outputs = 5;
 }
 
 message Laser {

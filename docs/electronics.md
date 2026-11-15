@@ -80,6 +80,68 @@ Examples:
 - A light level from a 2-bit number: `sqrt(in1 * 2 + in2) / 2`
 - Which of four detectors is brightest: `argmax(p1, p2, p3, p4)`
 
+## External programs
+
+> **⚠ A risky part, for when Shine can't do something itself.** An *External program* block
+> runs a program on your computer, with your permissions: it can read, change or delete your
+> files and use the network. A project can name any program, so one from someone else could
+> run anything. Shine never runs one without asking.
+
+The block asks a program for its signal outputs from its signal inputs: logic you have in
+Python or TypeScript, or a tool Shine doesn't have. In its inspector set the **program**
+(run directly, not through a shell: `python3`, `node`, or a path), its **arguments** (one
+per line, such as the script's path) and the names of its **inputs** and **outputs**.
+
+**Permission.** The first time a simulation reaches the block, Shine shows what it would run
+and asks: *Don't run it* or *Run it this session*. Until you allow it, the block gives
+nothing and the simulation says why. Permission lasts until Shine closes and is never saved,
+so the next session asks again. `shine simulate` runs programs only with
+`--allow-processes`. The MCP server (for AI assistants) and the browser never run them.
+
+**The protocol** is lines of text on the program's standard input and output, numbers
+separated by spaces:
+
+1. Shine starts the program once and writes `shine 1 <inputs> <outputs>`, the counts of its
+   inputs and outputs; the program answers `ok`.
+2. For each evaluation, Shine writes a line of input values, and the program answers a line
+   with as many output values as it was told, in order.
+3. When Shine is done (or closes), it closes the program's input; the program should exit.
+
+The program keeps running between evaluations, so it's fast enough to call often. Shine may
+ask for the same inputs more than once, or not again, so give the same outputs for the same
+inputs. An answer that takes over 5 seconds, or isn't numbers, stops the program with an
+error (it starts again next time). What the program writes to its standard error goes to
+Shine's log. Remember to flush after each answer.
+
+In Python (`python3`, argument `xor.py`):
+
+```python
+import sys
+
+sys.stdin.readline()          # "shine 1 2 1"
+print("ok", flush=True)
+for line in sys.stdin:
+    a, b = (round(float(v)) for v in line.split())
+    print(a ^ b, flush=True)
+```
+
+In TypeScript or JavaScript (`node`, argument `xor.mjs`; with `node --experimental-strip-types`
+or `npx tsx` for a `.ts` file):
+
+```js
+import { createInterface } from "node:readline";
+
+let started = false;
+for await (const line of createInterface({ input: process.stdin })) {
+  if (!started) { started = true; console.log("ok"); continue; }
+  const [a, b] = line.split(" ").map((v) => Math.round(Number(v)));
+  console.log(a ^ b);
+}
+```
+
+A component holding a program is always simulated in full, never kept as a function of its
+inputs (see [Simulation](simulation.md#components)), so its program is asked each time.
+
 ## How it settles
 
 Each time something changes, Shine evaluates the electronics from the detector readings,

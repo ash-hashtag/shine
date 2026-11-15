@@ -345,6 +345,26 @@ pub struct Outcome {
     pub iterations: usize,
     pub converged: bool,
     pub error: Option<String>,
+    /// External programs the design wanted to run but may not yet: for the
+    /// editor to ask the user about (see `panels::process`).
+    pub asks: Vec<ProgramAsk>,
+}
+
+/// Why an external program gave no answer.
+#[derive(Debug)]
+pub enum ProgramRefusal {
+    /// It may not run until the user says so.
+    Ask(ProgramAsk),
+    Error(String),
+}
+
+/// An external program a design wants to run, waiting for the user's yes or no.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProgramAsk {
+    /// The block's name.
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
 }
 
 impl Outcome {
@@ -413,6 +433,10 @@ struct Electronics<'a> {
     /// Function components' outputs, by their inputs, this simulation.
     functions: &'a mut compose::Local,
     subtrees: &'a mut HashMap<DocId, Option<u64>>,
+    /// External programs' answers, by box and inputs, this simulation.
+    programs: &'a mut HashMap<(Path, InstanceId, Vec<u64>), Vec<f64>>,
+    /// Programs that may not run yet: they give nothing, and are asked about.
+    asks: &'a mut Vec<ProgramAsk>,
 }
 
 /// Whether component `doc` has no electronics, all the way down: no signal
@@ -506,6 +530,38 @@ impl Electronics<'_> {
                         .unwrap_or_else(|| vec![0.0; *bits as usize]),
                     BlockRef::Builtin(cell @ Builtin::FunctionCell { .. }) => self.function_cell(cell, path, inst.id, &ins),
                     BlockRef::Builtin(Builtin::Model(m)) if m.truth_table_outputs(&[]).is_some() => m.truth_table_outputs(&ins).unwrap_or_default(),
+                    BlockRef::Builtin(Builtin::Process { name, command, args, outputs, .. }) => {
+                        // Asked once per input it gets in a simulation.
+                        let key = (path.to_vec(), inst.id, ins.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                        match self.programs.get(&key) {
+                            Some(outs) => outs.clone(),
+                            None => {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                let answer = crate::panels::process::call(name, command, args, &ins, outputs.len());
+                                #[cfg(target_arch = "wasm32")]
+                                let answer: Result<Vec<f64>, ProgramRefusal> = {
+                                    let _ = (command, args, outputs);
+                                    Err(ProgramRefusal::Error(format!("“{name}” runs a program, which only the desktop app can")))
+                                };
+                                match answer {
+                                    Ok(outs) => {
+                                        self.programs.insert(key, outs.clone());
+                                        outs
+                                    }
+                                    Err(ProgramRefusal::Ask(ask)) => {
+                                        if !self.asks.contains(&ask) {
+                                            self.asks.push(ask);
+                                        }
+                                        Vec::new()
+                                    }
+                                    Err(ProgramRefusal::Error(e)) => {
+                                        self.error(e);
+                                        Vec::new()
+                                    }
+                                }
+                            }
+                        }
+                    }
                     BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() && !m.signal_outputs.is_empty() => {
                         let wired: Vec<Option<f64>> = ins
                             .iter()
@@ -1396,8 +1452,18 @@ pub fn simulate(
         Ok(s) => s,
         Err(e) => return Outcome::failed(e),
     };
-    let Settled { solutions, built, source_colors, iteration, stable, signals, .. } = settled;
-    outcome_of(layout, solutions, built, source_colors, iteration, stable, signals)
+    let Settled { solutions, built, source_colors, iteration, stable, signals, asks, .. } = settled;
+    let mut outcome = outcome_of(layout, solutions, built, source_colors, iteration, stable, signals);
+    if let Some(a) = asks.first() {
+        outcome.error.get_or_insert_with(|| {
+            format!(
+                "“{}” runs a program on this computer ({}): it runs only once you allow it (in the editor, or with shine simulate --allow-processes)",
+                a.name, a.command
+            )
+        });
+    }
+    outcome.asks = asks;
+    outcome
 }
 
 /// How light passes between a layout's light ports, at each of several
@@ -1455,6 +1521,7 @@ pub fn circuit(
 /// The circuit of a layout once its electronics and light agree, with the
 /// light of its sources.
 struct Settled {
+    asks: Vec<ProgramAsk>,
     circuit: Circuit,
     solutions: Vec<crate::photonics::Solution>,
     built: Built,
@@ -1493,6 +1560,8 @@ fn settle(
     });
     let mut inert_docs = HashMap::new();
     let mut functions = compose::Local::new();
+    let mut programs = HashMap::new();
+    let mut asks = Vec::new();
     let mut subtrees = HashMap::new();
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
@@ -1513,6 +1582,8 @@ fn settle(
             shapes: HashMap::new(),
             functions: &mut functions,
             subtrees: &mut subtrees,
+            programs: &mut programs,
+            asks: &mut asks,
         };
         let started = web_time::Instant::now();
         electronics.eval(layout, &[], &machine.inputs);
@@ -1574,7 +1645,7 @@ fn settle(
         signals = electronics.signals;
         powers = new_powers;
 
-        last = Some(Settled { circuit, solutions, built, source_colors, iteration, stable, signals: signals.clone() });
+        last = Some(Settled { asks: asks.clone(), circuit, solutions, built, source_colors, iteration, stable, signals: signals.clone() });
         if stable {
             break;
         }
@@ -1596,6 +1667,7 @@ fn outcome_of(
         let colors: Vec<Option<[u8; 3]>> =
             solutions.iter().map(|s| s.source().and_then(|id| source_colors.get(&id).copied())).collect();
         let mut outcome = Outcome {
+            asks: Vec::new(),
             wavelengths: solutions.iter().map(|s| s.wavelength_nm()).collect(),
             channel_colors: colors.clone(),
             beams: solutions

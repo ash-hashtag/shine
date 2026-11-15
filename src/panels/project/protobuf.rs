@@ -324,6 +324,13 @@ fn builtin(b: &Builtin) -> pb::Builtin {
         }),
         Builtin::Model(m) => B::model(model(m)),
         Builtin::Value { name, value } => B::value(pb::Value { name: name.clone(), value: *value }),
+        Builtin::Process { name, command, args, inputs, outputs } => B::process(pb::Process {
+            name: name.clone(),
+            command: command.clone(),
+            args: args.clone(),
+            inputs: inputs.clone(),
+            outputs: outputs.clone(),
+        }),
     };
     pb::Builtin { kind }
 }
@@ -602,6 +609,7 @@ fn read_builtin(b: pb::Builtin) -> Result<Builtin, String> {
         },
         B::model(m) => Builtin::Model(Arc::new(read_model(m)?)),
         B::value(v) => Builtin::Value { name: v.name, value: v.value },
+        B::process(p) => Builtin::Process { name: p.name, command: p.command, args: p.args, inputs: p.inputs, outputs: p.outputs },
         B::None => return Err("a built-in block this version of Shine doesn't know; update Shine".into()),
     })
 }

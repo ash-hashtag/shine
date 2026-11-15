@@ -18,6 +18,8 @@ pub mod file_format;
 #[cfg(feature = "gui")]
 pub mod history;
 pub mod interop;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod process;
 pub mod models;
 pub mod names;
 pub mod optics;

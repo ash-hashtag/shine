@@ -70,6 +70,10 @@ than reformatting files.
 - **Dependencies:** prefer a well-kept existing crate over writing your own. Anything the
   browser build uses must be pure Rust (it compiles to `wasm32-unknown-unknown`). The
   Python and npm packages are named `shine-photonics`.
+- **External programs** (`src/panels/process.rs`) run only with the user's say-so: asked
+  in the editor each session (never remembered), `--allow-processes` on the command line,
+  never from the MCP server or the browser. Don't add a way around that, and don't make
+  one run as a side effect of opening, saving or exporting a project.
 - **Licences:** Shine is GPL-3.0-only. Only commit data whose licence allows it, and credit
   its source (Fashion-MNIST is MIT; MNIST, CC BY-SA 3.0, is not kept here). Never commit
   secrets or tokens, or print them in logs.

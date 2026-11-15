@@ -68,7 +68,8 @@ pub(super) fn shape(docs: &dyn Documents, doc: DocId, memo: &mut HashMap<DocId, 
 /// No memory anywhere inside: no registers, no scripts (which keep state).
 fn stateless(docs: &dyn Documents, l: &Layout, memo: &mut HashMap<DocId, Shape>, stack: &mut Vec<DocId>) -> bool {
     l.instances.iter().all(|i| match &i.block {
-        BlockRef::Builtin(Builtin::Register { .. }) => false,
+        // A program keeps it in the loop, not kept by its inputs.
+        BlockRef::Builtin(Builtin::Register { .. } | Builtin::Process { .. }) => false,
         BlockRef::Builtin(Builtin::Model(m)) => m.script().is_none(),
         BlockRef::Builtin(_) => true,
         BlockRef::Component(d) => {

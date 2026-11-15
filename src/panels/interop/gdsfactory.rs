@@ -360,6 +360,10 @@ impl Builder<'_> {
                 self.note(format!("The {n}-mode optical DFT has no gdsfactory component; build it from couplers and phase shifters"));
                 BoxEnds { ins: vec![None; *n as usize], outs: vec![None; *n as usize] }
             }
+            Builtin::Process { .. } => {
+                self.note("External programs are electronics and were left out".into());
+                BoxEnds::default()
+            }
             Builtin::FunctionCell { .. } => {
                 self.note("Function cells are electronics and were left out".into());
                 BoxEnds { ins: vec![None; b.inputs().len()], outs: vec![None; b.outputs().len()] }

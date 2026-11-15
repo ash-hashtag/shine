@@ -681,6 +681,9 @@ impl OpticsPanel {
         match &mut self.layout.instances[b].block {
             BlockRef::Builtin(block) => {
                 changed = builtin_params_ui(ui, block, self.prefs.power_unit);
+                if let Builtin::Process { command, args, .. } = block {
+                    process_warning_ui(ui, command, args);
+                }
                 if let Some(note) = note {
                     ui.label(RichText::new(format!("Driven by a signal: {note}")).small())
                         .on_hover_text("The signal on its top terminal changes the value set above while it's wired");
@@ -1547,6 +1550,37 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name).on_hover_text("What it sets, shown beside it"));
                 row(ui, "Value", &mut |ui, l| ui_kit::slider(ui, l, value, 0.0..=1.0, ""));
             }
+            Builtin::Process { name, command, args, inputs, outputs } => {
+                let names = |text: &str| -> Vec<String> { text.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect() };
+                row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name));
+                row(ui, "Program", &mut |ui, _| {
+                    ui.text_edit_singleline(command).on_hover_text("Run directly, not through a shell: python3, node, or the program's path")
+                });
+                row(ui, "Arguments", &mut |ui, _| {
+                    let mut text = args.join("\n");
+                    let r = ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2)).on_hover_text("One per line");
+                    if r.changed() {
+                        *args = text.lines().map(str::to_owned).filter(|a| !a.is_empty()).collect();
+                    }
+                    r
+                });
+                row(ui, "Inputs", &mut |ui, _| {
+                    let mut text = inputs.join(", ");
+                    let r = ui.text_edit_singleline(&mut text).on_hover_text("Signal inputs' names, separated by commas: a number each, in this order");
+                    if r.changed() {
+                        *inputs = names(&text);
+                    }
+                    r
+                });
+                row(ui, "Outputs", &mut |ui, _| {
+                    let mut text = outputs.join(", ");
+                    let r = ui.text_edit_singleline(&mut text).on_hover_text("Signal outputs' names, separated by commas: the program answers a number for each, in this order");
+                    if r.changed() {
+                        *outputs = names(&text);
+                    }
+                    r
+                });
+            }
             Builtin::NumberInput { bits, value } => {
                 row(ui, "Bits", &mut |ui, l| ui_kit::slider(ui, l, bits, 1..=16, ""));
                 let max = (1u64 << *bits) - 1;
@@ -1637,4 +1671,31 @@ fn function_cell_ui(ui: &mut Ui, block: &mut Builtin) -> bool {
         .weak(),
     );
     changed
+}
+
+/// What an external program block risks, and whether it may run now.
+fn process_warning_ui(ui: &mut Ui, command: &str, args: &[String]) {
+    ui.label(
+        RichText::new(
+            "⚠ This runs a program on your computer, with your permissions: it can read and change your files. \
+             Use it only for a program you trust, when Shine can't do it itself.",
+        )
+        .small()
+        .color(ui.visuals().warn_fg_color),
+    );
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let state = if crate::panels::process::is_allowed(command, args) {
+            "Allowed for this session"
+        } else {
+            "Not allowed: simulating asks you first"
+        };
+        ui.label(RichText::new(state).small().weak());
+        ui.label(RichText::new("The program reads a line “shine 1 IN OUT” and answers “ok”; then, for each line of input numbers, a line of output numbers.").small().weak());
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (command, args);
+        ui.label(RichText::new("Programs run in the desktop app only; here it gives nothing.").small().weak());
+    }
 }

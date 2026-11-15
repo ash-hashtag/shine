@@ -603,6 +603,15 @@ fn every_control_is_named_for_screen_readers() {
         }
     }
 
+    // The external program block asks to run its program: the dialog, with
+    // its controls named, answered no.
+    h.run_steps(2);
+    if h.query_by_label("Don't run it").is_some() {
+        missing.extend(unnamed_controls(&h, "the program dialog"));
+        h.get_by_label("Don't run it").click();
+        h.run_steps(2);
+    }
+
     // Examples with parts, readings and components.
     for example in ["4-channel-wdm-optical-link"] {
         assert!(h.state_mut().open_example(example));
@@ -1477,4 +1486,47 @@ fn a_components_alias_is_made_switched_on_and_focused_from_the_panels() {
     assert_eq!(active(&h).machine.aliases, shine::panels::circuit::sim::Aliases::Focus(vec![vec![id]]));
     assert!(h.query_by_label_contains("1 box in full").is_some());
     assert_eq!(shows(&h), 155);
+}
+
+#[test]
+fn a_program_runs_once_the_user_allows_it_in_the_dialog() {
+    let Some(python) = ["python3", "python"].into_iter().find(|p| std::process::Command::new(p).arg("--version").output().is_ok_and(|o| o.status.success())) else {
+        if cfg!(target_os = "linux") {
+            panic!("Python is needed for this test");
+        }
+        return;
+    };
+    // Its own program (the comment makes it so), so no other test's yes or no counts.
+    let code = "# ui test\nimport sys\nsys.stdin.readline()\nprint('ok', flush=True)\nfor line in sys.stdin:\n    a, b = (round(float(v)) for v in line.split())\n    s = a + b\n    print(s // 2, s % 2, flush=True)\n";
+    let mut h = app();
+    let p = active_mut(&mut h);
+    let value = |l: &mut shine::panels::optics::model::Layout, cell| l.add_instance(BlockRef::Builtin(Builtin::Value { name: String::new(), value: 1.0 }), cell);
+    let (a, b) = (value(&mut p.layout, (0, 0)), value(&mut p.layout, (3, 0)));
+    let program = p.layout.add_instance(
+        BlockRef::Builtin(Builtin::Process {
+            name: "Adder in Python".into(),
+            command: python.into(),
+            args: vec!["-c".into(), code.into()],
+            inputs: vec!["a".into(), "b".into()],
+            outputs: vec!["s1".into(), "s0".into()],
+        }),
+        (0, 3),
+    );
+    let display = p.layout.add_instance(BlockRef::Builtin(Builtin::Display { bits: 2 }), (0, 7));
+    let t = |item, port| shine::panels::optics::model::Terminal { item: Item::Box(item), port };
+    p.layout.connect_signal(t(a, 0), t(program, 0));
+    p.layout.connect_signal(t(b, 0), t(program, 1));
+    p.layout.connect_signal(t(program, 0), t(display, 0));
+    p.layout.connect_signal(t(program, 1), t(display, 1));
+    h.run_steps(3);
+    // Asked, with what it would run; nothing run yet.
+    assert!(h.query_by_label("Run a program on this computer?").is_some());
+    assert!(h.query_all_by_label_contains("Adder in Python").next().is_some());
+    assert!(active(&h).outcome().unwrap().error.as_deref().unwrap_or_default().contains("only once you allow it"));
+    h.get_by_label("Run it this session").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("Run a program on this computer?").is_none());
+    let o = active(&h).outcome().unwrap();
+    assert!(o.error.is_none(), "{:?}", o.error);
+    assert_eq!(shine::panels::optics::input_number(&active(&h).layout, o, display, 2), 2, "1 + 1, from Python");
 }

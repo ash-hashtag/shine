@@ -161,6 +161,8 @@ impl Builtin8 {
             model::Builtin::FunctionCell { name, inputs, light_inputs, outputs, light_outputs, wavelength_nm } => B::FunctionCell { name, inputs, light_inputs, outputs, light_outputs, wavelength_nm },
             model::Builtin::Model(x) => B::Model(x),
             model::Builtin::Value { name, value } => B::Value { name, value },
+            // Format 8 had none: a value in its place.
+            model::Builtin::Process { name, .. } => B::Value { name, value: 0.0 },
         }
     }
 }

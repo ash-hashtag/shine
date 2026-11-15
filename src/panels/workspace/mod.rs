@@ -126,6 +126,9 @@ pub struct Workspace {
     /// An alias being written as a script: for which component, the code,
     /// and why it was refused.
     pub alias_script: Option<(DocId, String, Option<String>)>,
+    /// Programs the open designs want to run, waiting for the user's yes or no.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub process_asks: Vec<crate::panels::process::Ask>,
     /// Library assets copied into the project (opened or placed): the copy,
     /// and its fingerprint then. While the copy is unchanged, the library
     /// window shows the two once.
@@ -202,6 +205,8 @@ impl Default for Workspace {
             moving_asset: None,
             library_window: LibraryWindow::default(),
             alias_script: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            process_asks: Vec::new(),
             imported: std::collections::HashMap::new(),
             export_window: ExportWindow::default(),
             matrix_window: MatrixWindow::default(),
@@ -2023,6 +2028,67 @@ impl Workspace {
         }
     }
 
+    /// A design wants to run a program on this computer: ask, with the risk
+    /// spelled out. Allowed, it runs for this session only.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn process_dialog(&mut self, ctx: &egui::Context) {
+        // From this workspace's own designs' simulations.
+        for id in &self.tabs {
+            let Some(o) = self.project.doc(*id).and_then(|d| d.panel().outcome()) else { continue };
+            for ask in &o.asks {
+                let decided = crate::panels::process::is_allowed(&ask.command, &ask.args) || crate::panels::process::is_denied(&ask.command, &ask.args);
+                if !decided && !self.process_asks.contains(ask) {
+                    self.process_asks.push(ask.clone());
+                }
+            }
+        }
+        let Some(ask) = self.process_asks.first().cloned() else { return };
+        let command = std::iter::once(ask.command.as_str()).chain(ask.args.iter().map(String::as_str)).collect::<Vec<_>>().join(" ");
+        let mut choice = None;
+        let modal = egui::Modal::new(egui::Id::unique("process_dialog")).show(ctx, |ui| {
+            ui.set_width(460.0);
+            ui.heading("Run a program on this computer?");
+            ui.add_space(6.0);
+            ui.label(format!("“{}”, an external program block in this project, wants to run:", ask.name));
+            ui.add(egui::Label::new(egui::RichText::new(&command).monospace()).wrap());
+            ui.add_space(6.0);
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                "⚠ It would run with your permissions: it could read, change or delete your files and use the network. \
+                 Run it only if you trust it and know where it came from, such as a script you wrote. \
+                 A project from someone else can name any program.",
+            );
+            ui.label(egui::RichText::new("Allowed, it runs until Shine closes; next time you're asked again. Until then the block gives nothing and the simulation says why.").small().weak());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Don't run it").clicked() {
+                    choice = Some(false);
+                }
+                if ui.button("Run it this session").clicked() {
+                    choice = Some(true);
+                }
+            });
+        });
+        if modal.should_close() && choice.is_none() {
+            choice = Some(false);
+        }
+        if let Some(run) = choice {
+            self.process_asks.remove(0);
+            if run {
+                crate::panels::process::allow(&ask.command, &ask.args);
+                tracing::warn!("Allowed {command} to run, for this session");
+                // Simulate again, now that it may run.
+                for id in self.tabs.clone() {
+                    if let Some(doc) = self.project.doc_mut(id) {
+                        doc.panel_mut_untracked().sim = None;
+                    }
+                }
+            } else {
+                crate::panels::process::deny(&ask.command, &ask.args);
+            }
+        }
+    }
+
     /// Before opening a big document: how big, and whether to go ahead.
     fn big_document_dialog(&mut self, ctx: &egui::Context) {
         let Some(id) = self.pending_big else { return };
@@ -2115,6 +2181,8 @@ impl Workspace {
         }
         self.crash_window(ctx);
         self.unsaved_dialog(ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.process_dialog(ctx);
         self.big_document_dialog(ctx);
         if !cfg!(target_arch = "wasm32") {
             self.update_title(ctx);

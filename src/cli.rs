@@ -36,6 +36,9 @@ Options:
                                   coupling, radians, relative loss; defaults 0.002,
                                   0.03, 0.05, 0.1)
   --box-outputs                   also include the light leaving boxes
+  --allow-processes               let external program blocks run the programs they
+                                  name (with your permissions: only for projects you
+                                  trust); without it, a design using one fails
   --aliases full|set              full: every component simulates its whole circuit;
                                   set (the default): components whose alias is
                                   switched on, or whose box says so, use their alias
@@ -101,6 +104,8 @@ pub struct Args {
     pub help: bool,
     /// Which components simulate by their aliases.
     pub aliases: sim::Aliases,
+    /// Let external program blocks run their programs.
+    pub allow_processes: bool,
 }
 
 /// `FROM:TO[:POINTS]`.
@@ -171,6 +176,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 }
             }
             "--box-outputs" => a.box_outputs = true,
+            "--allow-processes" => a.allow_processes = true,
             "--aliases" => {
                 a.aliases = match value("--aliases")?.as_str() {
                     "full" => sim::Aliases::Full,
@@ -326,6 +332,9 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     }
     let bytes = crate::panels::project::folder::read_project(std::path::Path::new(&args.project))
         .map_err(|e| Failure::Usage(format!("can't read {}: {e}", args.project)))?;
+    if args.allow_processes {
+        crate::panels::process::allow_all();
+    }
     let mut project = Project::from_bytes(&bytes).map_err(|e| Failure::Usage(format!("{}: {e}", args.project)))?;
     let id = choose_doc(&project, args.doc.as_deref()).map_err(Failure::Usage)?;
     if args.list_inputs {
