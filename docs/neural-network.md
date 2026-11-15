@@ -171,10 +171,10 @@ readout. From `python reference/mnist/benchmark.py --images 1000`:
 
 | | |
 |---|---|
-| One picture (opening the 9.8 MB chip, solving its meshes, simulating) | 2.8 s |
-| … each picture after that, in the same run | **110 ms** (9 a second) |
-| 1 000 pictures in one run | 112 s |
-| Peak memory | 533 MB |
+| One picture (opening the 9.8 MB chip, solving its meshes, simulating) | 2.9 s |
+| … each picture after that, in the same run | **95 ms** (11 a second) |
+| 1 000 pictures in one run | 98 s |
+| Peak memory | 541 MB |
 | The same network computed directly (NumPy, for scale) | 5 µs a picture |
 
 Against the trained network (its weights are in the repository too,
@@ -196,7 +196,7 @@ Building and editing it (from Shine's source: `cargo run --release --example mni
 | The editor on the chip, a frame (drawn and tessellated) | 1 ms |
 | … inside the 784-mode mesh, seen whole / at 15% | 12 ms / 17 ms (panning 7 / 11 ms) |
 
-A simulated picture takes 110 ms where NumPy computes the same answer in 5 µs: the
+A simulated picture takes 95 ms where NumPy computes the same answer in 5 µs: the
 simulator works out what every waveguide, detector and electronic block does, which is
 what lets the same design be checked against the physics, exported to SAX or a layout,
 and taped out. On the chip itself, the answer would take as long as light takes to cross
