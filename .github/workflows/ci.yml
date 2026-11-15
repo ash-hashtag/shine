@@ -1,10 +1,14 @@
-# Tests, lints and builds on every push and pull request.
+# Tests, lints and builds: when a push to main changes Shine's version (a
+# release is coming), on pull requests, and when run by hand (Actions → CI →
+# Run workflow). Other pushes don't run it.
 name: CI
 
 on:
   push:
     branches: [main]
+    paths: [Cargo.toml]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,7 +25,33 @@ defaults:
     shell: bash
 
 jobs:
+  # A push that touches Cargo.toml without changing the version runs nothing.
+  version:
+    name: Version changed
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ $GITHUB_EVENT_NAME != push ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version() { sed -n 's/^version = "\(.*\)"$/\1/p' | head -1; }
+          now=$(version < Cargo.toml)
+          before=$(git show "$BEFORE:Cargo.toml" 2>/dev/null | version || true)
+          echo "Version ${before:-?} → $now"
+          if [[ $now != "$before" ]]; then echo "changed=true"; else echo "changed=false"; fi >> "$GITHUB_OUTPUT"
+
   test:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -59,6 +89,8 @@ jobs:
           cargo test --locked --no-default-features --features core
 
   web:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     name: Web app, site and browser tests
     runs-on: ubuntu-24.04
     steps:
@@ -93,6 +125,8 @@ jobs:
           if-no-files-found: ignore
 
   library:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     name: Python and TypeScript packages
     runs-on: ubuntu-24.04
     steps:

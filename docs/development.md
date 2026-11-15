@@ -115,10 +115,12 @@ web app manifest). Run it after changing the SVG.
 
 ## Continuous integration and releases
 
-- **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: the tests on
-  Linux, Windows and macOS, clippy, the library without the editor (`core`), the
-  WebAssembly and website build, the browser tests, and the Python and TypeScript
-  packages built and tested.
+- **CI** (`.github/workflows/ci.yml`): the tests on Linux, Windows and macOS, clippy, the
+  library without the editor (`core`), the WebAssembly and website build, the browser
+  tests, and the Python and TypeScript packages built and tested. It runs when a push to
+  `main` changes the version in `Cargo.toml` (a release is coming), on pull requests, and
+  by hand (**Actions → CI → Run workflow**); other pushes don't run it, so run the tests
+  locally before pushing.
 - **Releases** (`.github/workflows/release.yml`) run only when a version tag is pushed.
   They build `shine` and `shine-mcp` for Linux (x86-64, ARM64), Windows (x86-64) and
   macOS (Apple silicon, Intel), and publish them with checksums on a GitHub release. The
@@ -128,6 +130,10 @@ web app manifest). Run it after changing the SVG.
   3.14 on Linux (manylinux, x86-64 and ARM64), Windows and macOS, published to PyPI, and
   the npm package. Publishing needs the repository secrets `PYPI_API_TOKEN` and
   `NPM_TOKEN`; without them the packages are built and the release notes a warning.
+  Run by hand (**Actions → Release → Run workflow**), it builds and publishes only the
+  library packages, at the version in `Cargo.toml`: for publishing them again (a missing
+  token, a failed upload) without a new release. PyPI skips files it already has; npm
+  refuses a version it already has.
 
 To release, once a version is final:
 
