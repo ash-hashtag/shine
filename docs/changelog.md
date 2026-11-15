@@ -10,7 +10,11 @@ Notable changes in each version. Releases are tagged on
 [GitHub](https://github.com/ash-hashtag/shine/releases), where each version's notes come
 from this page. What's planned is on the [Roadmap](roadmap.md).
 
-## Unreleased
+## 0.1.4 (2026-11-15)
+
+Projects as folders in an open file format, components composed instead of flattened,
+aliases, and external programs. The Python and npm packages are published from this
+version (0.1.3's weren't).
 
 ### Changed
 
@@ -58,6 +62,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Fixed
 
+- The Python wheels for Linux and the npm package built for 0.1.3 failed (a packing script
+  and an old `wasm-opt`), so neither was published; they are for 0.1.4.
 - The asset library listed a component it had opened twice (the library's and the
   project's copy).
 

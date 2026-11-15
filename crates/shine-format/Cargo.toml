@@ -1,6 +1,6 @@
 [package]
 name = "shine-format"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Shine's file format: the Protocol Buffers schema of its projects, designs and components, and reading and writing them"
 license = "GPL-3.0-only"

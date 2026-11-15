@@ -4746,7 +4746,7 @@ dependencies = [
 
 [[package]]
 name = "shine"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -4790,7 +4790,7 @@ dependencies = [
 
 [[package]]
 name = "shine-format"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "flate2",
  "pb-rs",
@@ -4799,7 +4799,7 @@ dependencies = [
 
 [[package]]
 name = "shine-photonics"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "boltffi",
  "shine",
@@ -4807,7 +4807,7 @@ dependencies = [
 
 [[package]]
 name = "shine-solver"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "faer",
  "num-complex",
