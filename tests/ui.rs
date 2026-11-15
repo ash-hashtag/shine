@@ -1461,7 +1461,14 @@ fn a_components_alias_is_made_switched_on_and_focused_from_the_panels() {
     h.state_mut().open_tab(fa);
     h.run_steps(3);
     h.get_by_label("Make from the circuit").click();
-    h.run_steps(3);
+    // Made on another thread: the editor carries on meanwhile.
+    for _ in 0..200 {
+        h.run_steps(1);
+        if h.query_by_label_contains("Checked: gives what the circuit does").is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert!(h.query_by_label_contains("Checked: gives what the circuit does").is_some());
     h.get_by_label("Use it when simulating").click();
     h.run_steps(3);

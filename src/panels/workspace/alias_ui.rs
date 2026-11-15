@@ -51,9 +51,55 @@ impl Workspace {
         }
     }
 
-    /// Make an alias of component `id` from its circuit (a truth table).
+    /// Make an alias of component `id` from its circuit (a truth table): on
+    /// another thread (desktop), from a copy of it and what it uses, so the
+    /// editor carries on; [`Self::receive_alias`] takes the result.
     pub fn generate_alias(&mut self, id: DocId) {
-        match alias::generate(&self.project, id) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let Some(bytes) = self.project.extract(id).map(|p| p.to_bytes()) else { return };
+            let job = self.alias_job.clone();
+            let ctx = self.ctx.clone();
+            *job.lock().unwrap_or_else(|e| e.into_inner()) = Some((id, None));
+            std::thread::spawn(move || {
+                let made = crate::panels::project::Project::from_bytes(&bytes).and_then(|copy| alias::generate(&copy, id));
+                *job.lock().unwrap_or_else(|e| e.into_inner()) = Some((id, Some(made)));
+                if let Some(ctx) = ctx {
+                    ctx.request_repaint();
+                }
+            });
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let made = alias::generate(&self.project, id);
+            self.alias_made(id, made);
+        }
+    }
+
+    /// An alias made on another thread, once it's ready.
+    pub(super) fn receive_alias(&mut self) {
+        let done = {
+            let mut job = self.alias_job.lock().unwrap_or_else(|e| e.into_inner());
+            match job.take() {
+                Some((id, Some(made))) => Some((id, made)),
+                other => {
+                    *job = other;
+                    None
+                }
+            }
+        };
+        if let Some((id, made)) = done {
+            self.alias_made(id, made);
+        }
+    }
+
+    /// Whether an alias of `id` is being made.
+    fn making_alias(&self, id: DocId) -> bool {
+        matches!(&*self.alias_job.lock().unwrap_or_else(|e| e.into_inner()), Some((d, None)) if *d == id)
+    }
+
+    fn alias_made(&mut self, id: DocId, made: Result<Alias, String>) {
+        match made {
             Ok(mut made) => {
                 let rows = made.model.summary();
                 self.set_alias(id, |a| {
@@ -135,9 +181,16 @@ impl Workspace {
             }
         }
         let mut action = None;
+        let making = self.making_alias(id);
+        if making {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new("Making the alias: simulating every combination of the inputs…").small());
+            });
+        }
         ui.horizontal_wrapped(|ui| {
             if ui
-                .small_button("Make from the circuit")
+                .add_enabled(!making, egui::Button::new("Make from the circuit").small())
                 .on_hover_text("A truth table of its signal outputs for every combination of its signal inputs: for logic (no light, no memory)")
                 .clicked()
             {

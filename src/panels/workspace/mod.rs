@@ -126,6 +126,10 @@ pub struct Workspace {
     /// An alias being written as a script: for which component, the code,
     /// and why it was refused.
     pub alias_script: Option<(DocId, String, Option<String>)>,
+    /// An alias being made on another thread: for which component, and the
+    /// result once it's there.
+    #[allow(clippy::type_complexity)]
+    pub alias_job: std::sync::Arc<std::sync::Mutex<Option<(DocId, Option<Result<crate::panels::project::Alias, String>>)>>>,
     /// Programs the open designs want to run, waiting for the user's yes or no.
     #[cfg(not(target_arch = "wasm32"))]
     pub process_asks: Vec<crate::panels::process::Ask>,
@@ -205,6 +209,7 @@ impl Default for Workspace {
             moving_asset: None,
             library_window: LibraryWindow::default(),
             alias_script: None,
+            alias_job: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             process_asks: Vec::new(),
             imported: std::collections::HashMap::new(),
@@ -1272,6 +1277,7 @@ impl Workspace {
             self.reload();
         }
         self.receive_dropped_files(&ui.ctx().clone());
+        self.receive_alias();
         self.receive_screenshot(ui);
         if self.status.as_ref().is_some_and(|s| s.1 < self.time) {
             self.status = None;
