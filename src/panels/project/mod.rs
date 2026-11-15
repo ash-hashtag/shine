@@ -541,6 +541,8 @@ pub struct CatalogEntry {
     /// Parameters it exports, which each of its boxes can set.
     pub parameters: Vec<ComponentParam>,
     pub appearance: Appearance,
+    /// Whether it has an alias, and if so whether it's switched on.
+    pub alias: Option<bool>,
 }
 
 /// An exported parameter, as the boxes using a component see it.
@@ -841,6 +843,7 @@ impl Project {
                     depends_on: self.dependencies(d.id),
                     parameters: component_parameters(d.layout()),
                     appearance: d.component.as_ref().map(|m| m.appearance.clone()).unwrap_or_default(),
+                    alias: d.component.as_ref().and_then(|m| m.alias.as_ref()).map(|a| a.on),
                 })
                 .collect(),
             #[cfg(feature = "gui")]

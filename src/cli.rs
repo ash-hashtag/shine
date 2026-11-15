@@ -36,6 +36,9 @@ Options:
                                   coupling, radians, relative loss; defaults 0.002,
                                   0.03, 0.05, 0.1)
   --box-outputs                   also include the light leaving boxes
+  --aliases full|set              full: every component simulates its whole circuit;
+                                  set (the default): components whose alias is
+                                  switched on, or whose box says so, use their alias
   --readouts                      with a sweep: each output's peak, minimum, insertion
                                   loss, extinction and resonances (FSR, width, Q) as CSV,
                                   instead of the curves
@@ -96,6 +99,8 @@ pub struct Args {
     pub csv: bool,
     pub out: Option<String>,
     pub help: bool,
+    /// Which components simulate by their aliases.
+    pub aliases: sim::Aliases,
 }
 
 /// `FROM:TO[:POINTS]`.
@@ -166,6 +171,13 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 }
             }
             "--box-outputs" => a.box_outputs = true,
+            "--aliases" => {
+                a.aliases = match value("--aliases")?.as_str() {
+                    "full" => sim::Aliases::Full,
+                    "set" => sim::Aliases::AsSet,
+                    other => return Err(format!("--aliases takes full or set, not “{other}”")),
+                }
+            }
             "--readouts" => a.readouts = true,
             "--clock" => a.clock = value("--clock")?.parse().map_err(|_| "--clock needs a number of ticks")?,
             "--input" => a.input = Some(value("--input")?),
@@ -357,7 +369,7 @@ pub fn simulate(args: &Args) -> Result<String, Failure> {
     let catalog = project.catalog();
     let names = |id| layout.instance(id).map_or_else(|| "Box".into(), |i| catalog.display(&i.block).name);
 
-    let mut machine = Machine::default();
+    let mut machine = Machine { aliases: args.aliases.clone(), ..Machine::default() };
     for _ in 0..args.clock {
         let o = sim::simulate(layout, cell_um, &project, &machine, Some(id), &Options::default());
         sim::clock(layout, &project, &mut machine, &o);
@@ -480,7 +492,8 @@ fn simulate_samples(project: &mut Project, id: DocId, args: &Args, samples: &[Ve
         }
         let doc = project.doc(id).expect("chosen");
         let (layout, cell_um) = (doc.layout(), doc.panel().cell_um);
-        let o = sim::simulate(layout, cell_um, &*project, &Machine::default(), Some(id), &Options::default());
+        let machine = Machine { aliases: args.aliases.clone(), ..Machine::default() };
+        let o = sim::simulate(layout, cell_um, &*project, &machine, Some(id), &Options::default());
         if let Some(e) = &o.error {
             return Err(Failure::Simulation(format!("sample {}: {e}", k + 1)));
         }

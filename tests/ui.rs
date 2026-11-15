@@ -1431,3 +1431,50 @@ fn the_optimiser_finds_a_coupling_and_applies_it() {
     h.run_steps(3);
     assert_eq!(coupling(&h), 0.5, "undone");
 }
+
+#[test]
+fn a_components_alias_is_made_switched_on_and_focused_from_the_panels() {
+    let mut h = app();
+    let i = shine::panels::optics::examples::demos().iter().position(|d| d.name == "8-bit photonic adder").unwrap();
+    h.state_mut().load_demo(i);
+    h.run_steps(3);
+    let top = h.state().active.unwrap();
+    let shows = |h: &Harness<'_, Workspace>| {
+        let p = active(h);
+        let display = p.layout.instances.iter().find(|i| matches!(i.block, BlockRef::Builtin(Builtin::Display { .. }))).unwrap();
+        shine::panels::optics::input_number(&p.layout, p.outcome().unwrap(), display.id, 9)
+    };
+    assert_eq!(shows(&h), 155);
+    assert!(h.query_by_label("Focus").is_none(), "no aliases yet, so no choice of them");
+
+    // The full adder: make its alias from its circuit, and switch it on.
+    let fa = h.state().project.find("Full adder").unwrap();
+    h.state_mut().open_tab(fa);
+    h.run_steps(3);
+    h.get_by_label("Make from the circuit").click();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Checked: gives what the circuit does").is_some());
+    h.get_by_label("Use it when simulating").click();
+    h.run_steps(3);
+    let alias = h.state().project.doc(fa).unwrap().component.as_ref().unwrap().alias.clone().unwrap();
+    assert!(alias.on && alias.generated);
+
+    // Back in the adder: by its aliases, the same sum.
+    h.state_mut().open_tab(top);
+    h.run_steps(4);
+    assert_eq!(shows(&h), 155);
+    h.get_by_label("Full").click();
+    h.run_steps(3);
+    assert_eq!(active(&h).machine.aliases, shine::panels::circuit::sim::Aliases::Full);
+    assert_eq!(shows(&h), 155);
+    // Focus on the first adder's box.
+    let first = active(&h).layout.instances.iter().position(|i| matches!(i.block, BlockRef::Component(_))).unwrap();
+    active_mut(&mut h).editor.boxes.select_only(first);
+    h.run_steps(2);
+    h.get_by_label("Focus").click();
+    h.run_steps(3);
+    let id = active(&h).layout.instances[first].id;
+    assert_eq!(active(&h).machine.aliases, shine::panels::circuit::sim::Aliases::Focus(vec![vec![id]]));
+    assert!(h.query_by_label_contains("1 box in full").is_some());
+    assert_eq!(shows(&h), 155);
+}

@@ -689,6 +689,7 @@ impl OpticsPanel {
             BlockRef::Component(doc) => {
                 let doc = *doc;
                 self.component_params_ui(ui, b, doc);
+                self.simulate_as_ui(ui, b, doc);
                 if ui.button("Open definition").on_hover_text("Tab, or double-click the box").clicked() {
                     self.apply(super::input::Action::Inspect);
                 }
@@ -1070,6 +1071,77 @@ impl OpticsPanel {
         }
     }
 
+    /// For a box of a component with an alias: whether it simulates by it.
+    fn simulate_as_ui(&mut self, ui: &mut Ui, b: usize, doc: crate::panels::project::DocId) {
+        use crate::panels::optics::model::SimulateAs;
+        let Some(on) = self.catalog.get(doc).and_then(|e| e.alias) else { return };
+        let follows = if on { "As the component says (its alias)" } else { "As the component says (in full)" };
+        let simulate = &mut self.layout.instances[b].simulate;
+        ui.horizontal(|ui| {
+            let l = ui.label("Simulate").id;
+            egui::ComboBox::from_id_salt(("simulate_as", b))
+                .selected_text(match simulate {
+                    SimulateAs::AsSet => follows,
+                    SimulateAs::Full => "Its full circuit",
+                    SimulateAs::Alias => "By its alias",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(simulate, SimulateAs::AsSet, follows);
+                    ui.selectable_value(simulate, SimulateAs::Full, "Its full circuit");
+                    ui.selectable_value(simulate, SimulateAs::Alias, "By its alias");
+                })
+                .response
+                .labelled_by(l);
+        });
+        if matches!(self.machine.aliases, crate::panels::circuit::sim::Aliases::Full | crate::panels::circuit::sim::Aliases::Focus(_)) {
+            ui.label(RichText::new("The design's Aliases setting (Simulation) decides for now").small().weak());
+        }
+    }
+
+    /// Which components simulate by their aliases (design/aliases.md).
+    fn aliases_ui(&mut self, ui: &mut Ui) {
+        use crate::panels::circuit::sim::Aliases;
+        let selected: Vec<Vec<super::model::InstanceId>> = self
+            .editor
+            .boxes
+            .iter()
+            .filter_map(|b| self.layout.instances.get(b))
+            .filter(|i| matches!(i.block, BlockRef::Component(_)))
+            .map(|i| vec![i.id])
+            .collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Aliases");
+            let mode = &mut self.machine.aliases;
+            if ui.selectable_label(*mode == Aliases::Full, "Full").on_hover_text("Every component simulates its whole circuit").clicked() {
+                *mode = Aliases::Full;
+            }
+            if ui
+                .selectable_label(*mode == Aliases::AsSet, "As set")
+                .on_hover_text("Components whose alias is switched on (or whose box says so) simulate by it; the rest in full")
+                .clicked()
+            {
+                *mode = Aliases::AsSet;
+            }
+            let focused = matches!(mode, Aliases::Focus(_));
+            if ui
+                .add_enabled(focused || !selected.is_empty(), egui::Button::selectable(focused, "Focus"))
+                .on_hover_text("The selected boxes simulate in full, every other component by its alias: to watch them work among the rest")
+                .on_disabled_hover_text("Select the boxes to simulate in full first")
+                .clicked()
+                && !selected.is_empty()
+            {
+                *mode = Aliases::Focus(selected.clone());
+            }
+        });
+        if let Aliases::Focus(paths) = &self.machine.aliases {
+            let n = paths.len();
+            ui.label(RichText::new(format!("{n} {} in full, every other component by its alias", if n == 1 { "box" } else { "boxes" })).small().weak());
+            if !selected.is_empty() && selected != *paths && ui.small_button("Focus on the selection").clicked() {
+                self.machine.aliases = Aliases::Focus(selected);
+            }
+        }
+    }
+
     /// Put a new model in box `b`. A component that is just the model and
     /// its pins gets pins to match the new ports; otherwise the box changes
     /// and connections to ports that are gone are dropped.
@@ -1163,6 +1235,9 @@ impl OpticsPanel {
     fn simulation_ui(&mut self, ui: &mut Ui) {
         ui_kit::section(ui, "Simulation");
         ui.checkbox(&mut self.simulation_active, "Live simulation").on_hover_text("Space");
+        if self.catalog.components().any(|e| e.alias.is_some()) {
+            self.aliases_ui(ui);
+        }
         ui.horizontal(|ui| {
             let l = ui.label("Cell size").id;
             ui.add(egui::DragValue::new(&mut self.cell_um).range(0.01..=10_000.0).speed(0.01).suffix(" µm")).labelled_by(l);

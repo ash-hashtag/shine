@@ -97,6 +97,45 @@ leave them out too.
 
 ![The Full adder component opened in its own tab](img/full-adder.webp)
 
+## Aliases: a component's shortcut
+
+A component can have an **alias**: a compact model with the same ports that a design can
+simulate instead of the component's circuit. A system of a hundred components simulates
+quickly with each one by its alias, and you can watch one component work among the rest:
+it simulates in full while every other uses its alias.
+
+Open the component; the **Alias** section in the right panel has:
+
+- **Make from the circuit**: Shine works out a truth table, the signal outputs for every
+  combination of the signal inputs, by simulating the circuit. It's for logic: signals
+  only, no light and no memory (registers), up to 16 inputs. It gives exactly what the
+  circuit does for inputs of 0 and 1, and is checked as it's made.
+- **Write a script…**: an alias in JavaScript, with the component's ports (the starting
+  script has them): light (a transmission per wavelength, which signals can drive), signal
+  outputs, and state on clock ticks, as for [components from code](#components-from-code-javascript).
+  Scripts run in the desktop app; in the browser, components with a script alias simulate
+  in full.
+- **Check**: compares the alias with the circuit and shows the largest difference in any
+  output: every combination of 0 and 1 on the signal inputs (a fixed sample of 256 above
+  10 inputs), and for light, the field from each input to each output at 1530, 1550 and
+  1570 nm. A script is checked when you apply it. A generated alias is exact; one you
+  write is yours to keep right, and Check is how.
+- **Use it when simulating**: off by default.
+
+Which components use their aliases is chosen at three levels, the narrowest winning:
+
+- **The design**, under **Simulation** in the right panel (shown once a component has an
+  alias): **Full** simulates every component's whole circuit; **As set** (the default)
+  uses the aliases switched on; **Focus** simulates the selected boxes in full, with
+  everything inside them, and every other component with an alias by its alias.
+  `shine simulate --aliases full|set` chooses from the command line.
+- **The component**: **Use it when simulating**.
+- **The box**: **Simulate** in its inspector, *as the component says*, *its full circuit*
+  or *by its alias*.
+
+A box simulating by its alias shows **≈** in its top right corner. Passive optical
+components need no alias: Shine already simulates each as its exact matrix.
+
 ## Managing components
 
 In the **Project** list (Parts tab, below the parts), right-click a document to open,

@@ -566,6 +566,13 @@ impl OpticsPanel {
                 painter.rect(r, 1.0, body, Stroke::new(1.0, line), egui::StrokeKind::Inside);
             } else {
                 draw_box(&painter, r, inst, &d, outcome.as_ref(), &self.layout, theme, zoom, style);
+                // Simulated by its alias: marked, so shortcuts are always in view.
+                if let BlockRef::Component(doc) = inst.block
+                    && crate::panels::circuit::sim::uses_alias(self.catalog.get(doc).and_then(|e| e.alias), &self.machine.aliases, inst, &[])
+                {
+                    let font = FontId::proportional((13.0 * zoom).clamp(6.0, 30.0));
+                    painter.text(r.right_top() + Vec2::new(-4.0 * zoom, 2.0 * zoom), Align2::RIGHT_TOP, "≈", font, theme.active);
+                }
             }
             if self.editor.boxes.contains(b) {
                 let active = self.editor.boxes.active() == Some(b);

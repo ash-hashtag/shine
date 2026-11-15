@@ -82,6 +82,7 @@ ITEM can be:
 | `--seed S` | the Monte Carlo seed (default 1): the same seed, the same samples |
 | `--vary-neff X`, `--vary-coupling X`, `--vary-phase X`, `--vary-loss X` | the variation's σ (defaults 0.002, 0.03, 0.05 rad, 0.1) |
 | `--box-outputs` | include the light leaving boxes |
+| `--aliases full\|set` | `full`: every component simulates its whole circuit; `set` (the default): components whose [alias](components.md#aliases-a-components-shortcut) is switched on, or whose box says so, use it |
 | `--readouts` | with a sweep: each output's peak, minimum, insertion loss, extinction, and resonances (FSR, width, Q) as CSV, instead of the curves |
 | `--input FILE` | set the inputs from numbers in FILE (`-`: standard input); several samples, a CSV row each |
 | `--inputs` | list the inputs in the order `--input` sets them |

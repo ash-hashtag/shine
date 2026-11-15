@@ -115,7 +115,7 @@ pub type Path = Vec<InstanceId>;
 
 /// Which components simulate by their aliases: compact models standing in
 /// for their circuits (design/aliases.md).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Aliases {
     /// Each component as its alias switch says, each box as it says.
     #[default]
@@ -136,10 +136,18 @@ pub fn alias_in_effect(docs: &dyn Documents, aliases: &Aliases, inst: &Instance,
     if cfg!(target_arch = "wasm32") && alias.model.script().is_some() {
         return None;
     }
-    let used = match aliases {
+    uses_alias(Some(alias.on), aliases, inst, path).then(|| alias.model.clone())
+}
+
+/// Whether box `inst` (in the layout at `path`) simulates by its
+/// component's alias, given whether the component has one (`Some`) and if
+/// it is switched on.
+pub fn uses_alias(alias: Option<bool>, aliases: &Aliases, inst: &Instance, path: &[InstanceId]) -> bool {
+    let Some(on) = alias else { return false };
+    match aliases {
         Aliases::Full => false,
         Aliases::AsSet => match inst.simulate {
-            SimulateAs::AsSet => alias.on,
+            SimulateAs::AsSet => on,
             SimulateAs::Full => false,
             SimulateAs::Alias => true,
         },
@@ -147,8 +155,7 @@ pub fn alias_in_effect(docs: &dyn Documents, aliases: &Aliases, inst: &Instance,
             let here: Vec<InstanceId> = path.iter().copied().chain([inst.id]).collect();
             !focus.iter().any(|f| f.starts_with(&here) || here.starts_with(f))
         }
-    };
-    used.then(|| alias.model.clone())
+    }
 }
 
 /// What box `inst` simulates as: its block, or its component's alias as a

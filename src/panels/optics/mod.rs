@@ -277,6 +277,7 @@ fn hash_machine(machine: &Machine, hasher: &mut impl Hasher) {
         entries = entries.wrapping_add(h.finish());
     }
     entries.hash(hasher);
+    machine.aliases.hash(hasher);
 }
 
 #[cfg(feature = "gui")]

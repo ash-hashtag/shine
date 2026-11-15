@@ -24,6 +24,7 @@ pub enum ExamplesTab {
     Chips,
 }
 
+mod alias_ui;
 mod assets_ui;
 mod export_window;
 mod matrix_window;
@@ -122,6 +123,9 @@ pub struct Workspace {
     pub files_hovering: bool,
     /// The asset library window.
     pub library_window: LibraryWindow,
+    /// An alias being written as a script: for which component, the code,
+    /// and why it was refused.
+    pub alias_script: Option<(DocId, String, Option<String>)>,
     /// Library assets copied into the project (opened or placed): the copy,
     /// and its fingerprint then. While the copy is unchanged, the library
     /// window shows the two once.
@@ -197,6 +201,7 @@ impl Default for Workspace {
             files_hovering: false,
             moving_asset: None,
             library_window: LibraryWindow::default(),
+            alias_script: None,
             imported: std::collections::HashMap::new(),
             export_window: ExportWindow::default(),
             matrix_window: MatrixWindow::default(),
@@ -1507,6 +1512,7 @@ impl Workspace {
                 if ui.small_button("Edit component…").clicked() {
                     self.open_document_dialog(id, true);
                 }
+                self.alias_ui(ui, id);
             }
             None => {
                 if ui

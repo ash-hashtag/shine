@@ -28,6 +28,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Added
 
+- Aliases: a component's shortcut for simulating, a compact model with its ports that a
+  design can simulate instead of its circuit. Shine makes one from a logic component's
+  circuit (a truth table, exact for 0s and 1s), or you write one as a script; **Check**
+  compares it with the circuit. A design simulates in full, with the aliases switched on,
+  or focused on the selected boxes (in full, the rest by their aliases); each box can
+  choose too, and those using aliases show ≈.
 - Projects as folders: a file per design and component, and a manifest. Components refer
   to each other by path, so one can be shared by several projects (`../shared/…`), and
   saving writes only the files that changed. **File → Open folder…** and **Save as

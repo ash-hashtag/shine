@@ -123,6 +123,11 @@ want them.
       parameters (rare large blocks boxed, 32-bit ids, shared parameter names), and
       documents shared copy-on-write between the editor, its undo and background
       simulations instead of copied; a 784-mode mesh takes about 100 MB per copy today
+- [x] **Aliases**: a component's shortcut for simulating, made from its circuit (a truth
+      table of its logic) or written as a script, checked against the circuit, used in
+      full, as set or focused on a few boxes ([Components](components.md#aliases-a-components-shortcut))
+- [ ] **Generated aliases for light**: a matrix per drive level, interpolated, for
+      optical components driven by signals (modulators, switches)
 - [ ] **Logic solved like light**: a component whose electronics are a pure function of
       its inputs evaluated as one compiled function, recursively, then simplified, so a
       thousand gates that add two 8-bit numbers run as an adder. Combinational logic

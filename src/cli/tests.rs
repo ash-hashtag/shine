@@ -254,3 +254,26 @@ fn a_project_folder_simulates_as_its_file_does() {
     assert_eq!(run(&folder.join(crate::panels::project::folder::MANIFEST).to_string_lossy()), from_file);
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn aliases_are_used_as_set_unless_asked_for_the_full_circuit() {
+    use crate::panels::models::ModelSpec;
+    use crate::panels::project::Alias;
+    let (dir, path) = saved("adder-alias", examples::eight_bit_adder);
+    // The full adders' alias, switched on, wrongly says the sum bit is a.
+    let mut p = Project::from_bytes(&std::fs::read(&path).unwrap()).unwrap();
+    let fa = p.find("Full adder").unwrap();
+    let lazy = r#"const component = { name: "Lazy", signals: { inputs: ["a", "b", "cin"], outputs: ["sum", "cout"] }, outputs(s) { return [s.a ?? 0, 0]; } };"#;
+    let model = std::sync::Arc::new(ModelSpec::from_script(lazy).unwrap());
+    p.doc_mut(fa).unwrap().component.as_mut().unwrap().alias = Some(Alias { model, on: true, generated: false, checked: None });
+    std::fs::write(&path, p.to_bytes()).unwrap();
+    let run = |extra: &[&str]| {
+        let mut a = vec![path.as_str()];
+        a.extend(extra);
+        simulate(&parse(&args(&a)).unwrap()).unwrap()
+    };
+    assert!(run(&[]).contains("Display 9,8  100"), "{}", run(&[]));
+    assert!(run(&["--aliases", "full"]).contains("Display 9,8  155"));
+    assert!(parse(&args(&[&path, "--aliases", "some"])).unwrap_err().contains("full or set"));
+    std::fs::remove_dir_all(dir).ok();
+}
