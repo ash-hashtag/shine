@@ -18,7 +18,7 @@ pub struct Instance {
 
 impl Instance {
     pub fn upgrade(self) -> model::Instance {
-        model::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell, params: Vec::new() }
+        model::Instance { id: self.id, block: self.block.upgrade(), cell: self.cell, params: Vec::new(), simulate: Default::default() }
     }
 }
 

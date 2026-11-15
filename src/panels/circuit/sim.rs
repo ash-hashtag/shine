@@ -21,9 +21,10 @@ use emath::{Pos2, Vec2};
 use super::expr;
 use crate::panels::beam_sim::{Beam, DIRECTIONS, direction, direction_index, scattering};
 use crate::panels::optics::model::{
-    BlockRef, Builtin, GRID, Instance, InstanceId, Item, Layout, OpticComponentKind, PortCounts, Terminal, box_geometry,
+    BlockRef, Builtin, GRID, Instance, InstanceId, Item, Layout, OpticComponentKind, PortCounts, SimulateAs, Terminal, box_geometry,
 };
-use crate::panels::project::DocId;
+use crate::panels::models::ModelSpec;
+use crate::panels::project::{Alias, DocId};
 use std::sync::Arc;
 
 use crate::photonics::{C64, Circuit, Custom, Detector, InPort, Laser, Matrix, NodeId, OutPort, Ports, Table, Tabulated, Waveguide};
@@ -36,6 +37,10 @@ pub trait Documents: Sync {
     /// A hash of document `id`'s content that changes when it does, if
     /// known: what lets a solved component be reused by later simulations.
     fn fingerprint(&self, _id: DocId) -> Option<u64> {
+        None
+    }
+    /// Component `id`'s alias, if it has one (design/aliases.md).
+    fn alias(&self, _id: DocId) -> Option<&Alias> {
         None
     }
 }
@@ -57,11 +62,12 @@ impl Documents for NoDocuments {
 pub struct Snapshot {
     docs: HashMap<DocId, (Layout, f64, String)>,
     fingerprints: HashMap<DocId, u64>,
+    aliases: HashMap<DocId, Alias>,
 }
 
 impl Snapshot {
     pub fn of(layout: &Layout, docs: &dyn Documents) -> Self {
-        let mut s = Self { docs: HashMap::new(), fingerprints: HashMap::new() };
+        let mut s = Self { docs: HashMap::new(), fingerprints: HashMap::new(), aliases: HashMap::new() };
         let mut todo: Vec<DocId> = Vec::new();
         let used = |l: &Layout, todo: &mut Vec<DocId>| {
             todo.extend(l.instances.iter().filter_map(|i| match i.block {
@@ -80,6 +86,9 @@ impl Snapshot {
                 if let Some(f) = docs.fingerprint(id) {
                     s.fingerprints.insert(id, f);
                 }
+                if let Some(a) = docs.alias(id) {
+                    s.aliases.insert(id, a.clone());
+                }
             }
         }
         s
@@ -96,10 +105,79 @@ impl Documents for Snapshot {
     fn fingerprint(&self, id: DocId) -> Option<u64> {
         self.fingerprints.get(&id).copied()
     }
+    fn alias(&self, id: DocId) -> Option<&Alias> {
+        self.aliases.get(&id)
+    }
 }
 
 /// Instances from the top layout down to a nested layout.
 pub type Path = Vec<InstanceId>;
+
+/// Which components simulate by their aliases: compact models standing in
+/// for their circuits (design/aliases.md).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Aliases {
+    /// Each component as its alias switch says, each box as it says.
+    #[default]
+    AsSet,
+    /// Every component in full: aliases are ignored.
+    Full,
+    /// These boxes (by their paths from the top, each ending with the box)
+    /// and everything inside them in full; every other component with an
+    /// alias by its alias.
+    Focus(Vec<Path>),
+}
+
+/// The alias box `inst` (in the layout at `path`) simulates by, if any.
+pub fn alias_in_effect(docs: &dyn Documents, aliases: &Aliases, inst: &Instance, path: &[InstanceId]) -> Option<Arc<ModelSpec>> {
+    let BlockRef::Component(doc) = inst.block else { return None };
+    let alias = docs.alias(doc)?;
+    // Scripts run in the desktop app only: in the browser, the full circuit.
+    if cfg!(target_arch = "wasm32") && alias.model.script().is_some() {
+        return None;
+    }
+    let used = match aliases {
+        Aliases::Full => false,
+        Aliases::AsSet => match inst.simulate {
+            SimulateAs::AsSet => alias.on,
+            SimulateAs::Full => false,
+            SimulateAs::Alias => true,
+        },
+        Aliases::Focus(focus) => {
+            let here: Vec<InstanceId> = path.iter().copied().chain([inst.id]).collect();
+            !focus.iter().any(|f| f.starts_with(&here) || here.starts_with(f))
+        }
+    };
+    used.then(|| alias.model.clone())
+}
+
+/// What box `inst` simulates as: its block, or its component's alias as a
+/// model block.
+fn effective<'b>(docs: &dyn Documents, aliases: &Aliases, inst: &'b Instance, path: &[InstanceId]) -> std::borrow::Cow<'b, BlockRef> {
+    match alias_in_effect(docs, aliases, inst, path) {
+        Some(model) => std::borrow::Cow::Owned(BlockRef::Builtin(Builtin::Model(model))),
+        None => std::borrow::Cow::Borrowed(&inst.block),
+    }
+}
+
+/// Whether component `doc` or any inside it has an alias.
+fn has_alias(docs: &dyn Documents, doc: DocId, memo: &mut HashMap<DocId, bool>, stack: &mut Vec<DocId>) -> bool {
+    if let Some(&known) = memo.get(&doc) {
+        return known;
+    }
+    if stack.contains(&doc) || stack.len() > 64 {
+        return false;
+    }
+    let found = docs.alias(doc).is_some()
+        || docs.layout(doc).is_some_and(|(l, _)| {
+            stack.push(doc);
+            let inside = l.instances.iter().any(|i| matches!(i.block, BlockRef::Component(d) if has_alias(docs, d, memo, stack)));
+            stack.pop();
+            inside
+        });
+    memo.insert(doc, found);
+    found
+}
 
 /// A terminal anywhere in the hierarchy.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -135,6 +213,8 @@ pub struct Machine {
     /// light shone into it to try the layout on its own; missing or None,
     /// none.
     pub light_inputs: Vec<Option<TestLight>>,
+    /// Which components simulate by their aliases.
+    pub aliases: Aliases,
 }
 
 /// Light shone into one of a layout's own light inputs, to try it on its
@@ -395,7 +475,8 @@ impl Electronics<'_> {
                 let item = Item::Box(inst.id);
                 let n_in = block_counts(&inst.block, self.docs).signal_in;
                 let ins: Vec<f64> = (0..n_in).map(|k| self.value(path, layout, Terminal { item, port: k })).collect();
-                let outs: Vec<f64> = match &inst.block {
+                let block = effective(self.docs, &self.machine.aliases, inst, path);
+                let outs: Vec<f64> = match &*block {
                     BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
                         (0..*bits).rev().map(|k| ((value >> k) & 1) as f64).collect()
                     }
@@ -407,6 +488,7 @@ impl Electronics<'_> {
                         .cloned()
                         .unwrap_or_else(|| vec![0.0; *bits as usize]),
                     BlockRef::Builtin(cell @ Builtin::FunctionCell { .. }) => self.function_cell(cell, path, inst.id, &ins),
+                    BlockRef::Builtin(Builtin::Model(m)) if m.truth_table_outputs(&[]).is_some() => m.truth_table_outputs(&ins).unwrap_or_default(),
                     BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() && !m.signal_outputs.is_empty() => {
                         let wired: Vec<Option<f64>> = ins
                             .iter()
@@ -514,6 +596,7 @@ struct Optics<'a> {
     colors: HashMap<u32, [u8; 3]>,
     /// Passive components solved into their matrices, when reducing.
     reduce: Option<&'a mut Reducer>,
+    aliases: &'a Aliases,
 }
 
 /// Passive components solved once, into their matrices.
@@ -536,6 +619,8 @@ struct Reducer {
     tables: HashMap<TableKey, Arc<Table>>,
     /// Each component's content with all it uses, hashed, if known.
     subtrees: HashMap<DocId, Option<u64>>,
+    /// Whether each component has an alias, or one inside it.
+    aliased: HashMap<DocId, bool>,
 }
 
 /// A component and its box's parameter values (as bits, to compare exactly).
@@ -761,6 +846,10 @@ impl Optics<'_> {
         if r.wavelengths.is_empty() || !passive(docs, doc, &mut r.passive, &mut Vec::new()) {
             return Ok(None);
         }
+        // Under Focus, what's aliased inside depends on where it is.
+        if matches!(self.aliases, Aliases::Focus(_)) && has_alias(docs, doc, &mut r.aliased, &mut Vec::new()) {
+            return Ok(None);
+        }
         let key = table_key(doc, params);
         let table = match r.tables.get(&key) {
             Some(t) => t.clone(),
@@ -783,9 +872,12 @@ impl Optics<'_> {
         let docs = self.docs;
         let wavelengths = self.reduce.as_deref().map(|r| r.wavelengths.clone()).unwrap_or_default();
         let (child, cell) = docs.layout(doc).ok_or("A component used here was deleted")?;
-        // Solved by an earlier simulation?
+        // Solved by an earlier simulation? (Not if aliases inside could make
+        // it differ: they're ignored only in a full simulation.)
+        let full = matches!(self.aliases, Aliases::Full);
+        let cacheable = full || self.reduce.as_deref_mut().is_some_and(|r| !has_alias(docs, doc, &mut r.aliased, &mut Vec::new()));
         let kept = match self.reduce.as_deref_mut() {
-            Some(r) if child.instances.len() + child.wires.len() >= LOOK_UP_SOLVES_FROM_SIZE => {
+            Some(r) if child.instances.len() + child.wires.len() >= LOOK_UP_SOLVES_FROM_SIZE && cacheable => {
                 subtree_fingerprint(docs, doc, &mut r.subtrees, &mut Vec::new()).map(|f| {
                     let params = params.iter().map(|(n, v)| (n.clone(), v.to_bits())).collect();
                     (f, params, wavelengths.iter().map(|w| w.to_bits()).collect::<Vec<_>>())
@@ -841,7 +933,11 @@ impl Optics<'_> {
         let mut queued = std::collections::HashSet::new();
         for inst in &layout.instances {
             let BlockRef::Component(doc) = inst.block else { continue };
-            if self.stack.contains(&doc) || !passive(docs, doc, &mut r.passive, &mut Vec::new()) {
+            if self.stack.contains(&doc) || !passive(docs, doc, &mut r.passive, &mut Vec::new()) || alias_in_effect(docs, self.aliases, inst, path).is_some() {
+                continue;
+            }
+            // Under Focus, what's aliased inside depends on where it is.
+            if matches!(self.aliases, Aliases::Focus(_)) && has_alias(docs, doc, &mut r.aliased, &mut Vec::new()) {
                 continue;
             }
             let key = table_key(doc, &inst.params);
@@ -855,7 +951,7 @@ impl Optics<'_> {
         }
         let started = web_time::Instant::now();
         let (wavelengths, memo) = (r.wavelengths.clone(), r.passive.clone());
-        let (signals, light, max_len, stack) = (self.signals, self.light, self.max_len, &self.stack);
+        let (signals, light, max_len, stack, aliases) = (self.signals, self.light, self.max_len, &self.stack, self.aliases);
         let tables = crate::photonics::par::try_map(&todo, |(key, inst)| {
             let mut own = Reducer { wavelengths: wavelengths.clone(), passive: memo.clone(), ..Reducer::default() };
             let mut optics = Optics {
@@ -868,6 +964,7 @@ impl Optics<'_> {
                 next_source: FIRST_INDEPENDENT_SOURCE,
                 colors: HashMap::new(),
                 reduce: Some(&mut own),
+                aliases,
             };
             let mut inner = path.to_vec();
             inner.push(inst.id);
@@ -980,7 +1077,8 @@ impl Optics<'_> {
         let mut instance_ports = HashMap::new();
         let mut geometry = HashMap::new();
         for inst in &layout.instances {
-            let ports = match &inst.block {
+            let block = effective(self.docs, self.aliases, inst, path);
+            let ports = match &*block {
                 #[cfg(not(target_arch = "wasm32"))]
                 BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() => {
                     // A script's light can depend on its signals, as they are now.
@@ -1368,6 +1466,7 @@ fn settle(
                 next_source: FIRST_INDEPENDENT_SOURCE,
                 colors: HashMap::new(),
                 reduce: reducer.as_mut(),
+                aliases: &machine.aliases,
             };
             let mut circuit = Circuit::new();
             let built = optics.build(&mut circuit, layout, &[], cell_um)?;
@@ -1498,6 +1597,7 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
         layout: &Layout,
         path: &[InstanceId],
         docs: &dyn Documents,
+        aliases: &Aliases,
         signals: &HashMap<Key, f64>,
         out: &mut HashMap<(Path, InstanceId), Vec<f64>>,
         scripts: &HashMap<(Path, InstanceId), String>,
@@ -1513,7 +1613,7 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
                 .map(|from| signals.get(&Key::new(path, from.item, from.port)).copied().unwrap_or(0.0))
         };
         for inst in &layout.instances {
-            match &inst.block {
+            match &*effective(docs, aliases, inst, path) {
                 BlockRef::Builtin(Builtin::Register { bits }) => {
                     let item = Item::Box(inst.id);
                     if input(item, *bits as usize).is_none_or(|w| w >= 0.5) {
@@ -1527,7 +1627,7 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
                     if let Some((child, _)) = docs.layout(*doc) {
                         let mut inner = path.to_vec();
                         inner.push(inst.id);
-                        walk(child, &inner, docs, signals, out, scripts, script_updates, depth + 1);
+                        walk(child, &inner, docs, aliases, signals, out, scripts, script_updates, depth + 1);
                     }
                 }
                 BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() => {
@@ -1547,7 +1647,7 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
     }
     let mut updates = HashMap::new();
     let mut script_updates = HashMap::new();
-    walk(layout, &[], docs, &outcome.signals, &mut updates, &machine.scripts, &mut script_updates, 0);
+    walk(layout, &[], docs, &machine.aliases, &outcome.signals, &mut updates, &machine.scripts, &mut script_updates, 0);
     machine.registers.extend(updates);
     machine.scripts.extend(script_updates);
     machine.tick += 1;
@@ -1555,7 +1655,7 @@ pub fn clock(layout: &Layout, docs: &dyn Documents, machine: &mut Machine, outco
 
 /// A scripted component's signal outputs.
 #[cfg(not(target_arch = "wasm32"))]
-fn script_outputs(m: &crate::panels::models::ModelSpec, signals: &[Option<f64>], state: Option<&String>) -> Result<Vec<f64>, String> {
+pub(crate) fn script_outputs(m: &crate::panels::models::ModelSpec, signals: &[Option<f64>], state: Option<&String>) -> Result<Vec<f64>, String> {
     let (engine, declared) = crate::panels::script::engine(m.script().unwrap_or_default())?;
     let state = state.cloned().unwrap_or_else(|| declared.state.clone());
     let e = engine.lock().map_err(|_| "script engine poisoned")?;
@@ -1572,7 +1672,7 @@ fn script_tick(m: &crate::panels::models::ModelSpec, signals: &[Option<f64>], st
 }
 
 #[cfg(target_arch = "wasm32")]
-fn script_outputs(_: &crate::panels::models::ModelSpec, _: &[Option<f64>], _: Option<&String>) -> Result<Vec<f64>, String> {
+pub(crate) fn script_outputs(_: &crate::panels::models::ModelSpec, _: &[Option<f64>], _: Option<&String>) -> Result<Vec<f64>, String> {
     Err("scripted components run in the desktop app".into())
 }
 

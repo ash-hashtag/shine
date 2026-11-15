@@ -66,6 +66,24 @@ message ComponentInfo {
   string initials = 1;
   string description = 2;
   Appearance appearance = 3;
+  // Its shortcut for simulating, if it has one.
+  Alias alias = 4;
+}
+
+// A compact model with the component's ports that a simulation can use
+// instead of its circuit.
+message Alias {
+  Model model = 1;
+  // Used when the design simulates components as set.
+  bool on = 2;
+  // Made by Shine from the circuit, rather than written by hand.
+  bool generated = 3;
+  // The largest difference from the full circuit, when last checked.
+  Difference checked = 4;
+}
+
+message Difference {
+  double largest = 1;
 }
 
 message Appearance {
@@ -207,6 +225,14 @@ message Instance {
   // Values for the component's exported parameters (unset ones keep the
   // value inside the component).
   repeated Parameter parameters = 6;
+  // A component's box: as the component says, in full, or by its alias.
+  SimulateAs simulate = 7;
+}
+
+enum SimulateAs {
+  AS_SET = 0;
+  FULL = 1;
+  ALIAS = 2;
 }
 
 message Parameter {
@@ -333,7 +359,19 @@ message Model {
   oneof source {
     Table table = 6;
     Script script = 7;
+    TruthTable truth_table = 8;
   }
+}
+
+// Digital logic: the signal outputs for each combination of signal inputs,
+// each read as 0 or 1. Row r is for the inputs whose bits make r, the first
+// input the most significant.
+message TruthTable {
+  repeated Row rows = 1;
+}
+
+message Row {
+  repeated double values = 1 [packed = false];
 }
 
 message Table {

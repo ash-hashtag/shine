@@ -207,6 +207,18 @@ pub struct Instance {
     /// Values for the component's exported parameters, by name (unset ones
     /// keep the value inside the component).
     pub params: Vec<(String, f64)>,
+    /// A component's box: in full, by its alias, or as the component says.
+    pub simulate: SimulateAs,
+}
+
+/// How a component's box simulates (see `sim::Aliases`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SimulateAs {
+    /// As the component's alias switch says.
+    #[default]
+    AsSet,
+    Full,
+    Alias,
 }
 
 impl Instance {
@@ -353,7 +365,7 @@ impl Layout {
     pub fn add_instance(&mut self, block: BlockRef, cell: (i32, i32)) -> InstanceId {
         let id = InstanceId(self.next_instance);
         self.next_instance += 1;
-        self.instances.push(Instance { id, block, cell, params: Vec::new() });
+        self.instances.push(Instance { id, block, cell, params: Vec::new(), simulate: SimulateAs::AsSet });
         id
     }
 

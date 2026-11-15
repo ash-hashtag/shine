@@ -62,6 +62,11 @@ pub enum ModelSource {
     Table { origin: String, wavelengths_nm: Vec<f64>, values: Vec<Vec<[f64; 2]>> },
     /// A JavaScript program, run in a sandbox ([`super::script`]).
     Script { code: String },
+    /// Digital logic: the signal outputs for each combination of signal
+    /// inputs, each read as 0 or 1 (below or from 0.5). Row `r` is for the
+    /// inputs whose bits make `r`, input 1 the most significant. (Last, so
+    /// files that predate it read unchanged.)
+    TruthTable { rows: Vec<Vec<f64>> },
 }
 
 impl ModelSpec {
@@ -87,7 +92,7 @@ impl ModelSpec {
     pub fn script(&self) -> Option<&str> {
         match &self.source {
             ModelSource::Script { code } => Some(code),
-            ModelSource::Table { .. } => None,
+            ModelSource::Table { .. } | ModelSource::TruthTable { .. } => None,
         }
     }
 
@@ -108,8 +113,19 @@ impl ModelSpec {
             .clone()
     }
 
+    /// The signal outputs for `inputs`, for a truth table.
+    pub fn truth_table_outputs(&self, inputs: &[f64]) -> Option<Vec<f64>> {
+        let ModelSource::TruthTable { rows } = &self.source else { return None };
+        let n = self.signal_inputs.len();
+        let row = (0..n).fold(0usize, |r, k| (r << 1) | usize::from(inputs.get(k).copied().unwrap_or(0.0) >= 0.5));
+        Some(rows.get(row).cloned().unwrap_or_else(|| vec![0.0; self.signal_outputs.len()]))
+    }
+
     /// "1530–1570 nm, 401 points, from ring.s4p"
     pub fn summary(&self) -> String {
+        if let ModelSource::TruthTable { rows } = &self.source {
+            return format!("A truth table: {} input combinations", rows.len());
+        }
         let ModelSource::Table { origin, wavelengths_nm, .. } = &self.source else {
             return "A component written in JavaScript".into();
         };

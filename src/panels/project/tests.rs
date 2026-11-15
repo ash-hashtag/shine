@@ -444,6 +444,12 @@ fn every_kind_of_thing_survives_the_protobuf_format() {
         initials: "IP".into(),
         description: "Used by the design".into(),
         appearance: Appearance { color: Some([200, 10, 30]), shape: BoxShape::Chamfered, icon: Some(Icon::new(IconFormat::Svg, b"<svg/>".to_vec())) },
+        alias: Some(Alias {
+            model: Arc::new(ModelSpec::new("Inner part", Vec::new(), Vec::new(), ModelSource::TruthTable { rows: vec![vec![0.0, 1.0], vec![1.0, 0.5]] })),
+            on: true,
+            generated: true,
+            checked: Some(0.0),
+        }),
     });
 
     let d = Vec2::new(0.6, -0.8);
@@ -503,6 +509,7 @@ fn every_kind_of_thing_survives_the_protobuf_format() {
     ];
     let ids: Vec<InstanceId> = builtins.into_iter().enumerate().map(|(k, b)| l.add_instance(BlockRef::Builtin(b), (k as i32 * 3, -(k as i32)))).collect();
     let boxed = l.add_instance(BlockRef::Component(inner), (5, 9));
+    l.instances.last_mut().unwrap().simulate = crate::panels::optics::model::SimulateAs::Alias;
     l.instances.last_mut().unwrap().set_param("phase", Some(0.5));
     l.wires.push(Wire { from: PortRef { instance: ids[0], port: 0 }, to: PortRef { instance: ids[1], port: 0 }, length_um: Some(12.5) });
     l.wires.push(Wire { from: PortRef { instance: ids[4], port: 1 }, to: PortRef { instance: boxed, port: 0 }, length_um: None });
@@ -549,7 +556,7 @@ fn format_8_files_from_shine_0_1_open() {
             .map(|d| v8::Document {
                 id: d.id,
                 name: d.name.clone(),
-                component: d.component.clone(),
+                component: d.component.clone().map(|m| v8::Meta8 { initials: m.initials, description: m.description, appearance: m.appearance }),
                 cell_um: d.cell_um(),
                 layout: v8::Layout8::downgrade(d.layout().clone()),
             })

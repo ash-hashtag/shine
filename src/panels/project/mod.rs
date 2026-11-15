@@ -25,6 +25,21 @@ pub struct ComponentMeta {
     pub description: String,
     /// Colour, outline and picture of its boxes.
     pub appearance: Appearance,
+    /// Its shortcut for simulating, if it has one (design/aliases.md).
+    pub alias: Option<Alias>,
+}
+
+/// A component's alias: a compact model with its ports that the simulator
+/// can use instead of its circuit (see [`sim::Aliases`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Alias {
+    pub model: std::sync::Arc<super::models::ModelSpec>,
+    /// Used when the design simulates components as set (off: in full).
+    pub on: bool,
+    /// Made by Shine from the circuit, rather than written by hand.
+    pub generated: bool,
+    /// The largest difference from the full circuit when last checked.
+    pub checked: Option<f64>,
 }
 
 /// What a document holds. Layouts are the only kind today; the enum leaves
@@ -479,6 +494,7 @@ pub(crate) mod v1 {
                 block: inst.block.clone(),
                 cell: ((inst.pos.x / GRID).round() as i32, (inst.pos.y / GRID).round() as i32),
                 params: Vec::new(),
+                simulate: Default::default(),
             })
             .collect();
         Layout {
@@ -707,6 +723,10 @@ impl Documents for Project {
     fn fingerprint(&self, id: DocId) -> Option<u64> {
         self.doc_fingerprint(id)
     }
+
+    fn alias(&self, id: DocId) -> Option<&Alias> {
+        self.doc(id)?.component.as_ref()?.alias.as_ref()
+    }
 }
 
 impl Project {
@@ -747,6 +767,7 @@ impl Project {
             initials: initials.into(),
             description: description.into(),
             appearance: Appearance::default(),
+            alias: None,
         });
         id
     }

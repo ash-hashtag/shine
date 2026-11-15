@@ -9,13 +9,13 @@ use emath::{Pos2, Vec2};
 use shine_format as pb;
 use shine_format::{mod_Builtin::OneOfkind as B, mod_Instance::OneOfblock, mod_Item::OneOfitem, mod_Part::OneOfkind as P};
 
-use super::{ComponentMeta, DocId, DocumentFile};
+use super::{Alias, ComponentMeta, DocId, DocumentFile};
 use crate::panels::appearance::{Appearance, BoxShape, Icon, IconFormat};
 use crate::panels::models::{ModelSource, ModelSpec};
 use crate::panels::schematic::model::Arms;
 use crate::panels::optics::model::{
-    BlockRef, Builtin, Export, Feed, Instance, InstanceId, Item, Layout, Line, OpticComponentKind, PlacedComponent, PortRef, SignalWire, Terminal,
-    Wire,
+    BlockRef, Builtin, Export, Feed, Instance, InstanceId, Item, Layout, Line, OpticComponentKind, PlacedComponent, PortRef, SignalWire, SimulateAs,
+    Terminal, Wire,
 };
 
 pub const DESIGN_EXTENSION: &str = "shinedesign";
@@ -146,7 +146,17 @@ fn document(d: &DocumentFile, reference: &dyn Fn(DocId) -> Option<String>) -> pb
 }
 
 fn component(c: &ComponentMeta) -> pb::ComponentInfo {
-    pb::ComponentInfo { initials: c.initials.clone(), description: c.description.clone(), appearance: Some(appearance(&c.appearance)) }
+    pb::ComponentInfo {
+        initials: c.initials.clone(),
+        description: c.description.clone(),
+        appearance: Some(appearance(&c.appearance)),
+        alias: c.alias.as_ref().map(|a| pb::Alias {
+            model: Some(model(&a.model)),
+            on: a.on,
+            generated: a.generated,
+            checked: a.checked.map(|largest| pb::Difference { largest }),
+        }),
+    }
 }
 
 fn color(c: [u8; 3]) -> pb::Color {
@@ -254,6 +264,11 @@ fn instance(i: &Instance, reference: &dyn Fn(DocId) -> Option<String>) -> pb::In
             BlockRef::Component(id) => OneOfblock::component(reference(*id).unwrap_or_default()),
         },
         parameters: i.params.iter().map(|(name, value)| pb::Parameter { name: name.clone(), value: *value }).collect(),
+        simulate: match i.simulate {
+            SimulateAs::AsSet => pb::SimulateAs::AS_SET,
+            SimulateAs::Full => pb::SimulateAs::FULL,
+            SimulateAs::Alias => pb::SimulateAs::ALIAS,
+        },
     }
 }
 
@@ -332,6 +347,7 @@ fn model(m: &ModelSpec) -> pb::Model {
                 matrices: values.iter().map(|m| pb::Matrix { re_im: m.iter().flatten().copied().collect() }).collect(),
             }),
             ModelSource::Script { code } => S::script(pb::Script { code: code.clone() }),
+            ModelSource::TruthTable { rows } => S::truth_table(pb::TruthTable { rows: rows.iter().map(|r| pb::Row { values: r.clone() }).collect() }),
         },
     }
 }
@@ -408,6 +424,17 @@ fn component_meta(c: pb::ComponentInfo) -> ComponentMeta {
                 Icon::new(format, i.data)
             }),
         },
+        alias: c.alias.and_then(|a| {
+            let model = match a.model.map(read_model) {
+                Some(Ok(m)) => m,
+                Some(Err(e)) => {
+                    tracing::warn!("A component's alias is left out: {e}");
+                    return None;
+                }
+                None => return None,
+            };
+            Some(Alias { model: Arc::new(model), on: a.on, generated: a.generated, checked: a.checked.map(|d| d.largest) })
+        }),
     }
 }
 
@@ -505,6 +532,11 @@ fn read_instance(i: pb::Instance, reference: &dyn Fn(&str) -> DocId) -> Result<I
         block,
         cell: (i.column, i.row),
         params: i.parameters.into_iter().map(|p| (p.name, p.value)).collect(),
+        simulate: match i.simulate {
+            pb::SimulateAs::AS_SET => SimulateAs::AsSet,
+            pb::SimulateAs::FULL => SimulateAs::Full,
+            pb::SimulateAs::ALIAS => SimulateAs::Alias,
+        },
     })
 }
 
@@ -583,6 +615,7 @@ fn read_model(m: pb::Model) -> Result<ModelSpec, String> {
             values: t.matrices.into_iter().map(|m| m.re_im.as_chunks::<2>().0.to_vec()).collect(),
         },
         S::script(s) => ModelSource::Script { code: s.code },
+        S::truth_table(t) => ModelSource::TruthTable { rows: t.rows.into_iter().map(|r| r.values).collect() },
         S::None => return Err("a model block of a kind this version of Shine doesn't know; update Shine".into()),
     };
     let mut spec = ModelSpec::new(m.name, m.inputs, m.outputs, source);

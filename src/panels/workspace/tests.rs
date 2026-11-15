@@ -334,6 +334,7 @@ fn saving_a_document_as_a_component() {
             initials: "BR".into(),
             description: "Routes beams.".into(),
             appearance: Default::default(),
+            alias: None,
         })
     );
     assert!(ws.status.as_ref().unwrap().0.contains("This project"));

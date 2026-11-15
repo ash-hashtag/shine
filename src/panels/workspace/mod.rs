@@ -942,10 +942,13 @@ impl Workspace {
         doc.touch();
         doc.name = name.clone();
         if d.component {
+            // Its alias stays: the dialog doesn't edit it.
+            let alias = doc.component.as_ref().and_then(|m| m.alias.clone());
             doc.component = Some(ComponentMeta {
                 initials: d.initials.trim().chars().take(4).collect(),
                 description: d.description.trim().to_owned(),
                 appearance: d.appearance,
+                alias,
             });
         }
         if newly_published {

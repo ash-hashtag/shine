@@ -1,5 +1,6 @@
 //! Mixed-signal circuits: optics plus the electronics around them.
 
+pub mod alias;
 pub mod expr;
 pub mod monte_carlo;
 #[cfg(not(target_arch = "wasm32"))]

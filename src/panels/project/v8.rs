@@ -6,6 +6,21 @@
 use serde::{Deserialize, Serialize};
 
 use super::{ComponentMeta, DocId, DocumentFile};
+use crate::panels::appearance::Appearance;
+
+/// A component's information as format 8 had it (no alias).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Meta8 {
+    pub initials: String,
+    pub description: String,
+    pub appearance: Appearance,
+}
+
+impl Meta8 {
+    pub fn upgrade(self) -> ComponentMeta {
+        ComponentMeta { initials: self.initials, description: self.description, appearance: self.appearance, alias: None }
+    }
+}
 use crate::panels::optics::model::{self, Export, Feed, InstanceId, Line, PlacedComponent, SignalWire, Wire};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -224,7 +239,7 @@ impl Layout8 {
             instances: self
                 .instances
                 .into_iter()
-                .map(|i| model::Instance { id: i.id, block: i.block.upgrade(), cell: i.cell, params: i.params })
+                .map(|i| model::Instance { id: i.id, block: i.block.upgrade(), cell: i.cell, params: i.params, simulate: Default::default() })
                 .collect(),
             wires: self.wires,
             signals: self.signals,
@@ -240,7 +255,7 @@ impl Layout8 {
 pub struct Document {
     pub id: DocId,
     pub name: String,
-    pub component: Option<ComponentMeta>,
+    pub component: Option<Meta8>,
     pub cell_um: f64,
     pub layout: Layout8,
 }
@@ -252,5 +267,5 @@ pub struct Project {
 }
 
 pub fn upgrade(d: Document) -> DocumentFile {
-    DocumentFile { id: d.id, name: d.name, component: d.component, cell_um: d.cell_um, layout: d.layout.upgrade() }
+    DocumentFile { id: d.id, name: d.name, component: d.component.map(Meta8::upgrade), cell_um: d.cell_um, layout: d.layout.upgrade() }
 }

@@ -638,6 +638,8 @@ impl Builtin {
                     })
                     .collect(),
             },
+            // No light through it (a truth table): nothing in the circuit.
+            Self::Model(m) if m.inputs.is_empty() && m.outputs.is_empty() => Ports { inputs: Vec::new(), outputs: Vec::new() },
             Self::Model(m) => match m.script() {
                 // A script's light depends on its signals: the simulator
                 // builds it (see `sim`); without them, it runs undriven.
