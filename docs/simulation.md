@@ -69,8 +69,24 @@ as an error instead of guessed.
 
 ## Components
 
-A component box is simulated from its layout every time, nested as deep as you like;
-there's no cached approximation. A beam enters a box only on the row of a light input,
+A component box is simulated from its layout, nested as deep as you like, and exactly;
+nothing is approximated (unless you choose an [alias](components.md#aliases-a-components-shortcut)).
+Where it can, Shine solves a component on its own, as what it is to the design around it,
+rather than building it into one big circuit with the design:
+
+- **Passive** (couplers, heaters, meshes, no signals): its matrix.
+- **Driven** (light through it, and inside only passive parts, heaters and attenuators,
+  constants and electronics that read no light, such as a modulator and its driver): its
+  matrix for the signals at its inputs.
+- **A function of its inputs** (signal ports only, and no registers or scripts inside, such
+  as a full adder, however much light it uses inside): its outputs for its inputs,
+  simulated on its own, and adding nothing to the design's light.
+
+Each is solved once for the inputs it gets and kept (within a simulation, across its
+rounds, and across simulations until the component changes), and the same goes for the
+components inside it. So a chain of 64 full adders settles in two rounds instead of four,
+and an edit re-solves only the components whose inputs it changes. Everything else is
+built into the design's circuit. A beam enters a box only on the row of a light input,
 travelling right; unconnected light outputs leave the box as beams to the right. A laser
 wired to a box input with a waveguide puts its light straight into that input.
 

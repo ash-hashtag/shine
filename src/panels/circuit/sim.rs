@@ -407,6 +407,12 @@ struct Electronics<'a> {
     errors: Vec<String>,
     /// Components with no electronics inside, which evaluating can skip.
     inert: &'a mut HashMap<DocId, bool>,
+    /// Whether components may be solved apart (see [`compose`]).
+    reduce: bool,
+    shapes: HashMap<DocId, compose::Shape>,
+    /// Function components' outputs, by their inputs, this simulation.
+    functions: &'a mut compose::Local,
+    subtrees: &'a mut HashMap<DocId, Option<u64>>,
 }
 
 /// Whether component `doc` has no electronics, all the way down: no signal
@@ -483,6 +489,10 @@ impl Electronics<'_> {
                 let n_in = block_counts(&inst.block, self.docs).signal_in;
                 let ins: Vec<f64> = (0..n_in).map(|k| self.value(path, layout, Terminal { item, port: k })).collect();
                 let block = effective(self.docs, &self.machine.aliases, inst, path);
+                let shape = match &*block {
+                    BlockRef::Component(doc) => compose::shape_here(self.docs, &self.machine.aliases, self.reduce, *doc, inst.id, path, &mut self.shapes),
+                    BlockRef::Builtin(_) => compose::Shape::Flat,
+                };
                 let outs: Vec<f64> = match &*block {
                     BlockRef::Builtin(Builtin::NumberInput { bits, value }) => {
                         (0..*bits).rev().map(|k| ((value >> k) & 1) as f64).collect()
@@ -512,6 +522,20 @@ impl Electronics<'_> {
                     }
                     BlockRef::Builtin(_) => Vec::new(),
                     BlockRef::Component(doc) if inert(self.docs, *doc, self.inert, &mut self.stack.clone()) => Vec::new(),
+                    // Driven, with no signals out: its matrix (built by the light)
+                    // covers what's inside; nothing here needs it walked.
+                    BlockRef::Component(_) if shape == compose::Shape::Driven && block_counts(&inst.block, self.docs).signal_out == 0 => Vec::new(),
+                    // A function of its inputs: what it gives for them.
+                    BlockRef::Component(doc) if shape == compose::Shape::Function && !self.stack.contains(doc) => {
+                        match compose::call(self.docs, self.machine, *doc, &inst.params, &ins, self.functions, self.subtrees) {
+                            Ok(outs) => outs,
+                            Err(e) => {
+                                let e = if e.starts_with('“') || e.starts_with("In “") { e } else { format!("In “{}”: {e}", self.docs.name(*doc)) };
+                                self.error(e);
+                                Vec::new()
+                            }
+                        }
+                    }
                     BlockRef::Component(doc) => {
                         if self.stack.contains(doc) {
                             self.error(format!("“{}” contains itself", self.docs.name(*doc)));
@@ -604,6 +628,8 @@ struct Optics<'a> {
     /// Passive components solved into their matrices, when reducing.
     reduce: Option<&'a mut Reducer>,
     aliases: &'a Aliases,
+    machine: &'a Machine,
+    shapes: HashMap<DocId, compose::Shape>,
 }
 
 /// Passive components solved once, into their matrices.
@@ -628,6 +654,8 @@ struct Reducer {
     subtrees: HashMap<DocId, Option<u64>>,
     /// Whether each component has an alias, or one inside it.
     aliased: HashMap<DocId, bool>,
+    /// Driven components' matrices, by their signal inputs (see [`compose`]).
+    driven: compose::Matrices,
 }
 
 /// A component and its box's parameter values (as bits, to compare exactly).
@@ -743,12 +771,13 @@ impl Reducer {
     fn covers(&mut self, wavelengths: &[f64]) -> bool {
         let missing: Vec<f64> =
             wavelengths.iter().copied().filter(|w| !self.wavelengths.iter().any(|v| (v - w).abs() < 1e-9)).collect();
-        if missing.is_empty() || self.tables.is_empty() {
+        if missing.is_empty() || (self.tables.is_empty() && self.driven.is_empty()) {
             self.wavelengths.extend(missing);
             return true;
         }
         self.wavelengths.extend(missing);
         self.tables.clear();
+        self.driven.clear();
         false
     }
 }
@@ -873,6 +902,24 @@ impl Optics<'_> {
         Ok(Some(Ports { inputs: (0..inputs).map(|k| n.input(k)).collect(), outputs: (0..outputs).map(|k| n.output(k)).collect() }))
     }
 
+    /// Driven component `doc` at box `inst`: its matrix for the signals at
+    /// its inputs now (see [`compose`]); `None` when not reducing.
+    fn driven(&mut self, c: &mut Circuit, layout: &Layout, path: &[InstanceId], inst: &Instance, doc: DocId) -> Result<Option<Ports>, String> {
+        let (docs, machine) = (self.docs, self.machine);
+        let inputs: Vec<f64> = {
+            let Some((child, _)) = docs.layout(doc) else { return Ok(None) };
+            (0..interface(child).signal_in.len()).map(|k| self.drive_at(layout, path, Item::Box(inst.id), k).unwrap_or(0.0)).collect()
+        };
+        let Some(r) = self.reduce.as_deref_mut() else { return Ok(None) };
+        if r.wavelengths.is_empty() {
+            return Ok(None);
+        }
+        let table = compose::matrix(docs, machine, doc, &inst.params, &inputs, &r.wavelengths, &mut r.driven, &mut r.subtrees).map_err(|e| self.in_component(doc, e))?;
+        let (inputs, outputs) = (table.matrices[0].ncols(), table.matrices[0].nrows());
+        let n = c.add(Tabulated { name: docs.name(doc), table });
+        Ok(Some(Ports { inputs: (0..inputs).map(|k| n.input(k)).collect(), outputs: (0..outputs).map(|k| n.output(k)).collect() }))
+    }
+
     /// Passive component `doc`, placed with `params`, solved for its matrix
     /// at the reducer's wavelengths.
     fn solve(&mut self, doc: DocId, params: &[(String, f64)], path: &[InstanceId]) -> Result<Arc<Table>, String> {
@@ -958,7 +1005,7 @@ impl Optics<'_> {
         }
         let started = web_time::Instant::now();
         let (wavelengths, memo) = (r.wavelengths.clone(), r.passive.clone());
-        let (signals, light, max_len, stack, aliases) = (self.signals, self.light, self.max_len, &self.stack, self.aliases);
+        let (signals, light, max_len, stack, aliases, machine) = (self.signals, self.light, self.max_len, &self.stack, self.aliases, self.machine);
         let tables = crate::photonics::par::try_map(&todo, |(key, inst)| {
             let mut own = Reducer { wavelengths: wavelengths.clone(), passive: memo.clone(), ..Reducer::default() };
             let mut optics = Optics {
@@ -972,6 +1019,8 @@ impl Optics<'_> {
                 colors: HashMap::new(),
                 reduce: Some(&mut own),
                 aliases,
+                machine,
+                shapes: HashMap::new(),
             };
             let mut inner = path.to_vec();
             inner.push(inst.id);
@@ -1130,7 +1179,13 @@ impl Optics<'_> {
                     }
                     let mut inner = path.to_vec();
                     inner.push(inst.id);
-                    if let Some(ports) = self.reduced(c, *doc, &inst.params, &inner)? {
+                    let shape = compose::shape_here(self.docs, self.aliases, self.reduce.is_some(), *doc, inst.id, path, &mut self.shapes);
+                    if shape == compose::Shape::Function {
+                        // Solved apart by the electronics: no light here.
+                        Ports { inputs: Vec::new(), outputs: Vec::new() }
+                    } else if let Some(ports) = (shape == compose::Shape::Driven).then(|| self.driven(c, layout, path, inst, *doc)).transpose()?.flatten() {
+                        ports
+                    } else if let Some(ports) = self.reduced(c, *doc, &inst.params, &inner)? {
                         ports
                     } else {
                     let (child, child_cell) = self.docs.layout(*doc).ok_or("A component used here was deleted")?;
@@ -1437,6 +1492,8 @@ fn settle(
         r
     });
     let mut inert_docs = HashMap::new();
+    let mut functions = compose::Local::new();
+    let mut subtrees = HashMap::new();
     let mut signals: HashMap<Key, f64> = HashMap::new();
     let mut powers: HashMap<Key, f64> = HashMap::new();
     // The last round's light, turned into an outcome once it settles: the
@@ -1452,6 +1509,10 @@ fn settle(
             stack: root.into_iter().collect(),
             errors: Vec::new(),
             inert: &mut inert_docs,
+            reduce: options.reduce,
+            shapes: HashMap::new(),
+            functions: &mut functions,
+            subtrees: &mut subtrees,
         };
         let started = web_time::Instant::now();
         electronics.eval(layout, &[], &machine.inputs);
@@ -1474,6 +1535,8 @@ fn settle(
                 colors: HashMap::new(),
                 reduce: reducer.as_mut(),
                 aliases: &machine.aliases,
+                machine,
+                shapes: HashMap::new(),
             };
             let mut circuit = Circuit::new();
             let built = optics.build(&mut circuit, layout, &[], cell_um)?;
@@ -1695,3 +1758,4 @@ pub fn bits_to_number(bits: &[f64]) -> u64 {
 
 #[cfg(test)]
 mod tests;
+mod compose;

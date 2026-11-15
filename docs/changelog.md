@@ -14,6 +14,12 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 
 ### Changed
 
+- Components are solved as what they are to the design around them, instead of built
+  into one circuit with it: a component driven by signals (a modulator) as its matrix for
+  them, one with only signal ports and no memory (a full adder) as a function of its
+  inputs, each kept by its inputs, all the way down. A 64-bit ripple-carry adder settles
+  in 2 rounds instead of 4 and re-simulates after an edit in 0.3 ms instead of 38 ms; the
+  Fashion-MNIST chip simulates a picture about 30% faster.
 - Projects are saved in a new format: [Protocol Buffers](https://protobuf.dev), with the
   schema in `crates/shine-format/proto/shine.proto`, so other tools can read and write
   Shine's files and the format can grow without breaking them. Big files are compressed

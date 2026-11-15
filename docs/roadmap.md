@@ -104,6 +104,10 @@ want them.
 - [x] **Passive components solved once**: a component of only passive parts is simulated
       as its matrix, all the way down (the mesh of MZIs, then the layer), solved on all
       threads, kept between simulations until it changes
+- [x] **Components composed, not flattened**: a component driven by signals solved as its
+      matrix for them, and one with only signal ports and no memory as a function of its
+      inputs, each kept by its inputs, all the way down
+      ([Simulation](simulation.md#components))
 - [x] **The editor costs what's on screen**: drawing and pointing go through a spatial
       index; per-frame work no longer reads the whole project
 - [x] **Projects as folders, in protobuf**: a file per design and component, referring to

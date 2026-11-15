@@ -321,7 +321,11 @@ fn nested_components_and_their_errors() {
     }
     let o = run_with(&top, &p, &Machine::default(), None);
     assert_eq!(o.signal(w, 0), 1.0, "carry of 1 + 1 + 0");
-    assert!(o.signals.keys().any(|k| k.path.len() == 2), "signals inside nested components are recorded");
+    // The wrapper is a function of its inputs, solved apart; built into the
+    // design instead (as netlists need), the signals inside it are recorded.
+    let flat = simulate(&top, 10.0, &p, &Machine::default(), None, &Options { reduce: false, ..Options::default() });
+    assert_eq!(flat.signal(w, 0), 1.0);
+    assert!(flat.signals.keys().any(|k| k.path.len() == 2), "signals inside nested components are recorded");
 
     // Self-containment and deleted components.
     let o = simulate(&top, 10.0, &p, &Machine::default(), Some(wrap), &Options::default());
@@ -517,4 +521,81 @@ fn solved_components_are_reused_until_they_change() {
     for (port, w) in &run(&p, false) {
         assert!((changed[port] - w).abs() < 1e-12, "{port:?}: {} mW, every part kept {w} mW", changed[port]);
     }
+}
+
+/// The top layout's readings: the light out of every box, and every signal
+/// at the top.
+fn top_readings(o: &Outcome) -> Vec<((InstanceId, usize), f64)> {
+    let mut light: Vec<_> = o.port_power.iter().map(|(k, v)| (*k, *v)).collect();
+    light.sort_by_key(|(k, _)| *k);
+    let mut signals: Vec<_> = o.signals.iter().filter(|(k, _)| k.path.is_empty()).map(|(k, v)| ((match k.item { Item::Box(id) => id, Item::Part(p) => InstanceId(1_000_000 + p as u32) }, k.port), *v)).collect();
+    signals.sort_by_key(|(k, _)| *k);
+    light.into_iter().chain(signals).collect()
+}
+
+#[test]
+fn components_solved_apart_give_what_the_whole_circuit_does() {
+    // Every example design, with components solved apart (functions,
+    // driven matrices) and all built into one circuit: the same, over a few
+    // clock ticks for those with registers.
+    let mut checked = 0;
+    for (k, demo) in examples::demos().iter().enumerate() {
+        if demo.name.starts_with("Fashion-MNIST") {
+            continue; // minutes in a debug build; benchmark.py checks it
+        }
+        let mut p = Project::new();
+        let top = (demo.build)(&mut p);
+        let (layout, cell) = { let d = p.doc(top).unwrap(); (d.layout().clone(), d.cell_um()) };
+        let (mut apart, mut whole) = (Machine::default(), Machine::default());
+        for tick in 0..3 {
+            // With whatever earlier simulations kept, as in the app.
+            let a = simulate(&layout, cell, &p, &apart, Some(top), &Options::default());
+            let b = simulate(&layout, cell, &p, &whole, Some(top), &Options { reduce: false, ..Options::default() });
+            assert!(a.error.is_none() && b.error.is_none(), "{}: {:?} {:?}", demo.name, a.error, b.error);
+            let (ra, rb) = (top_readings(&a), top_readings(&b));
+            assert_eq!(ra.len(), rb.len(), "{} ({k}), tick {tick}", demo.name);
+            for ((ka, va), (kb, vb)) in ra.iter().zip(&rb) {
+                assert_eq!(ka, kb);
+                assert!((va - vb).abs() <= 1e-9 * vb.abs().max(1e-3), "{}, tick {tick}, {ka:?}: {va} apart, {vb} whole", demo.name);
+            }
+            clock(&layout, &p, &mut apart, &a);
+            clock(&layout, &p, &mut whole, &b);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 15, "{checked}");
+}
+
+#[test]
+fn a_function_is_solved_once_for_each_input_it_gets() {
+    // A ripple of full adders all given the same inputs: solved apart, the
+    // full adder is simulated for each different input it sees, not for
+    // every box in every round.
+    let mut p = Project::new();
+    let fa = examples::import_component(&mut p, 0).unwrap();
+    let mut l = Layout::default();
+    let one = l.add_instance(number(1, 1), (0, 0));
+    let mut boxes = Vec::new();
+    for k in 0..12 {
+        let b = l.add_instance(BlockRef::Component(fa), (0, 4 * k + 3));
+        l.connect_signal(t(Item::Box(one), 0), t(Item::Box(b), 0));
+        l.connect_signal(t(Item::Box(one), 0), t(Item::Box(b), 1));
+        boxes.push(b);
+    }
+    compose::forget();
+    let o = simulate(&l, 10.0, &p, &Machine::default(), None, &Options::default());
+    assert!(o.error.is_none(), "{:?}", o.error);
+    assert!(o.iterations >= 2);
+    // At most one: another test running alongside may have kept it already.
+    let solves = compose::SOLVES.with(|s| s.get());
+    assert!(solves <= 1, "twelve boxes, several rounds, one input: {solves} solves");
+    // Again: kept from the first simulation.
+    simulate(&l, 10.0, &p, &Machine::default(), None, &Options::default());
+    assert_eq!(compose::SOLVES.with(|s| s.get()), solves);
+    // 1 + 1 + 0 = 10 in binary: sum 0, carry 1, for every box.
+    for b in boxes {
+        assert_eq!((o.signal(Item::Box(b), 0), o.signal(Item::Box(b), 1)), (0.0, 1.0));
+    }
+    let out = compose::call(&p, &Machine::default(), fa, &[], &[1.0, 1.0, 0.0], &mut compose::Local::new(), &mut HashMap::new()).unwrap();
+    assert_eq!(out, vec![0.0, 1.0]);
 }

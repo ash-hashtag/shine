@@ -209,6 +209,9 @@ What makes that possible, rather than minutes and tens of gigabytes:
   of built-in MZIs (2×2 matrices), becomes one 784×784 matrix, on all threads at once.
   The matrices are kept between simulations until the component changes, so a new picture
   costs only what's around the meshes.
+- **Components are solved as what they are to the design.** Each of the 784 modulators
+  is, to the light, a matrix set by its drive level: solved once per level and kept, its
+  driver's electronics not walked again (see [Simulation](simulation.md#components)).
 - **Solving keeps only the fields still needed.** A mesh's fields are each read once, by
   the next MZI, so solving its matrix holds a few kilobytes per input instead of tens of
   megabytes.
