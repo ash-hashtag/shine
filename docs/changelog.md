@@ -35,7 +35,8 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
 ### Added
 
 - External program blocks: logic from Python, TypeScript or any program, asked for its
-  outputs from its inputs over standard input and output (a line of numbers each way, after
+  outputs from its inputs (signals, and light: the power arriving, the amplitude to emit)
+  over standard input and output (a line of numbers each way, after
   a `shine 1` handshake). Risky, so a program runs only once you allow it, each session
   (`--allow-processes` for `shine simulate`), never from the MCP server or the browser.
 - Aliases: a component's shortcut for simulating, a compact model with its ports that a

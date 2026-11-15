@@ -1509,6 +1509,9 @@ fn a_program_runs_once_the_user_allows_it_in_the_dialog() {
             args: vec!["-c".into(), code.into()],
             inputs: vec!["a".into(), "b".into()],
             outputs: vec!["s1".into(), "s0".into()],
+            light_inputs: Vec::new(),
+            light_outputs: Vec::new(),
+            wavelength_nm: 1550.0,
         }),
         (0, 3),
     );

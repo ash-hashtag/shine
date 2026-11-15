@@ -530,14 +530,18 @@ impl Electronics<'_> {
                         .unwrap_or_else(|| vec![0.0; *bits as usize]),
                     BlockRef::Builtin(cell @ Builtin::FunctionCell { .. }) => self.function_cell(cell, path, inst.id, &ins),
                     BlockRef::Builtin(Builtin::Model(m)) if m.truth_table_outputs(&[]).is_some() => m.truth_table_outputs(&ins).unwrap_or_default(),
-                    BlockRef::Builtin(Builtin::Process { name, command, args, outputs, .. }) => {
+                    BlockRef::Builtin(Builtin::Process { name, command, args, outputs, light_inputs, light_outputs, .. }) => {
+                        // Its inputs: the signals, then the power at each light input.
+                        let mut asked = ins.clone();
+                        asked.extend((0..light_inputs.len()).map(|k| self.powers.get(&Key::new(path, Item::Box(inst.id), k)).copied().unwrap_or(0.0)));
+                        let total = outputs.len() + light_outputs.len();
                         // Asked once per input it gets in a simulation.
-                        let key = (path.to_vec(), inst.id, ins.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
-                        match self.programs.get(&key) {
+                        let key = (path.to_vec(), inst.id, asked.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                        let answer = match self.programs.get(&key) {
                             Some(outs) => outs.clone(),
                             None => {
                                 #[cfg(not(target_arch = "wasm32"))]
-                                let answer = crate::panels::process::call(name, command, args, &ins, outputs.len());
+                                let answer = crate::panels::process::call(name, command, args, &asked, total);
                                 #[cfg(target_arch = "wasm32")]
                                 let answer: Result<Vec<f64>, ProgramRefusal> = {
                                     let _ = (command, args, outputs);
@@ -560,7 +564,13 @@ impl Electronics<'_> {
                                     }
                                 }
                             }
+                        };
+                        // Then the field at each light output.
+                        for k in 0..light_outputs.len() {
+                            let v = answer.get(outputs.len() + k).copied().unwrap_or(0.0);
+                            self.light.insert(Key::new(path, Item::Box(inst.id), k), v);
                         }
+                        answer.into_iter().take(outputs.len()).collect()
                     }
                     BlockRef::Builtin(Builtin::Model(m)) if m.script().is_some() && !m.signal_outputs.is_empty() => {
                         let wired: Vec<Option<f64>> = ins
@@ -1222,7 +1232,7 @@ impl Optics<'_> {
                         .map(|k| self.light.get(&Key::new(path, Item::Box(inst.id), k)).copied().unwrap_or(0.0))
                         .collect();
                     let ports = b.build_with_light(c, &light).map_err(|e| e.to_string())?;
-                    if matches!(b, Builtin::FunctionCell { .. }) {
+                    if matches!(b, Builtin::FunctionCell { .. } | Builtin::Process { .. }) {
                         for (k, input) in ports.inputs.iter().enumerate() {
                             self.sensors.push((Key::new(path, Item::Box(inst.id), k), input.node));
                         }

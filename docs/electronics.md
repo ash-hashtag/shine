@@ -87,10 +87,13 @@ Examples:
 > files and use the network. A project can name any program, so one from someone else could
 > run anything. Shine never runs one without asking.
 
-The block asks a program for its signal outputs from its signal inputs: logic you have in
-Python or TypeScript, or a tool Shine doesn't have. In its inspector set the **program**
-(run directly, not through a shell: `python3`, `node`, or a path), its **arguments** (one
-per line, such as the script's path) and the names of its **inputs** and **outputs**.
+The block asks a program for its outputs from its inputs: logic you have in Python or
+TypeScript, or a tool Shine doesn't have. In its inspector set the **program** (run
+directly, not through a shell: `python3`, `node`, or a path), its **arguments** (one per
+line, such as the script's path) and the names of its signal **inputs** and **outputs**.
+It can take and give light too, as a function cell does: each **light in** gives the
+program the power arriving there (mW), and each **light out** emits the field amplitude the
+program answers for it, at the block's **wavelength**.
 
 **Permission.** The first time a simulation reaches the block, Shine shows what it would run
 and asks: *Don't run it* or *Run it this session*. Until you allow it, the block gives
@@ -103,8 +106,9 @@ separated by spaces:
 
 1. Shine starts the program once and writes `shine 1 <inputs> <outputs>`, the counts of its
    inputs and outputs; the program answers `ok`.
-2. For each evaluation, Shine writes a line of input values, and the program answers a line
-   with as many output values as it was told, in order.
+2. For each evaluation, Shine writes a line of input values (the signal inputs, then the
+   light inputs' powers), and the program answers a line with as many output values as it
+   was told (the signal outputs, then the light outputs' amplitudes), in order.
 3. When Shine is done (or closes), it closes the program's input; the program should exit.
 
 The program keeps running between evaluations, so it's fast enough to call often. Shine may

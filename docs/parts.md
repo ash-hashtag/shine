@@ -41,7 +41,7 @@ model can't focus, so it only passes light through.
 | **Display** | Shows the bits on its inputs, as lamps and as a decimal number. | in: b(n-1)…b0 |
 | **Register** | Memory. On each clock tick it stores its *d* inputs when *write* is high or unconnected, and holds them on its *q* outputs. | in: d…, write; out: q… |
 | **Function cell** | Computes outputs from expressions over its inputs. Can read received light and emit light. See [Electronics](electronics.md#function-cells). | in: in1…; out: out1…; light in: p1…; light out: light1… |
-| **External program** | ⚠ Runs a program on your computer (Python, Node or any other) and asks it for its outputs from its inputs. Risky: it runs only once you allow it, each session, and only in the desktop app. For logic Shine can't do itself. See [Electronics](electronics.md#external-programs). | in and out: named in its inspector |
+| **External program** | ⚠ Runs a program on your computer (Python, Node or any other) and asks it for its outputs from its inputs. Risky: it runs only once you allow it, each session, and only in the desktop app. For logic Shine can't do itself. See [Electronics](electronics.md#external-programs). | in and out: named in its inspector; light in (power) and light out (amplitude) too |
 
 ## Example components
 

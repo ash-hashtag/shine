@@ -279,6 +279,12 @@ message Process {
   repeated string args = 3;
   repeated string inputs = 4;
   repeated string outputs = 5;
+  // Light inputs: the program gets the power (mW) arriving at each, after
+  // the signal inputs. Light outputs: it gives a field amplitude for each,
+  // at `wavelength_nm`, after the signal outputs.
+  repeated string light_inputs = 6;
+  repeated string light_outputs = 7;
+  double wavelength_nm = 8;
 }
 
 message Laser {

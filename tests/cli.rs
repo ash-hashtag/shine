@@ -57,6 +57,9 @@ fn an_external_program_runs_only_with_allow_processes() {
             args: vec!["-c".into(), code.into()],
             inputs: vec!["a".into(), "b".into()],
             outputs: vec!["s1".into(), "s0".into()],
+            light_inputs: Vec::new(),
+            light_outputs: Vec::new(),
+            wavelength_nm: 1550.0,
         }),
         (0, 3),
     );

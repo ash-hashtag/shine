@@ -263,4 +263,35 @@ for line in sys.stdin:
         let Err(Refusal::Error(e)) = call("Missing", "shine-no-such-program", &missing, &[], 1) else { panic!() };
         assert!(e.contains("can't start"), "{e}");
     }
+
+    #[test]
+    fn a_program_makes_light_and_another_reads_it() {
+        use crate::panels::circuit::sim::{Machine, NoDocuments, Options, simulate};
+        use crate::panels::optics::model::{BlockRef, Builtin, Item, Layout, PortRef, Terminal};
+        let Some((python, _)) = adder() else { return };
+        // "source": a signal v in, light of power v out. "meter": light in, twice its power out.
+        let code = "import sys, math\nrole = sys.argv[1]\nsys.stdin.readline()\nprint('ok', flush=True)\nfor line in sys.stdin:\n    x = float(line.split()[0])\n    print(math.sqrt(max(x, 0)) if role == 'source' else 2 * x, flush=True)\n";
+        let block = |role: &str, inputs: Vec<String>, outputs: Vec<String>, light_inputs: Vec<String>, light_outputs: Vec<String>| Builtin::Process {
+            name: role.into(),
+            command: python.clone(),
+            args: vec!["-c".into(), code.into(), role.into()],
+            inputs,
+            outputs,
+            light_inputs,
+            light_outputs,
+            wavelength_nm: 1550.0,
+        };
+        let mut l = Layout::default();
+        let v = l.add_instance(BlockRef::Builtin(Builtin::Value { name: String::new(), value: 0.5 }), (0, 0));
+        let source = l.add_instance(BlockRef::Builtin(block("source", vec!["v".into()], Vec::new(), Vec::new(), vec!["light".into()])), (0, 3));
+        let meter = l.add_instance(BlockRef::Builtin(block("meter", Vec::new(), vec!["twice".into()], vec!["light".into()], Vec::new())), (6, 3));
+        l.connect_signal(Terminal { item: Item::Box(v), port: 0 }, Terminal { item: Item::Box(source), port: 0 });
+        l.add_waveguide(PortRef { instance: source, port: 0 }, PortRef { instance: meter, port: 0 });
+        for role in ["source", "meter"] {
+            allow(&python, &["-c".into(), code.into(), role.into()]);
+        }
+        let o = simulate(&l, 10.0, &NoDocuments, &Machine::default(), None, &Options::default());
+        assert!(o.error.is_none(), "{:?}", o.error);
+        assert!((o.signal(Item::Box(meter), 0) - 1.0).abs() < 1e-9, "0.5 mW, doubled: {}", o.signal(Item::Box(meter), 0));
+    }
 }

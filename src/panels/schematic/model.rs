@@ -175,6 +175,13 @@ pub enum Builtin {
         args: Vec<String>,
         inputs: Vec<String>,
         outputs: Vec<String>,
+        /// Light inputs: the program gets the power arriving at each (mW),
+        /// after the signal inputs.
+        light_inputs: Vec<String>,
+        /// Light outputs: the program gives a field amplitude for each, at
+        /// `wavelength_nm`, after the signal outputs.
+        light_outputs: Vec<String>,
+        wavelength_nm: f64,
     },
 }
 
@@ -261,6 +268,9 @@ impl Builtin {
             args: vec!["logic.py".into()],
             inputs: vec!["a".into(), "b".into()],
             outputs: vec!["y".into()],
+            light_inputs: Vec::new(),
+            light_outputs: Vec::new(),
+            wavelength_nm: 1550.0,
         });
         blocks.push(Self::FunctionCell {
             name: "Function".into(),
@@ -481,16 +491,18 @@ impl Builtin {
     /// them, without naming them (editors ask for every box, every frame).
     pub fn port_counts(&self) -> crate::panels::optics::model::PortCounts {
         let optical_in = match self {
-            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } | Self::Process { .. } => 0,
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => 0,
             Self::FunctionCell { light_inputs, .. } => *light_inputs as usize,
+            Self::Process { light_inputs, .. } => light_inputs.len(),
             Self::Model(m) => m.inputs.len(),
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YCombiner | Self::AddDropRing { .. } => 2,
             Self::Dft { n } => *n as usize,
             _ => 1,
         };
         let optical_out = match self {
-            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } | Self::Process { .. } => 0,
+            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => 0,
             Self::FunctionCell { light_outputs, .. } => light_outputs.len(),
+            Self::Process { light_outputs, .. } => light_outputs.len(),
             Self::Model(m) => m.outputs.len(),
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter | Self::AddDropRing { .. } => 2,
             Self::SplitterTree { levels } | Self::SwitchTree { levels, .. } => 1 << levels,
@@ -519,8 +531,9 @@ impl Builtin {
 
     pub fn inputs(&self) -> Vec<String> {
         match self {
-            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } | Self::Process { .. } => Vec::new(),
+            Self::Laser { .. } | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_inputs, .. } => numbered("p", *light_inputs as usize),
+            Self::Process { light_inputs, .. } => light_inputs.clone(),
             Self::Model(m) => m.inputs.clone(),
             Self::InputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing => numbered("in", 2),
@@ -533,8 +546,9 @@ impl Builtin {
 
     pub fn outputs(&self) -> Vec<String> {
         match self {
-            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } | Self::Process { .. } => Vec::new(),
+            Self::Detector | Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Vec::new(),
             Self::FunctionCell { light_outputs, .. } => numbered("light", light_outputs.len()),
+            Self::Process { light_outputs, .. } => light_outputs.clone(),
             Self::Model(m) => m.outputs.clone(),
             Self::OutputPin { name } => vec![name.clone()],
             Self::Coupler { .. } | Self::Mzi { .. } | Self::Crossing | Self::YSplitter => {
@@ -656,7 +670,7 @@ impl Builtin {
             }
             .build(c)?,
             Self::Dft { n } => Dft { n: *n as usize }.build(c)?,
-            Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } | Self::Process { .. } => Ports::default(),
+            Self::NumberInput { .. } | Self::Value { .. } | Self::Display { .. } | Self::Register { .. } => Ports::default(),
             Self::FunctionCell {
                 light_inputs,
                 light_outputs,
@@ -669,6 +683,14 @@ impl Builtin {
                         let amplitude = light.get(k).copied().unwrap_or(0.0);
                         c.add(Laser::new(amplitude, *wavelength_nm)).output(0)
                     })
+                    .collect(),
+            },
+            // A detector per light input (its power goes to the program), a
+            // laser per light output (at the amplitude the program gave).
+            Self::Process { light_inputs, light_outputs, wavelength_nm, .. } => Ports {
+                inputs: (0..light_inputs.len()).map(|_| c.add(Detector::new()).input(0)).collect(),
+                outputs: (0..light_outputs.len())
+                    .map(|k| c.add(Laser::new(light.get(k).copied().unwrap_or(0.0), *wavelength_nm)).output(0))
                     .collect(),
             },
             // No light through it (a truth table): nothing in the circuit.

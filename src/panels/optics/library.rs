@@ -1550,7 +1550,7 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                 row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name).on_hover_text("What it sets, shown beside it"));
                 row(ui, "Value", &mut |ui, l| ui_kit::slider(ui, l, value, 0.0..=1.0, ""));
             }
-            Builtin::Process { name, command, args, inputs, outputs } => {
+            Builtin::Process { name, command, args, inputs, outputs, light_inputs, light_outputs, wavelength_nm } => {
                 let names = |text: &str| -> Vec<String> { text.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect() };
                 row(ui, "Name", &mut |ui, _| ui.text_edit_singleline(name));
                 row(ui, "Program", &mut |ui, _| {
@@ -1580,6 +1580,29 @@ pub fn builtin_params_ui(ui: &mut Ui, block: &mut Builtin, unit: units::PowerUni
                     }
                     r
                 });
+                row(ui, "Light in", &mut |ui, _| {
+                    let mut text = light_inputs.join(", ");
+                    let r = ui
+                        .text_edit_singleline(&mut text)
+                        .on_hover_text("Light inputs' names: the program gets the power arriving at each (mW), after the signal inputs");
+                    if r.changed() {
+                        *light_inputs = names(&text);
+                    }
+                    r
+                });
+                row(ui, "Light out", &mut |ui, _| {
+                    let mut text = light_outputs.join(", ");
+                    let r = ui
+                        .text_edit_singleline(&mut text)
+                        .on_hover_text("Light outputs' names: the program gives a field amplitude for each, after the signal outputs");
+                    if r.changed() {
+                        *light_outputs = names(&text);
+                    }
+                    r
+                });
+                if !light_outputs.is_empty() {
+                    row(ui, "Wavelength", &mut |ui, _| ui.add(egui::DragValue::new(wavelength_nm).range(200.0..=2000.0).suffix(" nm")));
+                }
             }
             Builtin::NumberInput { bits, value } => {
                 row(ui, "Bits", &mut |ui, l| ui_kit::slider(ui, l, bits, 1..=16, ""));
