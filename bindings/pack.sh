@@ -28,10 +28,11 @@ fix_errors() {
   "$fixer" - "$file" "$old" "$new" <<'EOF'
 import sys
 path, old, new = sys.argv[1:]
-text = open(path).read()
+# UTF-8 always: Windows' Pythons before 3.15 read files as cp1252 by default.
+text = open(path, encoding="utf-8").read()
 if text.count(old) != 1:
     sys.exit(f"{path}: expected one “{old}”, found {text.count(old)}: has the generated code changed?")
-open(path, "w").write(text.replace(old, new))
+open(path, "w", encoding="utf-8", newline="").write(text.replace(old, new))
 EOF
 }
 
