@@ -39,6 +39,11 @@ from this page. What's planned is on the [Roadmap](roadmap.md).
   over standard input and output (a line of numbers each way, after
   a `shine 1` handshake). Risky, so a program runs only once you allow it, each session
   (`--allow-processes` for `shine simulate`), never from the MCP server or the browser.
+- The Python and TypeScript packages: aliases (`make_alias`, `use_alias`,
+  `set_alias_script`, `check_alias`, `set_aliases`, `focus`, `set_simulate`), project folders
+  (`save_folder`, and `Project.open` of a folder) and external programs
+  (`external_program`), which run only after `allow_process_components()` or with
+  `SHINE_ALLOW_PROCESS_COMPONENTS=1`.
 - Aliases: a component's shortcut for simulating, a compact model with its ports that a
   design can simulate instead of its circuit. Shine makes one from a logic component's
   circuit (a truth table, exact for 0s and 1s), or you write one as a script; **Check**

@@ -265,3 +265,65 @@ fn several_aims_at_once_and_across_a_band() -> Result<()> {
     assert!(e.to_string().contains("no output “Nothing”"), "{e}");
     Ok(())
 }
+
+/// The app's 8-bit adder (100 + 55), opened as a library project.
+fn adder() -> (Project, Design, Design) {
+    let mut core = crate::panels::project::Project::new();
+    crate::panels::optics::examples::eight_bit_adder(&mut core);
+    let p = Project::from_bytes(&core.to_bytes()).unwrap();
+    let top = p.design("8-bit photonic adder").unwrap();
+    let fa = p.design("Full adder").unwrap();
+    (p, top, fa)
+}
+
+fn sum(top: &Design) -> u64 {
+    let s = top.simulate().unwrap();
+    s.display(&top.find_part("Display").unwrap()).unwrap()
+}
+
+#[test]
+fn aliases_from_the_library() -> Result<()> {
+    let (p, top, fa) = adder();
+    assert!(fa.alias().is_none());
+    assert_eq!(fa.make_alias()?, 0.0);
+    let a = fa.alias().unwrap();
+    assert_eq!((a.kind.as_str(), a.on, a.generated), ("truth table", false, true));
+    fa.use_alias(true)?;
+    assert_eq!(sum(&top), 155);
+    // A wrong one, written by hand: its difference shows, and so does what it does.
+    let lazy = r#"const component = { name: "Lazy", signals: { inputs: ["a", "b", "cin"], outputs: ["sum", "cout"] }, outputs(s) { return [s.a ?? 0, 0]; } };"#;
+    assert_eq!(fa.set_alias_script(lazy)?, 1.0);
+    assert_eq!(sum(&top), 100);
+    p.set_aliases("full")?;
+    assert_eq!(sum(&top), 155);
+    // Focused on bit 0's adder, the rest by the lazy alias.
+    let first = top.find_part("Full adder")?;
+    p.focus(std::slice::from_ref(&first))?;
+    assert_eq!(sum(&top), 101);
+    p.set_aliases("set")?;
+    first.set_simulate("full")?;
+    assert_eq!(sum(&top), 101, "it in full, the others by their alias as set");
+    assert!(p.set_aliases("some").is_err() && first.set_simulate("some").is_err());
+    fa.remove_alias()?;
+    assert!(fa.alias().is_none() && fa.use_alias(true).is_err());
+    assert!(top.make_alias().is_err(), "a design isn't a component");
+    // Saved with the project.
+    fa.make_alias()?;
+    let back = Project::from_bytes(&p.to_bytes())?;
+    assert_eq!(back.design("Full adder")?.alias().map(|a| a.kind), Some("truth table".into()));
+    Ok(())
+}
+
+#[test]
+fn an_external_program_needs_permission_from_the_library() -> Result<()> {
+    let p = Project::new();
+    let d = p.new_design("Program");
+    let v = d.value_input(1.0);
+    let program = d.external_program("Echo", "python3", vec!["-c".into(), "pass".into()], vec!["x".into()], vec!["y".into()], Vec::new(), Vec::new(), 1550.0)?;
+    d.connect(&v.port("v")?, &program.port("x")?)?;
+    let Err(e) = d.simulate() else { panic!("it may not run yet") };
+    let e = e.to_string();
+    assert!(e.contains(super::ALLOW_PROCESSES_VARIABLE) && e.contains("allow_process_components"), "{e}");
+    assert!(d.external_program("None", " ", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), 1550.0).is_err());
+    Ok(())
+}

@@ -141,6 +141,38 @@ Readings are named by part ("Detector") or by part and port ("Ring resonator.thr
 Conventions are the app's: fields are complex amplitudes with |E|² in mW; wavelengths in
 nm, lengths in µm, phases in radians, loss in dB or dB/cm; light runs one way.
 
+## Aliases, folders and external programs
+
+**Aliases** ([what they are](components.md#aliases-a-components-shortcut)): a component's
+shortcut for simulating.
+
+```python
+adder.make_alias()            # a truth table from its circuit (logic); returns its difference: 0.0
+adder.use_alias(True)         # simulate it by its alias where components simulate as set
+adder.set_alias_script(code)  # or one written in JavaScript; returns its difference from the circuit
+adder.check_alias()           # the largest difference from the circuit
+adder.alias()                 # kind, on, generated, checked; None without one
+project.set_aliases("full")   # every component in full; "set" (the default) as each says
+project.focus(chip, ["Full adder"])   # these parts in full, every other component by its alias
+box.set_simulate("alias")     # one part: "set", "full" or "alias"
+```
+
+**Project folders** ([what they are](files.md#projects-as-folders)): `project.save_folder("my-chip")`
+writes a file per design and component (only what changed, saved there again), and
+`shine.Project.open("my-chip")` opens one.
+
+**External programs** ([the protocol](electronics.md#external-programs)): a part that asks
+a program for its outputs from its inputs.
+
+```python
+xor = chip.external_program("Xor", "python3", ["xor.py"], ["a", "b"], ["y"], [], [])
+```
+
+> **⚠ Risky:** the program runs with your permissions. It runs only if you allow it: call
+> `shine.allow_process_components()`, or set the environment variable
+> `SHINE_ALLOW_PROCESS_COMPONENTS=1`. Without either, simulating a design that uses one
+> fails and says so. Only allow programs from projects you trust.
+
 ## Looking at it in the app
 
 - `project.save("file.shine")` writes a normal Shine file: open it in the desktop app or in

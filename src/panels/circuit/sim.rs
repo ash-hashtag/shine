@@ -544,7 +544,7 @@ impl Electronics<'_> {
                                 let answer = crate::panels::process::call(name, command, args, &asked, total);
                                 #[cfg(target_arch = "wasm32")]
                                 let answer: Result<Vec<f64>, ProgramRefusal> = {
-                                    let _ = (command, args, outputs);
+                                    let _ = (command, args, total);
                                     Err(ProgramRefusal::Error(format!("“{name}” runs a program, which only the desktop app can")))
                                 };
                                 match answer {
@@ -1467,7 +1467,7 @@ pub fn simulate(
     if let Some(a) = asks.first() {
         outcome.error.get_or_insert_with(|| {
             format!(
-                "“{}” runs a program on this computer ({}): it runs only once you allow it (in the editor, or with shine simulate --allow-processes)",
+                "“{}” runs a program on this computer ({}): it runs only once you allow it (in the editor; with shine simulate --allow-processes; or, for the Python and TypeScript packages, allow_process_components() or SHINE_ALLOW_PROCESS_COMPONENTS=1)",
                 a.name, a.command
             )
         });

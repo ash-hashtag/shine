@@ -37,7 +37,8 @@ cargo +stable clippy --all-targets -- -D warnings             # CI uses the late
 cargo +stable clippy --no-default-features --features core --all-targets -- -D warnings
 cargo +stable clippy -p shine-photonics -- -D warnings        # the Python/TypeScript bindings
 cargo test -p shine-solver -p shine-format                    # the crates on their own
-cargo clippy --lib --target wasm32-unknown-unknown -- -D warnings   # the browser build
+cargo clippy --lib --target wasm32-unknown-unknown -- -D warnings   # the browser app
+cargo clippy -p shine-photonics --target wasm32-unknown-unknown -- -D warnings   # the npm package
 scripts/build-web.sh && scripts/e2e.sh                        # browser tests, for UI or web changes
 ```
 

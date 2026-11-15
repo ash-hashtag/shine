@@ -77,6 +77,7 @@ designs.
 5. [x] Folders in the browser (File System Access API, Chrome and Edge).
 6. [ ] `shine:` components from Shine's examples, and the asset library as a folder of
    component files.
-7. [ ] Folders and `save_folder` in the Python and TypeScript packages.
+7. [x] Folders and `save_folder` in the Python package (the TypeScript one, WebAssembly,
+   reads and writes bytes).
 
 Each step keeps every test passing and existing files opening.

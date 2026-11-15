@@ -29,6 +29,7 @@
 //! dB/cm; light runs one way, from outputs to inputs. Parts, ports and
 //! parameters have the names the app's inspector and sweeps use.
 
+mod aliases;
 mod analysis;
 mod arrange;
 mod design;
@@ -37,6 +38,7 @@ mod part;
 mod project;
 mod records;
 
+pub use aliases::{ALLOW_PROCESSES_VARIABLE, AliasInfo, allow_process_components};
 pub use analysis::{MonteCarlo, Simulation, Sweep, Transmission};
 pub use design::Design;
 pub use error::{Error, Result};

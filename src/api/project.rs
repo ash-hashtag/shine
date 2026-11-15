@@ -13,6 +13,8 @@ use crate::panels::project::{DocId, Project as CoreProject};
 pub(crate) struct Inner {
     pub project: CoreProject,
     pub unplaced: HashSet<(DocId, Item)>,
+    /// How components simulate: in full, as set, or focused.
+    pub aliases: crate::panels::circuit::sim::Aliases,
 }
 
 pub(crate) type Shared = Arc<Mutex<Inner>>;
@@ -49,13 +51,13 @@ fn model_component(project: &mut CoreProject, model: ModelSpec) -> DocId {
 impl Project {
     /// An empty project.
     pub fn new() -> Self {
-        Self { inner: Arc::new(Mutex::new(Inner { project: CoreProject::new(), unplaced: HashSet::new() })) }
+        Self { inner: Arc::new(Mutex::new(Inner { project: CoreProject::new(), unplaced: HashSet::new(), aliases: Default::default() })) }
     }
 
     /// A project from a `.shine` file's contents.
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         let project = CoreProject::from_bytes(data).map_err(Error::File)?;
-        Ok(Self { inner: Arc::new(Mutex::new(Inner { project, unplaced: HashSet::new() })) })
+        Ok(Self { inner: Arc::new(Mutex::new(Inner { project, unplaced: HashSet::new(), aliases: Default::default() })) })
     }
 
     /// A `.shine` file, or a project folder.

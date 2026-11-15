@@ -87,7 +87,7 @@ impl Design {
     // ---- parts -----------------------------------------------------------------------
 
     /// Place a block, laid out later.
-    fn add(&self, block: Builtin) -> Part {
+    pub(crate) fn add(&self, block: Builtin) -> Part {
         let item = self.with(|inner| {
             let id = inner.project.doc_mut(self.id).expect("the design").layout_mut().add_instance(BlockRef::Builtin(block), (0, 0));
             inner.unplaced.insert((self.id, Item::Box(id)));

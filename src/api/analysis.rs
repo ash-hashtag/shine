@@ -63,6 +63,8 @@ struct Snapshot {
 
 impl Snapshot {
     fn of(design: &Design) -> Snapshot {
+        // External programs, if the environment lets them run.
+        super::aliases::allow_processes_from_environment();
         let inner = lock(&design.inner);
         let d = inner.project.doc(design.id).expect("the design");
         let layout = d.layout().clone();
@@ -83,7 +85,7 @@ impl Snapshot {
             project: sim::Snapshot::of(&layout, &inner.project),
             doc: design.id,
             cell_um: d.cell_um(),
-            machine: d.panel().machine.clone(),
+            machine: crate::panels::circuit::sim::Machine { aliases: inner.aliases.clone(), ..d.panel().machine.clone() },
             names: part_names(&inner.project, design.id),
             outputs,
             layout,

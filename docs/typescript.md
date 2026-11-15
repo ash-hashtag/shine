@@ -85,6 +85,10 @@ try {
   the browser, use `Project.fromBytes(data)` and `project.toBytes()`, and open the file in
   the app at [shine.lupyd.com/app](https://shine.lupyd.com/app) with File → Open.
 - What needs the desktop isn't in the WebAssembly build: optimisation, Touchstone import,
-  scripted components and `show()` throw an error that says so. Everything else, including
-  sweeps and Monte Carlo, works the same.
+  scripted components (and script aliases), project folders (`saveFolder`), external
+  programs and `show()` throw an error that says so. Everything else works the same,
+  including sweeps, Monte Carlo and aliases made from the circuit (`makeAlias`,
+  `useAlias`, `project.setAliases("full" | "set")`, `project.focus(chip, names)`,
+  `part.setSimulate`): see [Python](python.md#aliases-folders-and-external-programs) for
+  what each does.
 - Objects are freed when garbage collected; call `dispose()` to free one sooner.

@@ -103,3 +103,48 @@ test("Monte Carlo repeats from its seed", () => {
   // Optimisation runs in the desktop library, not WebAssembly.
   assert.throws(() => chip.optimise([{ part: "Directional coupler", param: "coupling", min: 0, max: 1 }], "Detector", Goal.Target, 0.2, 100), /desktop/);
 });
+
+function xorChip() {
+  const project = Project.new();
+  const xor = project.newComponent("Xor");
+  const a = xor.signalInput("a");
+  const b = xor.signalInput("b");
+  const y = xor.signalOutput("y");
+  const cell = xor.functionCell("x", 2, 0, ["in1 ^ in2"]);
+  xor.connect(a.port("value"), cell.port("in1"));
+  xor.connect(b.port("value"), cell.port("in2"));
+  xor.connect(cell.port("out1"), y.port("value"));
+  const chip = project.newDesign("Chip");
+  const va = chip.valueInput(1);
+  const vb = chip.valueInput(0);
+  const box = chip.place(xor);
+  const d = chip.display(1);
+  chip.connect(va.port("v"), box.port("a"));
+  chip.connect(vb.port("v"), box.port("b"));
+  chip.connect(box.port("y"), d.port("b0"));
+  return { project, xor, chip, box, d };
+}
+
+test("aliases: made from the circuit, switched on, focused", () => {
+  const { project, xor, chip, box, d } = xorChip();
+  assert.equal(xor.makeAlias(), 0);
+  const alias = xor.alias();
+  assert.equal(alias.kind, "truth table");
+  assert.equal(alias.generated, true);
+  xor.useAlias(true);
+  assert.equal(chip.simulate().display(d), 1);
+  project.setAliases("full");
+  assert.equal(chip.simulate().display(d), 1);
+  project.focus(chip, ["Xor"]);
+  box.setSimulate("alias");
+  assert.equal(chip.simulate().display(d), 1);
+  assert.throws(() => project.setAliases("sometimes"), ShineErrorException);
+});
+
+test("folders, scripts and programs are for the desktop", () => {
+  const { project, xor, chip } = xorChip();
+  assert.throws(() => project.saveFolder("/tmp/x"), /Python package or the app/);
+  const program = chip.externalProgram("Xor", "python3", ["xor.py"], ["a"], ["y"], [], [], 1550);
+  chip.connect(chip.valueInput(1).port("v"), program.port("a"));
+  assert.throws(() => chip.simulate(), /desktop app/);
+});

@@ -165,5 +165,108 @@ class Library(unittest.TestCase):
         self.assertEqual(chip.simulate().display(d), 9)
 
 
+def xor_chip(a_value=1.0, b_value=0.0):
+    """An XOR component (a function cell) on a chip with two inputs and a display."""
+    project = shine.Project()
+    xor = project.new_component("Xor")
+    a, b, y = xor.signal_input("a"), xor.signal_input("b"), xor.signal_output("y")
+    cell = xor.function_cell("x", 2, 0, ["in1 ^ in2"])
+    xor.connect(a.port("value"), cell.port("in1"))
+    xor.connect(b.port("value"), cell.port("in2"))
+    xor.connect(cell.port("out1"), y.port("value"))
+    chip = project.new_design("Chip")
+    va, vb, box, d = chip.value_input(a_value), chip.value_input(b_value), chip.place(xor), chip.display(bits=1)
+    chip.connect(va.port("v"), box.port("a"))
+    chip.connect(vb.port("v"), box.port("b"))
+    chip.connect(box.port("y"), d.port("b0"))
+    return project, xor, chip, box, d
+
+
+# A program speaking Shine's protocol: XOR of its two inputs.
+XOR_PROGRAM = """
+import sys
+sys.stdin.readline()
+print("ok", flush=True)
+for line in sys.stdin:
+    a, b = (round(float(v)) for v in line.split())
+    print(a ^ b, flush=True)
+"""
+
+
+class Extras(unittest.TestCase):
+    def test_aliases(self):
+        project, xor, chip, box, d = xor_chip()
+        self.assertIsNone(xor.alias())
+        self.assertEqual(xor.make_alias(), 0.0)
+        alias = xor.alias()
+        self.assertEqual((alias.kind, alias.on, alias.generated), ("truth table", False, True))
+        xor.use_alias(True)
+        self.assertEqual(chip.simulate().display(d), 1)
+        # A wrong one, written by hand: always 0.
+        lazy = 'const component = { name: "Lazy", signals: { inputs: ["a", "b"], outputs: ["y"] }, outputs() { return [0]; } };'
+        self.assertEqual(xor.set_alias_script(lazy), 1.0)
+        self.assertEqual(chip.simulate().display(d), 0)
+        project.set_aliases("full")
+        self.assertEqual(chip.simulate().display(d), 1)
+        project.focus(chip, ["Xor"])
+        self.assertEqual(chip.simulate().display(d), 1, "focused: in full")
+        project.set_aliases("set")
+        box.set_simulate("full")
+        self.assertEqual(chip.simulate().display(d), 1)
+        with self.assertRaises(Exception):
+            project.set_aliases("sometimes")
+
+    def test_folders(self):
+        project, xor, chip, box, d = xor_chip()
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "xor")
+            project.save_folder(folder)
+            self.assertTrue(os.path.exists(os.path.join(folder, "shine-project.pb")))
+            again = shine.Project.open(folder)
+            self.assertEqual(sorted(again.designs()), ["Chip", "Xor"])
+            chip2 = again.design("Chip")
+            self.assertEqual(chip2.simulate().display(chip2.find_part("Display")), 1)
+
+    def test_external_programs_need_permission(self):
+        import subprocess
+        import sys
+
+        def program_chip():
+            project = shine.Project()
+            chip = project.new_design("Program")
+            va, vb, d = chip.value_input(1.0), chip.value_input(0.0), chip.display(bits=1)
+            program = chip.external_program("Xor in Python", sys.executable, ["-c", XOR_PROGRAM], ["a", "b"], ["y"], [], [])
+            chip.connect(va.port("v"), program.port("a"))
+            chip.connect(vb.port("v"), program.port("b"))
+            chip.connect(program.port("y"), d.port("b0"))
+            return chip, d
+
+        chip, d = program_chip()
+        if os.environ.get("SHINE_ALLOW_PROCESS_COMPONENTS") is None:
+            with self.assertRaises(Exception) as refused:
+                chip.simulate()
+            self.assertIn("SHINE_ALLOW_PROCESS_COMPONENTS", str(refused.exception))
+        # The environment variable lets it run (in a Python of its own).
+        code = f"""
+import sys
+sys.path[:0] = {sys.path!r}
+import shine_photonics as shine
+p = shine.Project()
+chip = p.new_design("Program")
+va, vb, d = chip.value_input(1.0), chip.value_input(0.0), chip.display(bits=1)
+prog = chip.external_program("Xor", sys.executable, ["-c", {XOR_PROGRAM!r}], ["a", "b"], ["y"], [], [])
+chip.connect(va.port("v"), prog.port("a"))
+chip.connect(vb.port("v"), prog.port("b"))
+chip.connect(prog.port("y"), d.port("b0"))
+print(chip.simulate().display(d))
+"""
+        env = dict(os.environ, SHINE_ALLOW_PROCESS_COMPONENTS="1")
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(done.stdout.strip(), "1", done.stderr)
+        # So does the call, from here on in this process.
+        shine.allow_process_components()
+        self.assertEqual(chip.simulate().display(d), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

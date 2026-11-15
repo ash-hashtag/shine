@@ -234,6 +234,21 @@ pub struct Optimised {
     pub simulations: u32,
 }
 
+/// What a component's alias is: a compact model the simulator can use
+/// instead of its circuit.
+#[data]
+#[derive(Clone)]
+pub struct AliasInfo {
+    /// "truth table", "script" or "S-parameters".
+    pub kind: String,
+    /// Used when simulating components as set.
+    pub on: bool,
+    /// Made from the circuit, rather than written.
+    pub generated: bool,
+    /// The largest difference from the circuit, when last checked.
+    pub checked: Option<f64>,
+}
+
 /// A component's transmission written in code: return the matrix (rows the
 /// outputs, columns the inputs) at a wavelength in nm.
 #[export]
@@ -363,9 +378,41 @@ impl Project {
     pub fn new_scripted_component(&self, code: String) -> Result<Design, ShineError> {
         Ok(Design(self.0.new_scripted_component(&code)?))
     }
+
+    /// Save as a project folder: a file per design and component and a
+    /// manifest; saved there again, only what changed is written. Open it
+    /// with `Project.open(folder)`. Not in the browser.
+    pub fn save_folder(&self, path: String) -> Result<(), ShineError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self.0.save_folder(&path)?);
+        #[cfg(target_arch = "wasm32")]
+        return Err(ShineError { message: format!("can't save {path}: folders need the Python package or the app") });
+    }
+
+    /// How components simulate: "full" (every one's whole circuit) or "set"
+    /// (the default: by their alias where it's switched on, or where a part
+    /// says so).
+    pub fn set_aliases(&self, mode: String) -> Result<(), ShineError> {
+        Ok(self.0.set_aliases(&mode)?)
+    }
+
+    /// Simulate the parts called `names` in `design` in full, and every other
+    /// component with an alias by its alias.
+    pub fn focus(&self, design: &Design, names: Vec<String>) -> Result<(), ShineError> {
+        let parts = names.iter().map(|n| design.0.find_part(n)).collect::<Result<Vec<_>, _>>()?;
+        Ok(self.0.focus(&parts)?)
+    }
 }
 
 // ---- Design -----------------------------------------------------------------------
+
+/// Let external program parts run the programs they name, from now on. They
+/// run with your permissions: only for projects you trust. The environment
+/// variable SHINE_ALLOW_PROCESS_COMPONENTS=1 does the same. Not in the browser.
+#[export]
+pub fn allow_process_components() {
+    api::allow_process_components();
+}
 
 /// A design: parts wired together. A component is a design others place as
 /// one part, its pins its ports.
@@ -529,6 +576,62 @@ impl Design {
     /// light inputs, as in the app's function cells.
     pub fn function_cell(&self, name: String, inputs: u32, light_inputs: u32, outputs: Vec<String>) -> Result<Part, ShineError> {
         part(self.0.function_cell(&name, inputs, light_inputs, outputs))
+    }
+
+    /// A part that asks a program on this computer (such as `python3` with a
+    /// script) for its outputs from its inputs, a line of numbers each way
+    /// (see the docs: Electronics, External programs). Risky: it runs only
+    /// once allowed (`allow_process_components()` or
+    /// SHINE_ALLOW_PROCESS_COMPONENTS=1). Light inputs give it the power
+    /// arriving, light outputs emit the amplitudes it answers.
+    #[allow(clippy::too_many_arguments)]
+    pub fn external_program(
+        &self,
+        name: String,
+        command: String,
+        args: Vec<String>,
+        inputs: Vec<String>,
+        outputs: Vec<String>,
+        light_inputs: Vec<String>,
+        light_outputs: Vec<String>,
+        #[boltffi::default(1550.0)] wavelength_nm: f64,
+    ) -> Result<Part, ShineError> {
+        part(self.0.external_program(&name, &command, args, inputs, outputs, light_inputs, light_outputs, wavelength_nm))
+    }
+
+    /// Make this component's alias from its circuit: a truth table of its
+    /// signal outputs for every combination of its inputs (logic: no light,
+    /// no memory, up to 16 inputs). Returns its largest difference from the
+    /// circuit (0).
+    pub fn make_alias(&self) -> Result<f64, ShineError> {
+        Ok(self.0.make_alias()?)
+    }
+
+    /// Use JavaScript `code` (with this component's ports) as its alias.
+    /// Returns its largest difference from the circuit: keeping it right is
+    /// up to you. Not in the browser.
+    pub fn set_alias_script(&self, code: String) -> Result<f64, ShineError> {
+        Ok(self.0.set_alias_script(&code)?)
+    }
+
+    /// Compare this component's alias with its circuit: the largest
+    /// difference in any output.
+    pub fn check_alias(&self) -> Result<f64, ShineError> {
+        Ok(self.0.check_alias()?)
+    }
+
+    /// Switch this component's alias on (used when simulating as set) or off.
+    pub fn use_alias(&self, on: bool) -> Result<(), ShineError> {
+        Ok(self.0.use_alias(on)?)
+    }
+
+    pub fn remove_alias(&self) -> Result<(), ShineError> {
+        Ok(self.0.remove_alias()?)
+    }
+
+    /// This component's alias, if it has one.
+    pub fn alias(&self) -> Option<AliasInfo> {
+        self.0.alias().map(|a| AliasInfo { kind: a.kind, on: a.on, generated: a.generated, checked: a.checked })
     }
 
     /// A copy of a component, as one part.
@@ -756,6 +859,12 @@ impl Part {
     /// are laid out when the project is saved.
     pub fn place_at(&self, column: i32, row: i32) -> Part {
         Part(self.0.place_at(column, row))
+    }
+
+    /// For a component part: "set" (as its component's alias switch says),
+    /// "full" (its whole circuit) or "alias" (by its alias).
+    pub fn set_simulate(&self, how: String) -> Result<(), ShineError> {
+        Ok(self.0.set_simulate(&how)?)
     }
 }
 
