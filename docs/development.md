@@ -6,6 +6,10 @@ order: 14
 
 # Development
 
+[AGENTS.md](https://github.com/ash-hashtag/shine/blob/main/AGENTS.md) sums up the rules for
+changing Shine (for people and the coding assistants helping them); this page has the
+details.
+
 ## Build and run
 
 ```sh
